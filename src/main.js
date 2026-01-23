@@ -84,8 +84,8 @@ let selectedTableId = null;
 let activeTableId = null;
 let activeEntry = null;
 
-
-
+const colliders = [];
+const PLAYER_RADIUS = 0.65;
 const INTERACT_DISTANCE = 3.0;
 const _tmpClosest = new THREE.Vector3();
 function distanceToTable(entry, playerPos){
@@ -269,6 +269,7 @@ const tables = [];
 const tableBoxes = new Map();
 let envRoot = null;
 
+let worldBounds = null;    
 
 const loader = new GLTFLoader();
 loader.load(
@@ -278,7 +279,7 @@ loader.load(
     scene.add(envRoot);
     envRoot.traverse((obj) => {
   if (obj.name) console.log(obj.name);
-});
+  });
 
     // scene.remove(cube);
     console.log("=== GLB nodes ===");
@@ -320,6 +321,57 @@ loader.load(
     console.log("made table materials unique");
     console.log("envBox:", envBox.min, envBox.max);
 
+    function shrinkBoxXZToCenter(box, scaleX = 0.42, scaleZ = 0.42, offsetXRatio = 0, offsetZRatio = 0) {
+    const center = new THREE.Vector3();
+    box.getCenter(center);
+
+    const size = new THREE.Vector3();
+    box.getSize(size);
+
+    center.x += size.x * offsetXRatio;
+    center.z += size.z * offsetZRatio;
+
+    const hx = size.x * scaleX * 0.5;
+    const hz = size.z * scaleZ * 0.5;
+
+    box.min.x = center.x - hx;
+    box.max.x = center.x + hx;
+    box.min.z = center.z - hz;
+    box.max.z = center.z + hz;
+
+    return box;
+    }
+
+
+
+    colliders.length = 0;
+    scene.updateMatrixWorld(true);
+    for (const t of tables) {
+    const b = new THREE.Box3().setFromObject(t);
+    const TABLE_OFFSET_X_RATIO = -0.26/* 你剛剛抓到的值 */;
+    const TABLE_OFFSET_Z_RATIO = 0.12;  // 先用 -1% 試試
+
+    shrinkBoxXZToCenter(b, 0.34, 0.34, TABLE_OFFSET_X_RATIO, TABLE_OFFSET_Z_RATIO);
+
+    b.expandByScalar(0.05);
+    colliders.push(b);
+    }
+
+    console.log("colliders:", colliders.length);
+
+  
+    // 清掉舊的 helper（避免越加越多）
+    if (window.__colliderHelpers) {
+    for (const h of window.__colliderHelpers) scene.remove(h);
+    }
+    window.__colliderHelpers = [];
+
+    for (const b of colliders) {
+    const h = new THREE.Box3Helper(b, 0xff0000);
+    scene.add(h);
+    window.__colliderHelpers.push(h);
+    } 
+    
     walkables.length = 0;
     const stageObj = envRoot.getObjectByName("stage");
     const stairObj = envRoot.getObjectByName("stair");
@@ -328,11 +380,23 @@ loader.load(
     if (stairObj) walkables.push(stairObj);
     if (floorObj) walkables.push(floorObj);
     console.log("walkables:", walkables.map(o => o.name));
-  },
-  undefined,
-  (error) => console.error(error),
+
+    scene.updateMatrixWorld(true);
+
+    if (floorObj) {
+    worldBounds = new THREE.Box3().setFromObject(floorObj);
+    console.log("worldBounds", worldBounds.min, worldBounds.max);
+    } else {
+    console.warn("floorObj not found");
+    }
+    },
+    undefined,
+    (error) => console.error(error),
+    
   
 );
+
+
 
 
 
@@ -415,6 +479,41 @@ function getGroundYUnderPlayer(playerPos){
   }
   return null;
 }
+function resolveHorizontalCollisions(pos){
+  for (const box of colliders){
+    box.clampPoint(pos, _tmpClosest);
+    const dx = pos.x - _tmpClosest.x;
+    const dz = pos.z - _tmpClosest.z;
+    const distSq = dx * dx + dz * dz;
+    const r = PLAYER_RADIUS;
+    if (distSq < r * r){
+      const dist = Math.sqrt(distSq) || 1e-6;
+      const push = (r - dist);
+      pos.x += (dx / dist) * push;
+      pos.z += (dz / dist) * push;
+    }
+  }
+}
+function boxFromObjectIgnoringCloth(root){
+  const box = new THREE.Box3();
+  const tmp = new THREE.Box3();
+  root.traverse((o) => {
+    if (!o.isMesh) return;
+    const matName = Array.isArray(o.material)
+    ? (o.material[0]?.name || "")
+    : (o.material?.name || "");
+    if (matName.toLowerCase().includes("tablecloth_")) return;
+    tmp.setFromObject(o);
+    box.union(tmp);
+  });
+  return box;
+}
+
+function clampToWorldBounds(pos, bounds, padding = 0.2) {
+  pos.x = THREE.MathUtils.clamp(pos.x, bounds.min.x + padding, bounds.max.x - padding);
+  pos.z = THREE.MathUtils.clamp(pos.z, bounds.min.z + padding, bounds.max.z - padding);
+}
+
 
 
 const moveDir = new THREE.Vector3();
@@ -443,23 +542,19 @@ function animate(){
 
   if (delta.lengthSq() > 0){
     delta.normalize().multiplyScalar(speed);
-    player.position.add(delta);
-    const box = window.__envBox;
-if (box) {
-  const margin = 0.2;
 
-  player.position.x = THREE.MathUtils.clamp(
-    player.position.x,
-    box.min.x + margin,
-    box.max.x - margin
-  );
+    const nextPos = player.position.clone();
+    nextPos.x += delta.x;
+    resolveHorizontalCollisions(nextPos);
+    nextPos.z += delta.z;
+    resolveHorizontalCollisions(nextPos);
 
-  player.position.z = THREE.MathUtils.clamp(
-    player.position.z,
-    box.min.z + margin,
-    box.max.z - margin
-  );
+    if (worldBounds) {
+      clampToWorldBounds (nextPos, worldBounds, PLAYER_RADIUS);
     }
+
+    player.position.x = nextPos.x;
+    player.position.z = nextPos.z;
   }
   const dt = 1/60;
   velY -= GRAVITY * dt;
