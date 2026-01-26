@@ -1,9 +1,8 @@
+import { io } from "socket.io-client";
 import * as THREE from "three";
-import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import "./style.css";
 import { GLTFLoader } from "three/examples/jsm/Addons.js";
 import { PointerLockControls } from "three/examples/jsm/controls/PointerLockControls.js";
-import { emissive } from "three/tsl";
 
 
 const scene = new THREE.Scene();
@@ -20,7 +19,7 @@ dirLight.position.set(5, 10, 7);
 scene.add(dirLight);
 
 const camera = new THREE.PerspectiveCamera(
-  75, // 視角（越大越廣角）
+  60, // 視角（越大越廣角）
   window.innerWidth / window.innerHeight, // 長寬比
   0.1, // 最近可看到的距離
   1000 // 最遠可看到的距離
@@ -35,15 +34,88 @@ function resize(){
 
   renderer.setSize(width, height);
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-}
-window.addEventListener("resize", resize);
-resize();
+};
 
+const socket = io("http://localhost:3001", { transports: ["websocket"] });
+const profile = JSON.parse(sessionStorage.getItem("polypot_profile") || "{}");
+const remotePlayers = new Map();
+
+function makeRemoteAvatar () {
+  const geo = new THREE.CapsuleGeometry(0.3, 1.0, 4, 8);
+  const mat = new THREE.MeshStandardMaterial();
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.castShadow = false;
+  mesh.receiveShadow = false;
+  return mesh;
+};
+
+function spawnRemote(player) {
+  const avatar = makeRemoteAvatar();
+  avatar.position.set(player.pos.x, player.pos.y, player.pos.z);
+  avatar.rotation.y = player.rotY || 0;
+  scene.add(avatar);
+  remotePlayers.set(player.id, avatar);
+};
+
+socket.emit ("join", profile, ({ self, other }) => {
+  other.forEach(spawnRemote);
+  if (envRoot && self.seatId) {
+    const anchor = envRoot.getObjectByName (self.seatId);
+    if (anchor) {
+      player.position.set(anchor.position.x, 1.6, anchor.position.z + 1.0);
+    }
+  }
+});
+
+socket.on("player:join", (p) => {
+  spawnRemote(p);
+});
+
+socket.on("player:leave", ({ id }) => {
+  despawnRemote(id);
+});
+
+socket.on("player: move", ({ id, pos, rotY }) => {
+  const obj = remotePlayers.get(id);
+  if (!obj) return;
+  obj.position.set(pos.x, pos.y, pos.z);
+  obj.rotation.y = rotY || 0;
+});
+
+let lastNetSend = 0;
+
+function getYawFromCamera() {
+  const e = new THREE.Euler().setFromQuaternion(camera.quaternion, "YXZ");
+  return e.y;
+}
 
 const player = new THREE.Object3D();
 scene.add(player);
 player.add(camera);
 camera.position.set(0, 4, 0);
+
+const now = performance.now();
+if (now - lastNetSend > 50) {
+  lastNetSend = now;
+  socket.emit("player:move", {
+    pos: { x: player.position.x, y: player.position.y, z: player.position.z },
+    rotY: getYawFromCamera(),
+  });
+}
+
+socket.on("server:hello", (data) => {
+  console.log("[socket] server:hello", data);
+});
+socket.on("server:pong", (data) => {
+  console.log("[socket] server:pong", data);
+});
+socket.on("connect_error", (err) => {
+  console.error("[socket] connect_error", err.message);
+});
+
+
+window.addEventListener("resize", resize);
+resize();
 
 
 const app = document.querySelector("#app");
@@ -358,19 +430,6 @@ loader.load(
     }
 
     console.log("colliders:", colliders.length);
-
-  
-    // 清掉舊的 helper（避免越加越多）
-    if (window.__colliderHelpers) {
-    for (const h of window.__colliderHelpers) scene.remove(h);
-    }
-    window.__colliderHelpers = [];
-
-    for (const b of colliders) {
-    const h = new THREE.Box3Helper(b, 0xff0000);
-    scene.add(h);
-    window.__colliderHelpers.push(h);
-    } 
     
     walkables.length = 0;
     const stageObj = envRoot.getObjectByName("stage");
@@ -523,7 +582,7 @@ function animate(){
   // cube.rotation.x += 0.01;
   // cube.rotation.y += 0.01;
 
-  const baseSpeed = 0.1;
+  const baseSpeed = 0.15;
   const speed = keys.boost ? baseSpeed * 2.5 : baseSpeed;
   
   const forward = new THREE.Vector3();
