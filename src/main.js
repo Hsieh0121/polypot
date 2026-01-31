@@ -10,14 +10,6 @@ const scene = new THREE.Scene();
 const ambientLight = new THREE.AmbientLight(0xffffff, 1);
 scene.add(ambientLight);
 
-const pointLight = new THREE.PointLight(0xffffff, 50, 30, 2);
-pointLight.position.set(0, 3, 0);
-scene.add(pointLight);
-
-const dirLight = new THREE.DirectionalLight(0xffffff, 1);
-dirLight.position.set(5, 10, 7);
-scene.add(dirLight);
-
 const camera = new THREE.PerspectiveCamera(
   60, // 視角（越大越廣角）
   window.innerWidth / window.innerHeight, // 長寬比
@@ -92,7 +84,8 @@ function getYawFromCamera() {
 const player = new THREE.Object3D();
 scene.add(player);
 player.add(camera);
-camera.position.set(0, 4, 0);
+camera.position.set(0, 5, 0);
+const playerPos = player.position;
 
 const now = performance.now();
 if (now - lastNetSend > 50) {
@@ -145,21 +138,44 @@ function hideHUD(){
   hub.style.display = "none";
 }
 
+const FSM = {
+  FREE_ROAM: "FREE_ROAM",
+  SEATED: "SEATED",
+  UI_OPEN: "UI_OPEN",
+};
+let state = FSM.FREE_ROAM;
+
+const seatsState = new Map();
+
 const raycaster = new THREE.Raycaster();
 let highlightedTable = null;
 let savedEmissive = new Map();
 let selectedTable = null;
 let pendingSelect = false;
-let hoveredTableId = null;
 let hoveredEntry = null;
 let selectedTableId = null;
 let activeTableId = null;
 let activeEntry = null;
+let hoveredTableId = null;
+let hoveredSeatId = null;
+let hoveredSeatTableId = null;
+let lastHoverSeatId = null;
+let seatMakers = [];
+let seatHitMeshes = [];
+let seatVisualByKey = new Map();
+let isSeated = false;
+let seated = null;
+let pendingActionE = false;
 
+const localPlayerId = "local";
+const seatAnchorByKey = new Map();
+const hudEl = document.getElementById("hud");
 const colliders = [];
 const PLAYER_RADIUS = 0.65;
 const INTERACT_DISTANCE = 3.0;
 const _tmpClosest = new THREE.Vector3();
+
+
 function distanceToTable(entry, playerPos){
   entry.bbox.clampPoint(playerPos, _tmpClosest);
   return _tmpClosest.distanceTo(playerPos);
@@ -261,13 +277,14 @@ function trySelectHoverTable(){
 
 
 const controls = new PointerLockControls(camera, renderer.domElement);
-// controls.enablePan = false;
-// controls.minDistance = 1;
-// controls.maxDistance = 20;
-
+console.log("[controls]", controls);
+console.log("[controls keys]", controls && Object.keys(controls));
 camera.position.set(0, 4, 5);
-// controls.target.set(0, 1.2, 0);
-// controls.update();
+
+
+
+
+
 
 const walkables = [];
 let velY = 0;
@@ -278,8 +295,15 @@ const JUMP_VEL = 8;      // 起跳速度，之後可調
 const GROUND_Y = 1.6;      // 先假設地板高度是 0，之後再改成實際地板
 const EYE_HEIGHT = 1.6;         // 你目前用的站立高度
 const GROUND_EPS = 0.05;        // 容差，避免抖動
-const RAY_FAR = 10;             // 往下找地面的距離
+const RAY_FAR = 10;            // 往下找地面的距離
+const EYE_HEIGHT_SEATED = 3;
+const EYE_HEIGHT_STAND = 4;
 
+const ndc = new THREE.Vector2(0, 0);
+window.addEventListener("mousemove", (e) => {
+  ndc.x = (e.clientX / window.innerWidth) * 2 - 1;
+  ndc.y = -(e.clientY / window.innerHeight) * 2 + 1;
+});
 
 window.addEventListener("click", async () =>{
   try{
@@ -303,9 +327,12 @@ window.addEventListener("keydown", (e) => {
   if (e.code === "ArrowRight" || e.code === "KeyD") keys.right = true;
   if (e.code === "ShiftLeft" || e.code === "ShiftRight") keys.boost = true;
   if (e.code === "KeyE") {
-    e.preventDefault();
-    trySelectHoverTable();
-    return;
+    if (hoveredTableId && hoveredSeatId){
+      snapToSeat(hoveredTableId, hoveredSeatId);
+    } else {
+      console.log("[E] no seat hovered");
+    }
+    pendingActionE = true;
   };
   
   if (e.code === "KeyR"){
@@ -314,6 +341,7 @@ window.addEventListener("keydown", (e) => {
       selectedTable = null;
       selectedTableId = null;
     }
+    unseatSeat();
     return;
   }
   if (e.code === "Space"){
@@ -337,21 +365,33 @@ window.addEventListener("keyup", (e) => {
 
 
 
+
 const tables = [];
 const tableBoxes = new Map();
 let envRoot = null;
-
 let worldBounds = null;    
 
 const loader = new GLTFLoader();
 loader.load(
-  "/newenv.glb",
+  "/public/env.glb",
   (gltf) => {
     envRoot = gltf.scene;
     scene.add(envRoot);
     envRoot.traverse((obj) => {
   if (obj.name) console.log(obj.name);
   });
+
+  console.log("gltf.scene:", gltf.scene);
+  console.log("children:", gltf.scene.children.map(c => c.name));
+  const tableLike = [];
+  const seatLike = [];
+  gltf.scene.traverse((o) => {
+    const n = (o.name || "").toLowerCase();
+    if (n.includes("table")) tableLike.push(o.name);
+    if (n.includes("seat")) seatLike.push(o.name);
+  });
+  console.log("tableLike", tableLike);
+  console.log("seatLike", seatLike);
 
     // scene.remove(cube);
     console.log("=== GLB nodes ===");
@@ -411,15 +451,166 @@ loader.load(
     box.min.z = center.z - hz;
     box.max.z = center.z + hz;
 
+    const spawnLight = new THREE.PointLight(0xffffff, 90, 800);
+    spawnLight.position.set(
+    center.x,
+    center.y + 8,
+    center.z - 3,
+    );
+    scene.add(spawnLight);
+
     return box;
     }
 
+    function scanTablesAndSeatsById(envRoot){
+      envRoot.updateMatrixWorld(true);
 
+      const tablesByNum = new Map();
+      const seatsByNum = new Map();
+
+      envRoot.traverse((o) => {
+        const n = (o.name || "").toLowerCase();
+        const mt = n.match(/^table(\d+)$/);
+        if (mt) tablesByNum.set(Number(mt[1]), o);
+        const ms = n.match(/^seat[_-]?(\d+)$/);
+        if (ms) seatsByNum.set(Number(ms[1]), o);
+      });
+      const tables = [];
+      for (const [num, tableObj] of tablesByNum.entries()) {
+        const table = { id: `table${num}`, obj: tableObj, seats: []};
+        const seatObj = seatsByNum.get(num);
+        if (seatObj) {
+          const pos = new THREE.Vector3();
+          const quat = new THREE.Quaternion();
+          const scl = new THREE.Vector3();
+          seatObj.matrixWorld.decompose(pos, quat, scl);
+
+          table.seats.push({
+            id: `seat_${num}`,
+            obj: seatObj,
+            pos,
+            quat,
+          });
+        }
+        tables.push(table);
+      }
+      tables.sort((a, b) => {
+        const na = Number(a.id.replace("table", ""));
+        const nb = Number(b.id.replace("table", ""));
+        return na - nb;
+      });
+      return tables;
+    };
+
+    envRoot.updateWorldMatrix(true, true);
+    const tableInfos = scanTablesAndSeatsById(envRoot);
+    console.log("tableInfos:", tableInfos.map(t => ({ id: t.id, seatCount: t.seats.length })));
+    initSeatsStateFromTableInfos(tableInfos);
+    console.log("[seatsState] init size =", seatsState.size);
+
+    seatAnchorByKey.clear();
+    for (const t of tableInfos){
+      for (const s of t.seats){
+        const key = `${t.id}_${s.id}`;
+        seatAnchorByKey.set(key, {pos: s.pos.clone(), quat: s.quat.clone()});
+      }
+    }
+    console.log("[seatAnchorByKey] size:", seatAnchorByKey.size);
+    window.__tableInfos = tableInfos;
+
+    const seatDebug = {
+    group: null,
+    enabled: true,
+    };
+    function clearSeatDebug (scene) {
+    if (seatDebug.group) {
+      scene.remove(seatDebug.group);
+      seatDebug.group.traverse((o) => {
+        if (o.geometry) o.geometry.dispose?.();
+        if (o.material) o.material.dispose?.();
+      });
+      seatDebug.group = null;
+    }
+    }
+    function debugSeats(scene, tableInfos) {
+    if (!seatDebug.enabled) return;
+    clearSeatDebug(scene);
+    const g = new THREE.Group();
+    g.name = "__seatDebugGroup";
+
+    const geom = new THREE.SphereGeometry(0.25, 16, 12);
+    const mat = new THREE.MeshBasicMaterial({ color: 0xff00ff , depthTest: false, depthWrite: false});
+    const ball = new THREE.Mesh (geom, mat);
+    ball.renderOrder = 999; 
+
+
+    for (const t of tableInfos) {
+      for (const s of t.seats) {
+        console.log("[debug seat world pos]", t.id, s.id, s.pos.toArray());
+        const m = new THREE.Mesh(geom, mat);
+        m.name = `DBG_SEAT_${t.id}_${s.id}`;
+        m.position.copy(s.pos);
+        m.renderOrder = 999;
+        m.frustumCulled = false;
+        g.add(m);
+
+        const axes = new THREE.AxesHelper(0.6);
+        axes.name = `__seatAxes_${t.id}_${s.id}`;
+        axes.position.copy(s.pos);
+        axes.quaternion.copy(s.quat);
+        axes.renderOrder = 999;
+        axes.frustumCulled = false;
+        g.add(axes);
+
+        const hitGeom = new THREE.SphereGeometry(0.6, 12, 12);
+        const hitMat = new THREE.MeshBasicMaterial({
+          color: 0x00ff,
+          wireframe: true,
+          transparent: true,
+          opacity: 0.25
+        });
+        const hit = new THREE.Mesh(hitGeom, hitMat);
+        hit.name = `HIT_SEAT_${t.id}_${s.id}`;
+        hit.position.copy(s.pos);
+        hit.renderOrder = 998;
+        hit.frustumCulled = false;
+        g.add(hit);
+
+        const key = `${t.id}_${s.id}`;
+        seatVisualByKey.set(key, m);
+      }
+    }
+    
+    seatHitMeshes = g.children.filter(o => o.isMesh && o.name?.startsWith("HIT_SEAT_"));
+    
+    scene.add(g);
+    seatDebug.group = g;
+
+    console.log(
+      "[debugSeats] markers in group:",
+      g.children.filter(o => o.name?. startsWith("DBG_SEAT_")).length
+    );
+
+   
+      seatMakers = g.children.filter(
+        (o) => o.isMesh && o.name?.startsWith("HIT_SEAT_")
+      );
+      console.log("[debugSeats]seatMakers:", seatMakers.map(m => m.name));
+    }
+
+    
+    console.log("[debugSeats] seats:", tableInfos.flatMap(t => t.seats).length);
+    debugSeats(scene, tableInfos);
+    console.log("envRoot world:", envRoot.position, envRoot.rotation, envRoot.scale);
+    
+    
+    
+    
 
     colliders.length = 0;
     scene.updateMatrixWorld(true);
-    for (const t of tables) {
-    const b = new THREE.Box3().setFromObject(t);
+    for (const t of tableInfos) {
+    const b = new THREE.Box3().setFromObject(t.obj);
     const TABLE_OFFSET_X_RATIO = -0.26/* 你剛剛抓到的值 */;
     const TABLE_OFFSET_Z_RATIO = 0.12;  // 先用 -1% 試試
 
@@ -454,7 +645,6 @@ loader.load(
     
   
 );
-
 
 
 
@@ -553,25 +743,185 @@ function resolveHorizontalCollisions(pos){
     }
   }
 }
-function boxFromObjectIgnoringCloth(root){
-  const box = new THREE.Box3();
-  const tmp = new THREE.Box3();
-  root.traverse((o) => {
-    if (!o.isMesh) return;
-    const matName = Array.isArray(o.material)
-    ? (o.material[0]?.name || "")
-    : (o.material?.name || "");
-    if (matName.toLowerCase().includes("tablecloth_")) return;
-    tmp.setFromObject(o);
-    box.union(tmp);
-  });
-  return box;
-}
+
 
 function clampToWorldBounds(pos, bounds, padding = 0.2) {
   pos.x = THREE.MathUtils.clamp(pos.x, bounds.min.x + padding, bounds.max.x - padding);
   pos.z = THREE.MathUtils.clamp(pos.z, bounds.min.z + padding, bounds.max.z - padding);
 }
+function snapToSeat (tableId, seatId) {
+  const key = `${tableId}_${seatId}`;
+  const anchor = seatAnchorByKey.get(key);
+  if (!anchor) {
+    console.warn("[snapToSeat] missing anchor:", key);
+    return;
+  }
+  const obj = controls.getObject();
+  const eyeHeight = 1.2;
+  obj.position.set(anchor.pos.x, anchor.pos.y, eyeHeight, anchor.pos.z);
+  const e = new THREE.Euler().setFromQuaternion(anchor.quat, "YXZ");
+  obj.rotation.set(0, e.y, 0);
+  camera.position.x = 0;
+  console.log("[snapToSeat] snapped to", key, "pos=", obj.position.toArray());
+  isSeated = true;
+}
+function findSeatInfo(tableId,seatId){
+  if (!window.__tableInfos) return null;
+  const t = window.__tableInfos.find(x => x.id === tableId);
+  if (!t) return null;
+  const s = t.seats.find(x => x.id === seatId);
+  if (!s) return null;
+  return {tableId, seatId, pos: s.pos, quat: s.quat};
+}
+function requestSit(tableId, seatId){
+  if (state !== FSM.FREE_ROAM) return;
+  const s = findSeatInfo(tableId, seatId);
+  if(!s) {
+    console.warn("seat not found:", tableId, seatId);
+    return;
+  }
+  const d = player.position.distanceTo(s.pos);
+  if (d > INTERACT_DISTANCE) {
+    console.log("seat too far:", d);
+    return;
+  }
+  sit(s);
+}
+
+function sit(s) {
+  seated = s;
+  state = FSM.SEATED;
+  player.position.copy(s.pos);
+  camera.position.y = EYE_HEIGHT_SEATED;
+  if (s.quat) player.quaternion.copy(s.quat);
+  console.log("[sit]", s.tableId, s.seatId);
+}
+function requestUnseat(){
+  if (state === FSM.FREE_ROAM) return;
+  unseat();
+}
+function unseat(){
+  console.log("unseat");
+  state = FSM.FREE_ROAM;
+  seated = null;
+  camera.position.y = EYE_HEIGHT_STAND;
+}
+function getSeatForTable(tableId) {
+  if (!window.__tableInfos) return null;
+  const t = window.__tableInfos.find(x => x.id === tableId);
+  if (!t || !t.seats || t.seats.length === 0) return null;
+  return t.seats[0];
+}
+function trySelectTableAndSit(){
+  const hitTable = getLookAtTable();
+  if (!hitTable) return false;
+
+  const tableId = hitTable.name;
+  const info = tableRegistry.get(tableId);
+  if (!info) return false;
+
+  const d = distanceToTable(info, player.position);
+  if (d > INTERACT_DISTANCE) {
+    console.log("table too far:", tableId, d);
+    return true;
+  }
+  const seat = getFirstSeatForTable(tableId);
+  if (!seat) {
+    console.warn("no seat for table:", tableId);
+    return true;
+  }
+  requestSitSeat(seat);
+  sit({
+    tableId,
+    seatId: seat.id,
+    pos: seat.pos,
+    quat: seat.quat,
+  });
+  return true;
+}
+function handleActionE(){
+  switch(state){
+    case FSM.FREE_ROAM:
+      trySelectTableAndSit();
+      break;
+    case FSM.SEATED:
+      state = FSM.UI_OPEN;
+      console.log("[FSM] enter UI_OPEN");
+      break;
+    case FSM.UI_OPEN:
+      console.log("[FSM] confirm UI");
+      break;
+  }
+}
+function initSeatsStateFromTableInfos(tableInfos){
+  seatsState.clear();
+  for (const t of tableInfos){
+    for (const s of t.seats){
+      const id = s.id;
+      const key = `${t.id}_${s.id}`;
+      seatsState.set(key,{
+        key,
+        tableId: t.id,
+        id,
+        seatId: id,
+        pos: s.pos.clone(),
+        quat: s.quat?.clone?.() ?? new THREE.Quaternion(),
+        occupiedBy: null,
+      });
+    }
+  }
+}
+function seatKey(tableId, seatId) {
+  return `${tableId}_${seatId}`;
+}
+function getSeatState(tableId, seatId){
+  return seatsState.get(seatKey(tableId, seatId)) ?? null;
+}
+function getFirstSeatForTable(tableId) {
+  for (const s of seatsState.values()){
+    if (s.tableId === tableId) return s;
+  }
+  return null;
+}
+function canSitSeat(seat, myPlayerId = "local"){
+  if (!seat) return false;
+  if (seat.occupiedBy === null) return true;
+  return seat.occupiedBy === myPlayerId;
+}
+function requestSitSeat(seat){
+  if (state !== FSM.FREE_ROAM) return;
+  if (canSitSeat(seat, localPlayerId)){
+    console.log("[sit] seat occupied by", seat.occupiedBy);
+    return;
+  }
+  sitSeat(seat);
+}
+function sitSeat(seat){
+  const sid = seat.seatId ?? seat.id;
+  seat.occupiedBy = localPlayerId;
+  seated = { tableId: seat.tableId, seatId: sid };
+  state = FSM.SEATED;
+
+  player.position.copy(seat.pos);
+  player.quaternion.copy(seat.quat);
+  camera.position.y = EYE_HEIGHT_SEATED;
+
+  console.log("[sit]", seat.tableId, sid);
+}
+function unseatSeat(){
+  if (!seated) return;
+  const seat = getSeatState(seated.tableId, seated.seatId);
+  if (seat && seat.occupiedBy === localPlayerId){
+    seat.occupiedBy = null;
+  }
+  seated = null;
+  state = FSM.FREE_ROAM;
+  camera.position.y = EYE_HEIGHT_STAND;
+
+  console.log("[unseat]");
+}
+
+
 
 
 
@@ -591,7 +941,10 @@ function animate(){
   forward.normalize();
 
   const right = new THREE.Vector3();
-  right.crossVectors(forward, camera.up).normalize();
+  const WORLD_UP = new THREE.Vector3(0, 1, 0);
+  right.crossVectors(forward, WORLD_UP).normalize();
+
+  
 
   const delta = new THREE.Vector3();
   if (keys.forward) delta.add(forward);
@@ -599,6 +952,7 @@ function animate(){
   if (keys.right) delta.add(right);
   if (keys.left) delta.sub(right);
 
+  if (state === FSM.FREE_ROAM){
   if (delta.lengthSq() > 0){
     delta.normalize().multiplyScalar(speed);
 
@@ -611,11 +965,12 @@ function animate(){
     if (worldBounds) {
       clampToWorldBounds (nextPos, worldBounds, PLAYER_RADIUS);
     }
-
     player.position.x = nextPos.x;
     player.position.z = nextPos.z;
   }
-  const dt = 1/60;
+  }
+  const clock = new THREE.Clock();
+  const dt = clock.getDelta();
   velY -= GRAVITY * dt;
   player.position.y += velY * dt;
 
@@ -635,7 +990,7 @@ function animate(){
     isGrounded = false;
   }
 
-  const playerPos = camera.position;
+  
 
   // --- 桌子 hover / select ---
 if (tables.length > 0) {
@@ -710,9 +1065,73 @@ if (nextPotRoot !== activePotRoot) {
   console.log("active pot:", activePotRoot?.name ?? "none");
 }
 
-  controls.update();
+function updateSeatHover(){
+  for (const mesh of seatVisualByKey.values()){
+    mesh.scale.set(1, 1, 1);
+  }
+  if (!seatHitMeshes || seatHitMeshes.length === 0){
+    hoveredSeatId = null;
+    return;
+  }
+  raycaster.setFromCamera(ndc, camera);
+  const hits = raycaster.intersectObjects(seatHitMeshes, false);
+  
+  if (hits.length === 0) {
+    hoveredSeatId = null;
+    return;
+  }
+  const hit = hits [0].object;
+  const parts = hit.name.split("_");
+  const tableId = parts[2];
+  const seatId = parts.slice(3).join("_");
+
+  hoveredSeatTableId = tableId;
+  hoveredSeatId = seatId;
+
+  const key = `${tableId}_${seatId}`;
+  const visual = seatVisualByKey.get(key);
+  if (visual) visual.scale.set(1.35, 1.35, 1.35);
+
+  if (hoveredSeatId !== lastHoverSeatId) {
+    console.log("[hoverSeat]", tableId, hoveredSeatId);
+    lastHoverSeatId = hoveredSeatId;
+  }
+}
+if (hudEl) hudEl.textContent = `hover: ${hoveredSeatId ?? "-"}`;
+
+  updateSeatHover();
+
+  for (const s of seatsState.values()){
+    const key = `${s.tableId}_${s.seatId}`;
+    const visual = seatVisualByKey.get(key);
+    if (!visual) continue;
+    if (s.occupiedBy){
+      visual.scale.set(0.85, 0.85, 0.85);
+    }
+  }
+
+  if(pendingActionE){
+    pendingActionE = false;
+    handleActionE();
+    if (state === FSM.FREE_ROAM){
+      const handled = trySelectTableAndSit();
+      if (!handled) {
+        console.log ("no table");
+      }
+    } else if (state === FSM.SEATED){
+      state = FSM.UI_OPEN;
+      console.log("[ui] open pot ui for", seated?.tableId);
+    } else if (state === FSM.UI_OPEN){
+      console.log("[ui] confirm");
+    }
+  }
+
+  // controls.update();
   renderer.render(scene, camera);
 };
 }
 
+
+
 animate()
+

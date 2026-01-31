@@ -12,3 +12,26 @@ body{
 canvas {
   display: block;
 }
+#reticle {
+  position: fixed;
+  left: 50%;
+  top: 50;
+  width: 8px;
+  height: 8px;
+  margin-left: -4px;
+  margin-top: -4px;
+  border: 2px solid rgba(255,255,255,0.9);
+  border-radius: 50%;
+  z-index: 9999;
+  pointer-events: none;
+}
+#hud{
+  position: fixed;
+  left: 12px;
+  top: 12px;
+  font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono",  "Courier New", monospace;
+  color: rgba(255,255,255,0.9);
+  z-index: 9999;
+  pointer-events: none;
+  white-space: pre;
+}

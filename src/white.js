@@ -21,6 +21,8 @@ window.addEventListener("resize", () => {
     renderer.setSize(window.innerWidth, window.innerHeight);
 });
 
+
+
 const hud = document.createElement("div");
 hud.style.position = "fixed";
 hud.style.left = "50%";
@@ -157,6 +159,7 @@ function animate() {
         obj.position.z = THREE.MathUtils.clamp(obj.position.z, bounds.min.z, bounds.max.z);
     }
 
+    
 
     renderer.render(scene, camera);
 }
