@@ -31,6 +31,53 @@ function resize(){
 const socket = io("http://localhost:3001", { transports: ["websocket"] });
 const profile = JSON.parse(sessionStorage.getItem("polypot_profile") || "{}");
 const remotePlayers = new Map();
+let localPlayerId = null;
+
+socket.on("connect", () => {
+  localPlayerId = socket.id;
+  console.log("[local] localPlayerId =", localPlayerId);
+});
+
+socket.on("disconnect", (reason) => {
+  console.log("[socket] disconnected", reason);
+});
+
+
+socket.on("snapshot", (snap) => {
+  console.log("[socket] snapshot", snap);
+  for (const s of snap.seats) {
+    const localseat = seatsState.get(s.seatKey);
+    if (localseat) {
+      localseat.occupiedBy = s.occupiedBy ?? null;
+    }
+  }
+});
+socket.on("seatUpdated", (s) => {
+  console.log("[socket] seatUpdated raw =", s);
+  const localseat = seatsState.get(s.seatKey);
+  console.log(
+    "[seatUpdated check]",
+    "seatKey =", s.seatKey,
+    "incoming occupiedBy =", s.occupiedBy,
+    "localPlayerId =", localPlayerId,
+    "hasLocalSeat =", !!localseat
+  );
+  if (!localseat) return;
+  localseat.occupiedBy = s.occupiedBy ?? null;
+  if (localseat.occupiedBy === localPlayerId && state === FSM.FREE_ROAM){
+    sitSeatLocalSnap (localseat);
+  }
+  if (
+    seated &&
+    s.seatKey === `${seated.tableId}_${seated.seatId}` &&
+    localseat.occupiedBy === null
+  ){
+    seated = null;
+    state = FSM.FREE_ROAM;
+    camera.position.y = EYE_HEIGHT_STAND;
+    console.log("[unseat local snap]");
+  }
+});
 
 function makeRemoteAvatar () {
   const geo = new THREE.CapsuleGeometry(0.3, 1.0, 4, 8);
@@ -49,15 +96,24 @@ function spawnRemote(player) {
   remotePlayers.set(player.id, avatar);
 };
 
-socket.emit ("join", profile, ({ self, other }) => {
-  other.forEach(spawnRemote);
-  if (envRoot && self.seatId) {
-    const anchor = envRoot.getObjectByName (self.seatId);
-    if (anchor) {
-      player.position.set(anchor.position.x, 1.6, anchor.position.z + 1.0);
-    }
+let joinAcked = false;
+
+
+socket.emit ("join", profile, ({ self, other  }) => {
+  joinAcked = true;
+  if (!self?.id) {
+    console.warn("[join ack] missing self.id", self);
+    return;
   }
+  localPlayerId = self.id;
+  console.log("[join ack] localPlayerId =", localPlayerId, "other =", other);
 });
+
+setTimeout(() => {
+  if (!joinAcked) { 
+    console.warn("[join] NO ACK from server (join callback not called)");
+  }
+}, 500);
 
 socket.on("player:join", (p) => {
   spawnRemote(p);
@@ -67,7 +123,7 @@ socket.on("player:leave", ({ id }) => {
   despawnRemote(id);
 });
 
-socket.on("player: move", ({ id, pos, rotY }) => {
+socket.on("player:move", ({ id, pos, rotY }) => {
   const obj = remotePlayers.get(id);
   if (!obj) return;
   obj.position.set(pos.x, pos.y, pos.z);
@@ -167,7 +223,7 @@ let isSeated = false;
 let seated = null;
 let pendingActionE = false;
 
-const localPlayerId = "local";
+
 const seatAnchorByKey = new Map();
 const hudEl = document.getElementById("hud");
 const colliders = [];
@@ -327,11 +383,6 @@ window.addEventListener("keydown", (e) => {
   if (e.code === "ArrowRight" || e.code === "KeyD") keys.right = true;
   if (e.code === "ShiftLeft" || e.code === "ShiftRight") keys.boost = true;
   if (e.code === "KeyE") {
-    if (hoveredTableId && hoveredSeatId){
-      snapToSeat(hoveredTableId, hoveredSeatId);
-    } else {
-      console.log("[E] no seat hovered");
-    }
     pendingActionE = true;
   };
   
@@ -365,7 +416,8 @@ window.addEventListener("keyup", (e) => {
 
 
 
-
+const tableLike = [];
+const seatLike = [];
 const tables = [];
 const tableBoxes = new Map();
 let envRoot = null;
@@ -383,8 +435,7 @@ loader.load(
 
   console.log("gltf.scene:", gltf.scene);
   console.log("children:", gltf.scene.children.map(c => c.name));
-  const tableLike = [];
-  const seatLike = [];
+  
   gltf.scene.traverse((o) => {
     const n = (o.name || "").toLowerCase();
     if (n.includes("table")) tableLike.push(o.name);
@@ -758,60 +809,14 @@ function snapToSeat (tableId, seatId) {
   }
   const obj = controls.getObject();
   const eyeHeight = 1.2;
-  obj.position.set(anchor.pos.x, anchor.pos.y, eyeHeight, anchor.pos.z);
+  obj.position.set(anchor.pos.x, eyeHeight, anchor.pos.z);
   const e = new THREE.Euler().setFromQuaternion(anchor.quat, "YXZ");
   obj.rotation.set(0, e.y, 0);
   camera.position.x = 0;
   console.log("[snapToSeat] snapped to", key, "pos=", obj.position.toArray());
   isSeated = true;
 }
-function findSeatInfo(tableId,seatId){
-  if (!window.__tableInfos) return null;
-  const t = window.__tableInfos.find(x => x.id === tableId);
-  if (!t) return null;
-  const s = t.seats.find(x => x.id === seatId);
-  if (!s) return null;
-  return {tableId, seatId, pos: s.pos, quat: s.quat};
-}
-function requestSit(tableId, seatId){
-  if (state !== FSM.FREE_ROAM) return;
-  const s = findSeatInfo(tableId, seatId);
-  if(!s) {
-    console.warn("seat not found:", tableId, seatId);
-    return;
-  }
-  const d = player.position.distanceTo(s.pos);
-  if (d > INTERACT_DISTANCE) {
-    console.log("seat too far:", d);
-    return;
-  }
-  sit(s);
-}
 
-function sit(s) {
-  seated = s;
-  state = FSM.SEATED;
-  player.position.copy(s.pos);
-  camera.position.y = EYE_HEIGHT_SEATED;
-  if (s.quat) player.quaternion.copy(s.quat);
-  console.log("[sit]", s.tableId, s.seatId);
-}
-function requestUnseat(){
-  if (state === FSM.FREE_ROAM) return;
-  unseat();
-}
-function unseat(){
-  console.log("unseat");
-  state = FSM.FREE_ROAM;
-  seated = null;
-  camera.position.y = EYE_HEIGHT_STAND;
-}
-function getSeatForTable(tableId) {
-  if (!window.__tableInfos) return null;
-  const t = window.__tableInfos.find(x => x.id === tableId);
-  if (!t || !t.seats || t.seats.length === 0) return null;
-  return t.seats[0];
-}
 function trySelectTableAndSit(){
   const hitTable = getLookAtTable();
   if (!hitTable) return false;
@@ -830,27 +835,29 @@ function trySelectTableAndSit(){
     console.warn("no seat for table:", tableId);
     return true;
   }
+  console.log("[debug] seat typeof", Array.isArray(seat) ? "array" : typeof seat, seat);
+
   requestSitSeat(seat);
-  sit({
-    tableId,
-    seatId: seat.id,
-    pos: seat.pos,
-    quat: seat.quat,
-  });
   return true;
 }
 function handleActionE(){
   switch(state){
     case FSM.FREE_ROAM:
+      if (hoveredSeatTableId && hoveredSeatId) {
+        const seat = getSeatState(hoveredSeatTableId, hoveredSeatId);
+        if (seat) requestSitSeat (seat);
+        else console.log("[E] hovered seat missing in state");
+        return;
+      }
       trySelectTableAndSit();
-      break;
+      return;
     case FSM.SEATED:
       state = FSM.UI_OPEN;
       console.log("[FSM] enter UI_OPEN");
-      break;
+      return;
     case FSM.UI_OPEN:
       console.log("[FSM] confirm UI");
-      break;
+      return;
   }
 }
 function initSeatsStateFromTableInfos(tableInfos){
@@ -878,8 +885,8 @@ function getSeatState(tableId, seatId){
   return seatsState.get(seatKey(tableId, seatId)) ?? null;
 }
 function getFirstSeatForTable(tableId) {
-  for (const s of seatsState.values()){
-    if (s.tableId === tableId) return s;
+  for (const s of seatsState.values()) {
+    if (s.tableId === tableId) return s; 
   }
   return null;
 }
@@ -888,17 +895,40 @@ function canSitSeat(seat, myPlayerId = "local"){
   if (seat.occupiedBy === null) return true;
   return seat.occupiedBy === myPlayerId;
 }
-function requestSitSeat(seat){
+function requestSitSeat(seatLike){
+  if (Array.isArray(seatLike)) {
+  console.warn("[sit] requestSitSeat got array, ignoring", seatLike);
+  return;
+  }
+  console.log("[TRACE requestSitSeat] isArray=", Array.isArray(seatLike), seatLike);
+  console.trace("[TRACE stack] requestSitSeat");
   if (state !== FSM.FREE_ROAM) return;
-  if (canSitSeat(seat, localPlayerId)){
-    console.log("[sit] seat occupied by", seat.occupiedBy);
+
+  const key = 
+  seatLike?.key ??
+  (seatLike?.tableId && (seatLike?.seatId ?? seatLike?.id)
+  ? `${seatLike.tableId}_${seatLike.seatId ?? seatLike.id}`
+  : null);
+
+  if (!key) {
+    console.warn("[sit] missing seatKey", seatLike);
     return;
   }
-  sitSeat(seat);
+  const Seat = seatsState.get(key);
+  if (!Seat) {
+    console.warn("[sit] seat not in seatsState", key);
+    return;
+  }
+  if (!canSitSeat(Seat, localPlayerId)){
+    console.log("[sit] denied locally occupied by =", Seat.occupiedBy);
+    return;
+  }
+  socket.emit("requestSitSeat", {seatKey: Seat.key});
+  console.log("[sit] requested", Seat.key);
 }
-function sitSeat(seat){
+function sitSeatLocalSnap(seat){
   const sid = seat.seatId ?? seat.id;
-  seat.occupiedBy = localPlayerId;
+  
   seated = { tableId: seat.tableId, seatId: sid };
   state = FSM.SEATED;
 
@@ -906,25 +936,19 @@ function sitSeat(seat){
   player.quaternion.copy(seat.quat);
   camera.position.y = EYE_HEIGHT_SEATED;
 
-  console.log("[sit]", seat.tableId, sid);
+  console.log("[sit local snap]", seat.tableId, sid);
 }
 function unseatSeat(){
   if (!seated) return;
-  const seat = getSeatState(seated.tableId, seated.seatId);
-  if (seat && seat.occupiedBy === localPlayerId){
-    seat.occupiedBy = null;
-  }
-  seated = null;
-  state = FSM.FREE_ROAM;
-  camera.position.y = EYE_HEIGHT_STAND;
-
-  console.log("[unseat]");
+  const key = `${seated.tableId}_${seated.seatId}`;
+  socket.emit("requestUnseat", {seatKey: key});
+  console.log("[unseat] requested", key);
 }
 
 
 
 
-
+const clock = new THREE.Clock();
 const moveDir = new THREE.Vector3();
 
 function animate(){
@@ -969,7 +993,7 @@ function animate(){
     player.position.z = nextPos.z;
   }
   }
-  const clock = new THREE.Clock();
+  
   const dt = clock.getDelta();
   velY -= GRAVITY * dt;
   player.position.y += velY * dt;
@@ -1113,17 +1137,6 @@ if (hudEl) hudEl.textContent = `hover: ${hoveredSeatId ?? "-"}`;
   if(pendingActionE){
     pendingActionE = false;
     handleActionE();
-    if (state === FSM.FREE_ROAM){
-      const handled = trySelectTableAndSit();
-      if (!handled) {
-        console.log ("no table");
-      }
-    } else if (state === FSM.SEATED){
-      state = FSM.UI_OPEN;
-      console.log("[ui] open pot ui for", seated?.tableId);
-    } else if (state === FSM.UI_OPEN){
-      console.log("[ui] confirm");
-    }
   }
 
   // controls.update();
