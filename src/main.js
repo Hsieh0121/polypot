@@ -22,7 +22,7 @@ function resize(){
   const height = window.innerHeight;
 
   camera.aspect = width / height;
-  camera.updateProjectionMatrix();
+  camera.updateProjectionMatrix(true);
 
   renderer.setSize(width, height);
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -32,6 +32,78 @@ const socket = io("http://localhost:3001", { transports: ["websocket"] });
 const profile = JSON.parse(sessionStorage.getItem("polypot_profile") || "{}");
 const remotePlayers = new Map();
 let localPlayerId = null;
+
+const FSM = {
+  FREE_ROAM: "FREE_ROAM",
+  SEAT_SELECTING: "SEAT_SELECTING",
+  SEATED: "SEATED",
+  UI_OPEN: "UI_OPEN",
+};
+const ACTION = {
+  SELECT: "SELECT",
+  CANCEL: "CANCEL",
+  CONFIRM: "CONFIRM",
+  TOGGLE_UI: "TOGGLE_UI",
+  JUMP: "JUMP",
+};
+const actionQueue = [];
+let state = FSM.FREE_ROAM;
+const seatsState = new Map();
+const groundRaycaster = new THREE.Raycaster();
+const viewRaycaster = new THREE.Raycaster();
+const seatRaycaster = new THREE.Raycaster();
+seatRaycaster.near = 0;
+seatRaycaster.far = Infinity;
+seatRaycaster.layers.set(0);
+
+let highlightedTable = null;
+let savedEmissive = new Map();
+let selectedTable = null;
+let pendingSelect = false;
+let hoveredEntry = null;
+let selectedTableId = null;
+let activeTableId = null;
+let activeEntry = null;
+let hoveredSeatKey = null;
+let lastHoveredSeatKey = null;
+let hoveredTableId = null;
+let hoveredSeatId = null;
+let hoveredSeatTableId = null;
+let seatMakers = [];
+let seatHitMeshes = [];
+let seatVisualByKey = new Map();
+let isSeated = false;
+let seated = null;
+let pendingActionE = false;
+
+
+const seatAnchorByKey = new Map();
+const hudEl = document.getElementById("hud");
+const colliders = [];
+const PLAYER_RADIUS = 0.65;
+const INTERACT_DISTANCE = 3.0;
+const _tmpClosest = new THREE.Vector3();
+
+const walkables = [];
+let velY = 0;
+let isGrounded = true;
+
+const GRAVITY = 25;      // 重力強度，之後可調
+const JUMP_VEL = 8;      // 起跳速度，之後可調
+const GROUND_Y = 1.6;      // 先假設地板高度是 0，之後再改成實際地板
+const EYE_HEIGHT = 3.5;         // 你目前用的站立高度
+const GROUND_EPS = 0.05;        // 容差，避免抖動
+const RAY_FAR = 10;            // 往下找地面的距離
+const EYE_HEIGHT_SEATED = 3;
+const EYE_HEIGHT_STAND = 4;
+
+const  potRayTargetsByTableId = new Map();
+const tableLike = [];
+const seatLike = [];
+const tables = [];
+const tableBoxes = new Map();
+let envRoot = null;
+let worldBounds = null;  
 
 socket.on("connect", () => {
   localPlayerId = socket.id;
@@ -55,6 +127,7 @@ socket.on("snapshot", (snap) => {
 socket.on("seatUpdated", (s) => {
   console.log("[socket] seatUpdated raw =", s);
   const localseat = seatsState.get(s.seatKey);
+  if (!localseat) return;
   console.log(
     "[seatUpdated check]",
     "seatKey =", s.seatKey,
@@ -62,10 +135,10 @@ socket.on("seatUpdated", (s) => {
     "localPlayerId =", localPlayerId,
     "hasLocalSeat =", !!localseat
   );
-  if (!localseat) return;
   localseat.occupiedBy = s.occupiedBy ?? null;
-  if (localseat.occupiedBy === localPlayerId && state === FSM.FREE_ROAM){
-    sitSeatLocalSnap (localseat);
+  if (localseat.occupiedBy === localPlayerId &&
+    (state === FSM.FREE_ROAM || state === FSM.SEAT_SELECTING)) {
+    sitSeatLocalSnap(localseat);
   }
   if (
     seated &&
@@ -95,6 +168,10 @@ function spawnRemote(player) {
   scene.add(avatar);
   remotePlayers.set(player.id, avatar);
 };
+
+function enqueueAction (type, payload = null) {
+  actionQueue.push({ type, payload, t: performance.now() });
+}
 
 let joinAcked = false;
 
@@ -137,11 +214,17 @@ function getYawFromCamera() {
   return e.y;
 }
 
-const player = new THREE.Object3D();
-scene.add(player);
-player.add(camera);
-camera.position.set(0, 5, 0);
+
+const controls = new PointerLockControls(camera, renderer.domElement);
+scene.add(controls.object);
+const player = controls.object;
+camera.position.set(0,EYE_HEIGHT , 0);
 const playerPos = player.position;
+
+
+
+
+
 
 const now = performance.now();
 if (now - lastNetSend > 50) {
@@ -194,42 +277,11 @@ function hideHUD(){
   hub.style.display = "none";
 }
 
-const FSM = {
-  FREE_ROAM: "FREE_ROAM",
-  SEATED: "SEATED",
-  UI_OPEN: "UI_OPEN",
-};
-let state = FSM.FREE_ROAM;
 
-const seatsState = new Map();
+const p = new THREE.Vector3();
+camera.getWorldPosition(p);
+console.log("[camera world pos]", p.toArray());
 
-const raycaster = new THREE.Raycaster();
-let highlightedTable = null;
-let savedEmissive = new Map();
-let selectedTable = null;
-let pendingSelect = false;
-let hoveredEntry = null;
-let selectedTableId = null;
-let activeTableId = null;
-let activeEntry = null;
-let hoveredTableId = null;
-let hoveredSeatId = null;
-let hoveredSeatTableId = null;
-let lastHoverSeatId = null;
-let seatMakers = [];
-let seatHitMeshes = [];
-let seatVisualByKey = new Map();
-let isSeated = false;
-let seated = null;
-let pendingActionE = false;
-
-
-const seatAnchorByKey = new Map();
-const hudEl = document.getElementById("hud");
-const colliders = [];
-const PLAYER_RADIUS = 0.65;
-const INTERACT_DISTANCE = 3.0;
-const _tmpClosest = new THREE.Vector3();
 
 
 function distanceToTable(entry, playerPos){
@@ -249,8 +301,13 @@ function buildTableInfo(tableRoot){
     entry.bbox = box;
   });
 
-  const potRef = findFirstMeshByNameIncludes(tableRoot, ["potbody", "soup", "pothandle", "potstand", "stovebody", "stovebutton", "stovecap", "fire"]) || null;
+  const potMesh = findFirstMeshByNameIncludes(tableRoot, ["potbody", "soup", "pothandle", "potstand", "stovebody", "stovebutton", "stovecap", "fire"]) || null;
   const seatPoints = [];
+
+  let potRoot = null;
+  if (potMesh) {
+    potRoot = potMesh.parent;
+  }
 
   return {
     id: tableRoot.name,
@@ -258,7 +315,8 @@ function buildTableInfo(tableRoot){
     bbox,
     center,
     seatPoints,
-    potRef,
+    potRef: potMesh,
+    potRoot,
   };
 }
 
@@ -332,28 +390,14 @@ function trySelectHoverTable(){
 }
 
 
-const controls = new PointerLockControls(camera, renderer.domElement);
-console.log("[controls]", controls);
-console.log("[controls keys]", controls && Object.keys(controls));
-camera.position.set(0, 4, 5);
 
 
 
 
 
 
-const walkables = [];
-let velY = 0;
-let isGrounded = true;
 
-const GRAVITY = 25;      // 重力強度，之後可調
-const JUMP_VEL = 8;      // 起跳速度，之後可調
-const GROUND_Y = 1.6;      // 先假設地板高度是 0，之後再改成實際地板
-const EYE_HEIGHT = 1.6;         // 你目前用的站立高度
-const GROUND_EPS = 0.05;        // 容差，避免抖動
-const RAY_FAR = 10;            // 往下找地面的距離
-const EYE_HEIGHT_SEATED = 3;
-const EYE_HEIGHT_STAND = 4;
+
 
 const ndc = new THREE.Vector2(0, 0);
 window.addEventListener("mousemove", (e) => {
@@ -376,6 +420,7 @@ const keys = {
 };
 
 window.addEventListener("keydown", (e) => {
+  if (e.repeat) return;
   console.log ("keydown:", e.code, e.key);
   if (e.code === "ArrowUp" || e.code === "KeyW") keys.forward = true;
   if (e.code === "ArrowDown" || e.code === "KeyS") keys.back = true;
@@ -383,25 +428,21 @@ window.addEventListener("keydown", (e) => {
   if (e.code === "ArrowRight" || e.code === "KeyD") keys.right = true;
   if (e.code === "ShiftLeft" || e.code === "ShiftRight") keys.boost = true;
   if (e.code === "KeyE") {
-    pendingActionE = true;
-  };
+  console.log("[input] enqueue SELECT, state=", state);
+  enqueueAction(ACTION.SELECT);
+  } 
   
   if (e.code === "KeyR"){
-    if (selectedTable){
-      console.log("cancel selection:", selectedTableId);
-      selectedTable = null;
-      selectedTableId = null;
-    }
-    unseatSeat();
+    enqueueAction(ACTION.CANCEL);
     return;
+  }
+  if (e.code === "Enter") {
+  console.log("[input] enqueue CONFIRM, state=", state);
+  enqueueAction(ACTION.CONFIRM);
   }
   if (e.code === "Space"){
     e.preventDefault();
-    if (isGrounded){
-      velY = JUMP_VEL;
-      isGrounded = false;
-      console.log("[jump] start", {velY, y: player.position.y});
-    }
+    enqueueAction(ACTION.JUMP);
     return;
   }
 })
@@ -416,12 +457,7 @@ window.addEventListener("keyup", (e) => {
 
 
 
-const tableLike = [];
-const seatLike = [];
-const tables = [];
-const tableBoxes = new Map();
-let envRoot = null;
-let worldBounds = null;    
+  
 
 const loader = new GLTFLoader();
 loader.load(
@@ -484,6 +520,23 @@ loader.load(
     console.log("made table materials unique");
     console.log("envBox:", envBox.min, envBox.max);
 
+    potRayTargetsByTableId.clear();
+    for (const [tableId, info] of tableRegistry.entries()){
+      const root = info.potRoot;
+      if (!root) {
+        console.warn("[pot] missing potRoot for", tableId);
+        potRayTargetsByTableId.set(tableId,[]);
+        continue;
+      }
+      const meshes = [];
+      root.traverse((o) => {
+        if (o.isMesh) meshes.push(o);
+      });
+      potRayTargetsByTableId.set(tableId, meshes);
+      console.log("[pot targets]", tableId, meshes.map(m => m.name));
+    }
+    console.log("[pot] targets ready", Array.from(potRayTargetsByTableId.entries()).map(([k, v]) => [k, v.length]));
+
     function shrinkBoxXZToCenter(box, scaleX = 0.42, scaleZ = 0.42, offsetXRatio = 0, offsetZRatio = 0) {
     const center = new THREE.Vector3();
     box.getCenter(center);
@@ -514,44 +567,38 @@ loader.load(
     }
 
     function scanTablesAndSeatsById(envRoot){
-      envRoot.updateMatrixWorld(true);
-
-      const tablesByNum = new Map();
-      const seatsByNum = new Map();
-
-      envRoot.traverse((o) => {
-        const n = (o.name || "").toLowerCase();
-        const mt = n.match(/^table(\d+)$/);
-        if (mt) tablesByNum.set(Number(mt[1]), o);
-        const ms = n.match(/^seat[_-]?(\d+)$/);
-        if (ms) seatsByNum.set(Number(ms[1]), o);
-      });
       const tables = [];
-      for (const [num, tableObj] of tablesByNum.entries()) {
-        const table = { id: `table${num}`, obj: tableObj, seats: []};
-        const seatObj = seatsByNum.get(num);
-        if (seatObj) {
-          const pos = new THREE.Vector3();
-          const quat = new THREE.Quaternion();
-          const scl = new THREE.Vector3();
-          seatObj.matrixWorld.decompose(pos, quat, scl);
 
-          table.seats.push({
-            id: `seat_${num}`,
-            obj: seatObj,
-            pos,
-            quat,
-          });
-        }
+      for (let i = 1; i <= 8; i++){
+        const tableObj = envRoot.getObjectByName(`table${i}`);
+        if (!tableObj) continue;
+
+        tableObj.updateWorldMatrix(true, true);
+
+        const table = { id: `table${i}`, obj: tableObj, seats: [] };
+
+        tableObj.traverse((o) => {
+          const n = (o.name || "").toLowerCase();
+          if (n.startsWith("seat")) {
+            const pos = new THREE.Vector3();
+            const quat = new THREE.Quaternion();
+            const scl = new THREE.Vector3();
+            o.matrixWorld.decompose(pos, quat, scl);
+
+            table.seats.push({
+              id: o.name,   // seat_1 / seat_A / whatever
+              obj: o,
+              pos,
+              quat,
+            });
+          }
+        });
+
         tables.push(table);
       }
-      tables.sort((a, b) => {
-        const na = Number(a.id.replace("table", ""));
-        const nb = Number(b.id.replace("table", ""));
-        return na - nb;
-      });
+
       return tables;
-    };
+    }
 
     envRoot.updateWorldMatrix(true, true);
     const tableInfos = scanTablesAndSeatsById(envRoot);
@@ -573,6 +620,7 @@ loader.load(
     group: null,
     enabled: true,
     };
+    
     function clearSeatDebug (scene) {
     if (seatDebug.group) {
       scene.remove(seatDebug.group);
@@ -593,6 +641,7 @@ loader.load(
     const mat = new THREE.MeshBasicMaterial({ color: 0xff00ff , depthTest: false, depthWrite: false});
     const ball = new THREE.Mesh (geom, mat);
     ball.renderOrder = 999; 
+    const HIT_Y_OFFSET = 1.2;
 
 
     for (const t of tableInfos) {
@@ -600,14 +649,14 @@ loader.load(
         console.log("[debug seat world pos]", t.id, s.id, s.pos.toArray());
         const m = new THREE.Mesh(geom, mat);
         m.name = `DBG_SEAT_${t.id}_${s.id}`;
-        m.position.copy(s.pos);
+        m.position.set(s.pos.x, s.pos.y + HIT_Y_OFFSET, s.pos.z);
         m.renderOrder = 999;
         m.frustumCulled = false;
         g.add(m);
 
         const axes = new THREE.AxesHelper(0.6);
         axes.name = `__seatAxes_${t.id}_${s.id}`;
-        axes.position.copy(s.pos);
+        axes.position.set(s.pos.x, s.pos.y + HIT_Y_OFFSET, s.pos.z);
         axes.quaternion.copy(s.quat);
         axes.renderOrder = 999;
         axes.frustumCulled = false;
@@ -622,7 +671,8 @@ loader.load(
         });
         const hit = new THREE.Mesh(hitGeom, hitMat);
         hit.name = `HIT_SEAT_${t.id}_${s.id}`;
-        hit.position.copy(s.pos);
+        
+        hit.position.set(s.pos.x, s.pos.y + HIT_Y_OFFSET, s.pos.z);
         hit.renderOrder = 998;
         hit.frustumCulled = false;
         g.add(hit);
@@ -633,6 +683,15 @@ loader.load(
     }
     
     seatHitMeshes = g.children.filter(o => o.isMesh && o.name?.startsWith("HIT_SEAT_"));
+
+    // --- force seat hit meshes raycastable ---
+    for (const m of seatHitMeshes) {
+      m.layers.set(0);
+      m.visible = true;
+    }
+    camera.layers.enable(0);
+    viewRaycaster.layers.set(0);
+    
     
     scene.add(g);
     seatDebug.group = g;
@@ -687,6 +746,9 @@ loader.load(
     if (floorObj) {
     worldBounds = new THREE.Box3().setFromObject(floorObj);
     console.log("worldBounds", worldBounds.min, worldBounds.max);
+    const center = new THREE.Vector3();
+    worldBounds.getCenter(center);
+    player.position.set(center.x, EYE_HEIGHT, center.z);
     } else {
     console.warn("floorObj not found");
     }
@@ -709,8 +771,11 @@ loader.load(
 
 function getLookAtTable(){
   if (!tables || tables.length === 0) return null;
-  raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
-  const hits = raycaster.intersectObjects(tables, true);
+  player.updateMatrixWorld(true);
+  camera.updateMatrixWorld(true);
+  viewRaycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
+  viewRaycaster.far = INTERACT_DISTANCE;
+  const hits = viewRaycaster.intersectObjects(tables, true);
   if (hits.length === 0) return null;
   let obj = hits[0].object;
   while (obj && !tables.includes(obj)) obj = obj.parent;
@@ -768,10 +833,11 @@ function makeMaterialsUnique(root){
 function getGroundYUnderPlayer(playerPos){
   if (walkables.length === 0) return null;
   const origin = playerPos.clone();
+  origin.y += 2.0;
   const dir = new THREE.Vector3(0, -1, 0);
-  raycaster.set(origin, dir);
-  raycaster.far = RAY_FAR;
-  const hits = raycaster.intersectObjects(walkables, true);
+  groundRaycaster.set(origin, dir);
+  groundRaycaster.far = RAY_FAR + 2;
+  const hits = groundRaycaster.intersectObjects(walkables, true);
   for (const h of hits){
     if (h.face && h.face.normal && h.face.normal.y > 0.5){
       return h.point.y;
@@ -807,7 +873,7 @@ function snapToSeat (tableId, seatId) {
     console.warn("[snapToSeat] missing anchor:", key);
     return;
   }
-  const obj = controls.getObject();
+  const obj = player;
   const eyeHeight = 1.2;
   obj.position.set(anchor.pos.x, eyeHeight, anchor.pos.z);
   const e = new THREE.Euler().setFromQuaternion(anchor.quat, "YXZ");
@@ -840,26 +906,143 @@ function trySelectTableAndSit(){
   requestSitSeat(seat);
   return true;
 }
-function handleActionE(){
-  switch(state){
-    case FSM.FREE_ROAM:
-      if (hoveredSeatTableId && hoveredSeatId) {
-        const seat = getSeatState(hoveredSeatTableId, hoveredSeatId);
-        if (seat) requestSitSeat (seat);
-        else console.log("[E] hovered seat missing in state");
+
+
+function dispatchAction(action) {
+  const { type } = action;
+
+  // ---- Global CANCEL（任何 state 都先吃）----
+  if (type === ACTION.CANCEL) {
+    if (state === FSM.UI_OPEN) {
+      state = FSM.SEATED;
+      console.log("[FSM] UI_OPEN -> SEATED");
+      return;
+    }
+
+    if (state === FSM.SEATED) {
+      unseatSeat();
+      return;
+    }
+
+    if (state === FSM.SEAT_SELECTING) {
+      console.log("[FSM] SEAT_SELECTING -> FREE_ROAM");
+      selectedTableId = null;
+      state = FSM.FREE_ROAM;
+      return;
+    }
+
+    if (state === FSM.FREE_ROAM) {
+      if (selectedTableId) {
+        console.log("[FSM] cancel table selection", selectedTableId);
+        selectedTableId = null;
+      }
+      return;
+    }
+
+    return;
+  }
+      if (type === ACTION.JUMP) {
+    if (state === FSM.FREE_ROAM && isGrounded) {
+      velY = JUMP_VEL;
+      isGrounded = false;
+      console.log("[jump]");
+    }
+    return;
+  }
+
+  // ---- State-specific handling ----
+  switch (state) {
+
+    case FSM.FREE_ROAM: {
+      if (type === ACTION.SELECT) {
+        const hitTable = getLookAtTable();
+        if (!hitTable) {
+          console.log("[SELECT] no table");
+          return;
+        }
+
+        const tableId = hitTable.name;
+        const seat = getFirstSeatForTable(tableId);
+        if (!seat) {
+          console.warn("[SELECT] no seat for", tableId);
+          return;
+        }
+
+        
+
+      selectedTableId = tableId;
+      state = FSM.SEAT_SELECTING;
+      console.log("[FSM] FREE_ROAM -> SEAT_SELECTING (auto)", tableId);
+
+      requestSitSeat(seat); // ← 直接送
         return;
       }
-      trySelectTableAndSit();
+
+      
       return;
-    case FSM.SEATED:
-      state = FSM.UI_OPEN;
-      console.log("[FSM] enter UI_OPEN");
+    }
+
+
+    case FSM.SEAT_SELECTING: {
+      console.log("[FSM] in SEAT_SELECTING, got action=", type, "selectedTableId=", selectedTableId);
+
       return;
-    case FSM.UI_OPEN:
-      console.log("[FSM] confirm UI");
+    }
+
+
+    case FSM.SEATED: {
+      if (type === ACTION.SELECT) {
+        const potHit = getLookAtPotHitForActiveTable();
+        if (!potHit) {
+          console.log ("[SEATED] SELECT but not looking at pot");
+          return;
+        }
+        state = FSM.UI_OPEN;
+        activeTableId = seated.tableId;
+        console.log("[FSM] SEATED -> UI_OPEN table=", activeTableId, "hit=", potHit.object?.name);
+        return;
+      }
+      return;
+    }
+
+    case FSM.UI_OPEN: {
+      if (type === ACTION.CONFIRM) {
+        console.log("[UI] confirm");
+        return;
+      }
+      return;
+    }
+
+    default:
+      console.warn("[dispatchAction] unknown state:", state);
       return;
   }
 }
+function updateHUD() {
+  if (state === FSM.FREE_ROAM) {
+    if (hoveredTableId) showHUD(`Look: ${hoveredTableId}  (E to select)`);
+    else hideHUD();
+    return;
+  }
+
+  if (state === FSM.SEAT_SELECTING) {
+    showHUD(`Selected: ${selectedTableId ?? "-"}  (E/Enter to sit, R/Esc cancel)`);
+    return;
+  }
+
+  if (state === FSM.SEATED) {
+    const potHit = getLookAtPotHitForActiveTable();
+    if (potHit) showHUD(`Pot ready (E to open)`);
+    else showHUD(`seated at ${seated?.tableId ?? "-"}(look at pot)`);
+  }
+
+  if (state === FSM.UI_OPEN) {
+    showHUD(`UI open  (Esc back)`);
+    return;
+  }
+}
+
+
 function initSeatsStateFromTableInfos(tableInfos){
   seatsState.clear();
   for (const t of tableInfos){
@@ -896,13 +1079,13 @@ function canSitSeat(seat, myPlayerId = "local"){
   return seat.occupiedBy === myPlayerId;
 }
 function requestSitSeat(seatLike){
-  if (Array.isArray(seatLike)) {
-  console.warn("[sit] requestSitSeat got array, ignoring", seatLike);
-  return;
-  }
-  console.log("[TRACE requestSitSeat] isArray=", Array.isArray(seatLike), seatLike);
-  console.trace("[TRACE stack] requestSitSeat");
-  if (state !== FSM.FREE_ROAM) return;
+  console.log("[requestSitSeat] called, state=", state, "seatLike=", seatLike);
+  
+  const allow = (
+    state === FSM.FREE_ROAM ||
+    state === FSM.SEAT_SELECTING
+  );
+  if (!allow) return;
 
   const key = 
   seatLike?.key ??
@@ -919,10 +1102,11 @@ function requestSitSeat(seatLike){
     console.warn("[sit] seat not in seatsState", key);
     return;
   }
-  if (!canSitSeat(Seat, localPlayerId)){
-    console.log("[sit] denied locally occupied by =", Seat.occupiedBy);
-    return;
+  if (!canSitSeat(Seat, localPlayerId)) {
+  console.log("[sit] denied locally occupied by =", Seat.occupiedBy);
+  return;
   }
+
   socket.emit("requestSitSeat", {seatKey: Seat.key});
   console.log("[sit] requested", Seat.key);
 }
@@ -931,9 +1115,14 @@ function sitSeatLocalSnap(seat){
   
   seated = { tableId: seat.tableId, seatId: sid };
   state = FSM.SEATED;
+  activeTableId = seat.tableId;
 
   player.position.copy(seat.pos);
   player.quaternion.copy(seat.quat);
+
+  player.position.y = player.position.y;
+  velY = 0;
+  isGrounded = true;
   camera.position.y = EYE_HEIGHT_SEATED;
 
   console.log("[sit local snap]", seat.tableId, sid);
@@ -944,6 +1133,69 @@ function unseatSeat(){
   socket.emit("requestUnseat", {seatKey: key});
   console.log("[unseat] requested", key);
 }
+
+function getLookAtPotHitForActiveTable(){
+  if (!seated?.tableId) return null;
+  const tableId = seated.tableId;
+  const targets = potRayTargetsByTableId.get(tableId);
+  if (!targets || targets.length === 0) return null;
+
+  viewRaycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
+  viewRaycaster.far = INTERACT_DISTANCE;
+
+  const hits = viewRaycaster.intersectObjects(targets, true);
+  if(hits.length === 0) return null;
+
+  return hits[0];
+}
+
+
+
+
+function updateSeatHover() {
+  // reset visuals
+  for (const mesh of seatVisualByKey.values()) mesh.scale.set(1, 1, 1);
+
+  hoveredSeatKey = null;
+  hoveredSeatTableId = null;
+  hoveredSeatId = null;
+
+  if (!seatHitMeshes || seatHitMeshes.length === 0) return;
+
+  player.updateMatrixWorld(true);
+  camera.updateMatrixWorld(true);
+
+  seatRaycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
+
+  const hits = seatRaycaster.intersectObjects(seatHitMeshes, false);
+  if (hits.length === 0) return;
+
+  const hitObj = hits[0].object;
+  const name = hitObj.name || "";
+  const parts = name.split("_"); // HIT_SEAT_table1_seat_1
+
+  if (parts.length < 5) return;
+  if (parts[0] !== "HIT" || parts[1] !== "SEAT") return;
+
+  const tableId = parts[2];
+  const seatId = `${parts[3]}_${parts[4]}`;
+  const key = `${tableId}_${seatId}`;
+
+  hoveredSeatTableId = tableId;
+  hoveredSeatId = seatId;
+  hoveredSeatKey = key;
+
+  const visual = seatVisualByKey.get(key);
+  if (visual) visual.scale.set(1.35, 1.35, 1.35);
+
+  if (hoveredSeatKey !== lastHoveredSeatKey) {
+    console.log("[hoverSeat]", hoveredSeatKey);
+    lastHoveredSeatKey = hoveredSeatKey;
+  }
+}
+
+
+
 
 
 
@@ -994,7 +1246,11 @@ function animate(){
   }
   }
   
-  const dt = clock.getDelta();
+  const dtRaw = clock.getDelta();
+  const dt = Math.min(dtRaw, 0.05)
+
+  if (state === FSM.FREE_ROAM) {
+
   velY -= GRAVITY * dt;
   player.position.y += velY * dt;
 
@@ -1013,7 +1269,7 @@ function animate(){
   } else {
     isGrounded = false;
   }
-
+}
   
 
   // --- 桌子 hover / select ---
@@ -1089,41 +1345,33 @@ if (nextPotRoot !== activePotRoot) {
   console.log("active pot:", activePotRoot?.name ?? "none");
 }
 
-function updateSeatHover(){
-  for (const mesh of seatVisualByKey.values()){
-    mesh.scale.set(1, 1, 1);
-  }
-  if (!seatHitMeshes || seatHitMeshes.length === 0){
-    hoveredSeatId = null;
-    return;
-  }
-  raycaster.setFromCamera(ndc, camera);
-  const hits = raycaster.intersectObjects(seatHitMeshes, false);
-  
-  if (hits.length === 0) {
-    hoveredSeatId = null;
-    return;
-  }
-  const hit = hits [0].object;
-  const parts = hit.name.split("_");
-  const tableId = parts[2];
-  const seatId = parts.slice(3).join("_");
-
-  hoveredSeatTableId = tableId;
-  hoveredSeatId = seatId;
-
-  const key = `${tableId}_${seatId}`;
-  const visual = seatVisualByKey.get(key);
-  if (visual) visual.scale.set(1.35, 1.35, 1.35);
-
-  if (hoveredSeatId !== lastHoverSeatId) {
-    console.log("[hoverSeat]", tableId, hoveredSeatId);
-    lastHoverSeatId = hoveredSeatId;
-  }
+if (!window.__seatDebugOnce) {
+  window.__seatDebugOnce = true;
+  console.log("[seatDebug] seatHitMeshes len =", seatHitMeshes?.length);
+  console.log("[seatDebug] seatVisualByKey size =", seatVisualByKey?.size);
+  console.log("[seatDebug] seatAnchorByKey size =", seatAnchorByKey?.size);
 }
-if (hudEl) hudEl.textContent = `hover: ${hoveredSeatId ?? "-"}`;
+if (!window.__seatNameOnce && seatHitMeshes?.length) {
+  window.__seatNameOnce = true;
+  console.log("[seatDebug] sample hitMesh name =", seatHitMeshes[0].name);
+}
 
-  updateSeatHover();
+
+updateSeatHover();
+const t = selectedTableId ?? hoveredTableId ?? "-";
+if (hudEl) hudEl.textContent = `state=${state} table=${t}`;
+
+if (!window.__seatRayTick) {
+  window.__seatRayTick = 0;
+}
+
+
+
+if (state === FSM.FREE_ROAM || state === FSM.SEAT_SELECTING) {
+    if (hoveredSeatKey) {
+      showHUD(`Seat ${hoveredSeatKey} - Press E`);
+    } 
+  }
 
   for (const s of seatsState.values()){
     const key = `${s.tableId}_${s.seatId}`;
@@ -1134,15 +1382,38 @@ if (hudEl) hudEl.textContent = `hover: ${hoveredSeatId ?? "-"}`;
     }
   }
 
-  if(pendingActionE){
-    pendingActionE = false;
-    handleActionE();
-  }
-
   // controls.update();
-  renderer.render(scene, camera);
+  
 };
+
+while (actionQueue.length > 0) {
+  const action = actionQueue.shift();
+  console.log("[action] dispatch", action.type, "state=", state, "selectedTableId=", selectedTableId);
+  dispatchAction(action);
 }
+if (state !== window.__lastState) {
+  console.log("[FSM] state change:", window.__lastState, "->", state);
+  window.__lastState = state;
+}
+
+let shouldPotGlow = false;
+if (state === FSM.SEATED) {
+  shouldPotGlow = !!getLookAtPotHitForActiveTable();
+}
+const potRoot = seated?.tableId ? (tableRegistry.get(seated.tableId)?.potRef ?? null) : null;
+if (potRoot !== activePotRoot) {
+  if (activePotRoot) setPotHighlight(activePotRoot, false);
+  activePotRoot = potRoot;
+}
+if (activePotRoot) setPotHighlight(activePotRoot, shouldPotGlow);
+
+
+
+updateHUD();
+renderer.render(scene, camera);
+}
+
+
 
 
 
