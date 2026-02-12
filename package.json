@@ -5,7 +5,10 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "server": "node server/index.js",
+    "dev:client": "vite --port 5175 --strictPort",
+    "dev:server":"node server.js",
+    "server": "node server.js",
+    "kill:ports": "kill -9 $(lsof -ti:5175) 2>/dev/null; kill -9 $(lsof -ti:3001) 2>/dev/null; true",
     "build": "vite build",
     "preview": "vite preview"
   },

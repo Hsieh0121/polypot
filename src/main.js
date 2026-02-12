@@ -33,6 +33,12 @@ const profile = JSON.parse(sessionStorage.getItem("polypot_profile") || "{}");
 const remotePlayers = new Map();
 let localPlayerId = null;
 
+let net = {
+  connected: false,
+  ping: null,
+  lastPong: 0,
+};
+
 const FSM = {
   FREE_ROAM: "FREE_ROAM",
   SEAT_SELECTING: "SEAT_SELECTING",
@@ -106,11 +112,29 @@ let envRoot = null;
 let worldBounds = null;  
 
 socket.on("connect", () => {
+  net.connected = true;
   localPlayerId = socket.id;
+
+  console.log("[net] connected");
   console.log("[local] localPlayerId =", localPlayerId);
+
+  socket.emit("join", profile, ({ self, other, snap } = {}) => {
+    if (self?.id) localPlayerId = self.id;
+    console.log("[join ack]", { self, other });
+  });
 });
 
 socket.on("disconnect", (reason) => {
+  net.connected = false;
+  console.log("[net] disconnected");
+  console.log("[socket] disconnected", reason);
+});
+
+
+
+socket.on("disconnect", (reason) => {
+  net.connected = false;
+  console.log("[net] disconnected");
   console.log("[socket] disconnected", reason);
 });
 
@@ -151,6 +175,19 @@ socket.on("seatUpdated", (s) => {
     console.log("[unseat local snap]");
   }
 });
+
+socket.on ("ping", (ack) => {
+  if (typeof ack === "function") ack();
+});
+
+setInterval(() => {
+  if (!socket.connected) return;
+  const t0 = performance.now();
+  socket.emit("ping", () => {
+    net.ping = Math.round(performance.now() - t0);
+    net.lastPong = Date.now();
+  });
+}, 1000);
 
 function makeRemoteAvatar () {
   const geo = new THREE.CapsuleGeometry(0.3, 1.0, 4, 8);
@@ -1358,8 +1395,14 @@ if (!window.__seatNameOnce && seatHitMeshes?.length) {
 
 
 updateSeatHover();
-const t = selectedTableId ?? hoveredTableId ?? "-";
-if (hudEl) hudEl.textContent = `state=${state} table=${t}`;
+if (hudEl) {
+  const netText = net.connected
+  ? `NET OK ${net.ping ?? "-"}ms`
+  : `NET DOWN`;
+
+  hudEl.textContent = 
+  `state=${state} table=${hoveredTableId ?? "-"} seat=${hoveredSeatKey ?? "-"} | ${netText}`;
+}
 
 if (!window.__seatRayTick) {
   window.__seatRayTick = 0;
