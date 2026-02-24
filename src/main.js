@@ -3,6 +3,7 @@ import * as THREE from "three";
 import "./style.css";
 import { GLTFLoader } from "three/examples/jsm/Addons.js";
 import { PointerLockControls } from "three/examples/jsm/controls/PointerLockControls.js";
+import { createPotController } from "./pot/potControllers.js";
 
 
 const scene = new THREE.Scene();
@@ -259,7 +260,11 @@ camera.position.set(0,EYE_HEIGHT , 0);
 const playerPos = player.position;
 
 
-
+const __lock = controls.lock.bind(controls);
+controls.lock = () => {
+  console.trace("[TRACE] controls.lock called");
+  return __lock();
+};
 
 
 
@@ -289,6 +294,35 @@ resize();
 
 const app = document.querySelector("#app");
 app.appendChild(renderer.domElement);
+
+
+const pot = createPotController({
+  appEl: document.querySelector("#app"),
+  onClose: () => {
+    clearMoveKeys();
+    state = FSM.SEATED;
+    console.log("[FSM] UI_OPEN -> SEATED (pot closed)");
+  },
+  onRequestClose: () => {
+    // 給 UI 內按鈕用：等同 Esc
+  pot.close();
+  },
+
+});
+
+function safeLockPointer() {
+  // UI 開著就不要 lock
+  if (pot?.isOpen?.()) return;
+
+  // 只在「瀏覽器允許」時才 lock，避免噴 error
+  try {
+    controls.lock();
+  } catch (err) {
+    console.warn("[pointerlock] lock failed", err);
+  }
+}
+
+
 
 const hub = document.createElement("div");
 hub.style.position = "fixed";
@@ -444,7 +478,7 @@ window.addEventListener("mousemove", (e) => {
 
 window.addEventListener("click", async () =>{
   try{
-  if (!controls.isLocked) controls.lock();
+  if (!pot.isOpen()) controls.lock();
   } catch (err){}
 });
 
@@ -455,6 +489,14 @@ const keys = {
   right: false,
   boost: false,
 };
+
+function clearMoveKeys() {
+  keys.forward = false;
+  keys.back = false;
+  keys.left = false;
+  keys.right = false;
+  keys.boost = false;
+}
 
 window.addEventListener("keydown", (e) => {
   if (e.repeat) return;
@@ -951,6 +993,7 @@ function dispatchAction(action) {
   // ---- Global CANCEL（任何 state 都先吃）----
   if (type === ACTION.CANCEL) {
     if (state === FSM.UI_OPEN) {
+      pot.close();
       state = FSM.SEATED;
       console.log("[FSM] UI_OPEN -> SEATED");
       return;
@@ -1028,19 +1071,28 @@ function dispatchAction(action) {
 
 
     case FSM.SEATED: {
-      if (type === ACTION.SELECT) {
-        const potHit = getLookAtPotHitForActiveTable();
-        if (!potHit) {
-          console.log ("[SEATED] SELECT but not looking at pot");
-          return;
-        }
-        state = FSM.UI_OPEN;
-        activeTableId = seated.tableId;
-        console.log("[FSM] SEATED -> UI_OPEN table=", activeTableId, "hit=", potHit.object?.name);
-        return;
-      }
+  if (type === ACTION.SELECT) {
+    const potHit = getLookAtPotHitForActiveTable();
+    if (!potHit) {
+      console.log("[SEATED] SELECT but not looking at pot");
       return;
     }
+
+    activeTableId = seated.tableId;
+    controls.unlock();
+    pot.open({
+      tableId: activeTableId,
+      getWorldPotRoot: () => tableRegistry.get(activeTableId)?.potRoot ?? null,
+    });
+    clearMoveKeys();
+    controls.unlock();
+    state = FSM.UI_OPEN;
+
+    console.log("[FSM] SEATED -> UI_OPEN table=", activeTableId, "hit=", potHit.object?.name);
+    return;
+  }
+  return;
+}
 
     case FSM.UI_OPEN: {
       if (type === ACTION.CONFIRM) {
@@ -1242,8 +1294,20 @@ const moveDir = new THREE.Vector3();
 
 function animate(){
   requestAnimationFrame(animate);
-  // cube.rotation.x += 0.01;
-  // cube.rotation.y += 0.01;
+  
+  const uiOpen = (state === FSM.UI_OPEN) || pot.isOpen?.();
+
+  if (uiOpen) {
+
+    while (actionQueue.length > 0) {
+      const action = actionQueue.shift();
+      dispatchAction(action);
+    }
+
+    updateHUD(); 
+    renderer.render(scene, camera);
+    return;
+  }
 
   const baseSpeed = 0.15;
   const speed = keys.boost ? baseSpeed * 2.5 : baseSpeed;
@@ -1257,7 +1321,10 @@ function animate(){
   const WORLD_UP = new THREE.Vector3(0, 1, 0);
   right.crossVectors(forward, WORLD_UP).normalize();
 
-  
+  let framePotHit = null;
+  if (state === FSM.SEATED) {
+    framePotHit = getLookAtPotHitForActiveTable();
+  }
 
   const delta = new THREE.Vector3();
   if (keys.forward) delta.add(forward);

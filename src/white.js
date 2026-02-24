@@ -772,7 +772,7 @@ function doorHidePrompt() {
     doorBubble.style.opacity = "0";
     doorBubble.style.transform = "translateY(6px)";
 
-    doorLayer.style.pointerEvents = "none";
+    doorLayer.style.pointerEvents = "none"
 
     doorBtns.style.opacity = "0";
     doorBtns.style.transform = "translateY(6px)";
