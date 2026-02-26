@@ -4,7 +4,7 @@ MIT License
 Copyright (c) 2017 Pavel Dobryakov
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
+of this software and associated docpmentation files (the "Software"), to deal
 in the Software without restriction, including without limitation the rights
 to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
 copies of the Software, and to permit persons to whom the Software is
@@ -92,6 +92,131 @@ export function createFluidPavel({
         SUNRAYS: false,
         SUNRAYS_RESOLUTION: 196,
         SUNRAYS_WEIGHT: 1.0,
+    }
+
+    // ------------------------------------
+    // Material presets (no UI yet)
+    // ------------------------------------
+    const MATERIALS = {
+    ink: {
+        label: "Ink",
+        config: {
+        // 稠、停得快，邊界更硬
+        DENSITY_DISSIPATION: 0.0005,
+        VELOCITY_DISSIPATION: 0.0015,
+        CURL: 0.3,
+        PRESSURE: 0.45,
+        PRESSURE_ITERATIONS: 8,
+        SPLAT_RADIUS: 0.22,
+        SPLAT_FORCE: 3200,
+        },
+        brush: {
+        mode: "drag",        // drag / stamp
+        scatter: 1,          // 一次注入幾次
+        jitter: 0.0,         // 位置抖動（texcoord空間）
+        radiusJitter: 0.10,  // 半徑抖動比例
+        forceJitter: 0.15,   // 力道抖動比例
+        },
+    },
+
+    coral: {
+        label: "Coral",
+        config: {
+        // 流得久、捲得多，會長出枝狀
+        DENSITY_DISSIPATION: 0.0003,
+        VELOCITY_DISSIPATION: 0.0002,
+        CURL: 1.2,
+        PRESSURE: 0.35,
+        PRESSURE_ITERATIONS: 10,
+        SPLAT_RADIUS: 0.16,
+        SPLAT_FORCE: 2600,
+        },
+        brush: {
+        mode: "stamp",
+        scatter: 1,
+        jitter: 0.0,
+        radiusJitter: 0.18,
+        forceJitter: 0.12,
+        },
+    },
+
+    ring: {
+        label: "Ring",
+        config: {
+        // 少捲、較穩，方便做同心圈沉積（靠 stamp/半徑抖動）
+        DENSITY_DISSIPATION: 0.0002,
+        VELOCITY_DISSIPATION: 0.0012,
+        CURL: 0.15,
+        PRESSURE: 0.45,
+        PRESSURE_ITERATIONS: 12,
+        SPLAT_RADIUS: 0.28,
+        SPLAT_FORCE: 2400,
+        },
+        brush: {
+        mode: "stamp",
+        scatter: 1,
+        jitter: 0.0,
+        radiusJitter: 0.05,
+        forceJitter: 0.08,
+        },
+    },
+
+    grain: {
+        label: "Grain",
+        config: {
+        // 介質偏乾、顆粒：用 scatter 做出顆粒感
+        DENSITY_DISSIPATION: 0.0008,
+        VELOCITY_DISSIPATION: 0.0018,
+        CURL: 0.25,
+        PRESSURE: 0.4,
+        PRESSURE_ITERATIONS: 8,
+        SPLAT_RADIUS: 0.08,
+        SPLAT_FORCE: 1800,
+        },
+        brush: {
+        mode: "stamp",
+        scatter: 7,          // 一次點噴 7 顆
+        jitter: 0.02,        // 每顆偏移
+        radiusJitter: 0.40,
+        forceJitter: 0.30,
+        },
+    },
+
+    snow: {
+        label: "Snow",
+        config: {
+        // 擴散柔、淡：顏料消散較快、速度消散中等
+        DENSITY_DISSIPATION: 0.004,
+        VELOCITY_DISSIPATION: 0.002,
+        CURL: 0.2,
+        PRESSURE: 0.35,
+        PRESSURE_ITERATIONS: 7,
+        SPLAT_RADIUS: 0.22,
+        SPLAT_FORCE: 1400,
+        },
+        brush: {
+        mode: "stamp",
+        scatter: 3,
+        jitter: 0.03,
+        radiusJitter: 0.25,
+        forceJitter: 0.20,
+        },
+    },
+    };
+
+    let currentMaterialKey = "ink";
+    let currentBrush = MATERIALS[currentMaterialKey].brush;
+
+    function applyMaterial(key) {
+    const mat = MATERIALS[key] || MATERIALS.ink;
+    currentMaterialKey = key;
+    currentBrush = mat.brush;
+
+    // 套用 config（只覆蓋你提供的鍵）
+    Object.assign(config, mat.config);
+
+    // 如果你開了 BLOOM/SUNRAYS/SHADING 之類 keyword，記得更新
+    if (typeof updateKeywords === "function") updateKeywords();
     }
 
   // -------------------------
@@ -1203,23 +1328,41 @@ function createTextureAsync (url) {
   }
 
   // =====================================================================================
-  // ✅ You must ensure the following functions exist from your pasted code:
-  //   - updateKeywords()
-  //   - initFramebuffers()
-  //   - step(dt)
-  //   - render(target)
-  //   - applyInputs()
-  //   - calcDeltaTime() or equivalent
-  //
-  // and variables:
-  //   - lastUpdateTime
-  // =====================================================================================
+
 
   
-function splatPointer (pointer) {
-    let dx = pointer.deltaX * config.SPLAT_FORCE;
-    let dy = pointer.deltaY * config.SPLAT_FORCE;
-    splat(pointer.texcoordX, pointer.texcoordY, dx, dy, pointer.color);
+function randSigned() {
+  return (Math.random() * 2 - 1);
+}
+
+function splatPointer(pointer) {
+  const b = currentBrush || { scatter: 1, jitter: 0, radiusJitter: 0, forceJitter: 0 };
+
+  const baseDx = pointer.deltaX * config.SPLAT_FORCE;
+  const baseDy = pointer.deltaY * config.SPLAT_FORCE;
+
+  const scatter = Math.max(1, b.scatter | 0);
+
+  for (let i = 0; i < scatter; i++) {
+    // 位置 jitter：在 texcoord 空間輕微偏移
+    const jx = b.jitter ? randSigned() * b.jitter : 0;
+    const jy = b.jitter ? randSigned() * b.jitter : 0;
+
+    // 半徑 jitter：暫時用「動態 radius」傳進 splat（下段會改 splat）
+    const radiusMul = 1 + (b.radiusJitter ? randSigned() * b.radiusJitter : 0);
+
+    // 力道 jitter：讓顆粒/粉末更自然
+    const forceMul = 1 + (b.forceJitter ? randSigned() * b.forceJitter : 0);
+
+    splat(
+      pointer.texcoordX + jx,
+      pointer.texcoordY + jy,
+      baseDx * forceMul,
+      baseDy * forceMul,
+      pointer.color,
+      radiusMul
+    );
+  }
 }
 
 function multipleSplats (amount) {
@@ -1236,26 +1379,28 @@ function multipleSplats (amount) {
     }
 }
 
-function splat (x, y, dx, dy, color) {
-    // --- velocity ---
-    splatVelocityProgram.bind();
-    gl.uniform1i(splatVelocityProgram.uniforms.uTarget, velocity.read.attach(0));
-    gl.uniform1f(splatVelocityProgram.uniforms.aspectRatio, canvas.width / canvas.height);
-    gl.uniform2f(splatVelocityProgram.uniforms.point, x, y);
-    gl.uniform3f(splatVelocityProgram.uniforms.color, dx, dy, 0.0);
-    gl.uniform1f(splatVelocityProgram.uniforms.radius, correctRadius(config.SPLAT_RADIUS / 100.0));
-    blit(velocity.write);
-    velocity.swap();
+function splat(x, y, dx, dy, color, radiusMul = 1.0) {
+  const radius = correctRadius((config.SPLAT_RADIUS / 100.0) * radiusMul);
 
-    // --- dye (✅不爆白混色) ---
-    splatDyeProgram.bind();
-    gl.uniform1i(splatDyeProgram.uniforms.uTarget, dye.read.attach(0));
-    gl.uniform1f(splatDyeProgram.uniforms.aspectRatio, canvas.width / canvas.height);
-    gl.uniform2f(splatDyeProgram.uniforms.point, x, y);
-    gl.uniform3f(splatDyeProgram.uniforms.color, color.r, color.g, color.b);
-    gl.uniform1f(splatDyeProgram.uniforms.radius, correctRadius(config.SPLAT_RADIUS / 100.0));
-    blit(dye.write);
-    dye.swap();
+  // --- velocity ---
+  splatVelocityProgram.bind();
+  gl.uniform1i(splatVelocityProgram.uniforms.uTarget, velocity.read.attach(0));
+  gl.uniform1f(splatVelocityProgram.uniforms.aspectRatio, canvas.width / canvas.height);
+  gl.uniform2f(splatVelocityProgram.uniforms.point, x, y);
+  gl.uniform3f(splatVelocityProgram.uniforms.color, dx, dy, 0.0);
+  gl.uniform1f(splatVelocityProgram.uniforms.radius, radius);
+  blit(velocity.write);
+  velocity.swap();
+
+  // --- dye ---
+  splatDyeProgram.bind();
+  gl.uniform1i(splatDyeProgram.uniforms.uTarget, dye.read.attach(0));
+  gl.uniform1f(splatDyeProgram.uniforms.aspectRatio, canvas.width / canvas.height);
+  gl.uniform2f(splatDyeProgram.uniforms.point, x, y);
+  gl.uniform3f(splatDyeProgram.uniforms.color, color.r, color.g, color.b);
+  gl.uniform1f(splatDyeProgram.uniforms.radius, radius);
+  blit(dye.write);
+  dye.swap();
 }
   function updateKeywords () {
             let displayKeywords = [];
@@ -1267,6 +1412,7 @@ function splat (x, y, dx, dy, color) {
 
         updateKeywords();
         initFramebuffers();
+        applyMaterial("ink");
         // multipleSplats(parseInt(Math.random() * 20) + 5);
 
         function updateColors (dt) {
@@ -1636,7 +1782,7 @@ function splat (x, y, dx, dy, color) {
     if (canvas.parentElement) canvas.parentElement.removeChild(canvas);
   }
 
-  return { canvas, setColor, resize, destroy };
+  return { canvas, setColor, applyMaterial, resize, destroy };
 }
 
 // ---- helper ----

@@ -405,8 +405,15 @@ kickedBtn.appendChild(reloadImg);
 kickedInner.appendChild(kickedBtn);
 
 // =========================
-// ID CARD UI (MVP overlay)
+// ID CARD UI (NEW layout + signature)
 // =========================
+
+// (optional) ensure Pixelify Sans available
+const idFontStyle = document.createElement("style");
+idFontStyle.textContent = `
+@import url('https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;600;700&display=swap');
+`;
+document.head.appendChild(idFontStyle);
 
 const idOverlay = document.createElement("div");
 idOverlay.style.position = "fixed";
@@ -427,40 +434,71 @@ idCard.style.position = "relative";
 idCard.style.left = "50%";
 idCard.style.top = "50%";
 idCard.style.transform = "translate(-50%,-50%)";
-idCard.style.width = "600px";
-idCard.style.height = "360px";
+idCard.style.width = "700px";
+idCard.style.height = "455px";
 idCard.style.background = "white";
 idCard.style.borderRadius = "28px";
 idCard.style.boxShadow = "0 18px 60px rgba(0,0,0,0.20)";
-idCard.style.display = "flex";
-idCard.style.gap = "18px";
-idCard.style.padding = "36px";
-idCard.style.alignItems = "center";
-idCard.style.fontFamily = "system-ui, -apple-system, Segoe UI, Roboto, sans-serif";
+idCard.style.fontFamily = `"Pixelify Sans", system-ui, -apple-system, Segoe UI, Roboto, sans-serif`;
 idOverlay.appendChild(idCard);
 
-const leftCol = document.createElement("div");
-leftCol.style.height = "100%";
-leftCol.style.display = "flex";
-leftCol.style.flexDirection = "column";
-leftCol.style.justifyContent = "center";
-leftCol.style.alignItems = "stretch";
-idCard.appendChild(leftCol);
+// --- constants: relative to idCard (your numbers converted) ---
+const POS = {
+  contentLeft: 51,
+  contentTop: 54,
 
-// 左：照片框
+  photoLeft: 51,
+  photoTop: 54,
+  photoW: 167.25,
+  photoH: 223,
+
+  titleLeft: 259,
+  titleTop: 54,
+  titleW: 390,
+  titleH: 25,
+
+  nameLabelLeft: 259,
+  nameTop: 114,
+  nameValueLeft: 344,
+
+  infoLabelLeft: 259,
+  infoTop: 163,
+  infoBoxLeft: 344,
+  infoBoxTop: 163,
+  infoBoxW: 264,
+  infoBoxH: 114,
+
+  sigLabelLeft: 51,
+  sigLabelTop: 302,
+  sigBoxLeft: 51,
+  sigBoxTop: 330,
+  sigBoxW: 369,
+  sigBoxH: 71,
+
+  barcodeLeft: 479,
+  barcodeTop: 318,
+  barcodeW: 182,
+  barcodeH: 90,
+
+  idCodeLeft: 497,
+  idCodeTop: 385,
+  serialLeft: 586,
+  serialTop: 385,
+};
+
+// --- photo box ---
 const photoBox = document.createElement("div");
-photoBox.style.width = "auto";
-photoBox.style.aspectRatio = "3 / 4";
-photoBox.style.height = "290px";
-photoBox.style.alignSelf = "center";
-photoBox.style.border = "2px solid #fd6fff";
-photoBox.style.borderRadius = "18px";
-photoBox.style.position = "relative";
+photoBox.style.position = "absolute";
+photoBox.style.left = `${POS.photoLeft}px`;
+photoBox.style.top = `${POS.photoTop}px`;
+photoBox.style.width = `${POS.photoW}px`;
+photoBox.style.height = `${POS.photoH}px`;
+photoBox.style.background = "#F6F6F6";
 photoBox.style.overflow = "hidden";
-photoBox.style.background = "#f7f7f7";
-leftCol.appendChild(photoBox);
+photoBox.style.borderRadius = "0px";
+idCard.appendChild(photoBox);
 
-// 照片 img（先空）
+
 const photoImg = document.createElement("img");
 photoImg.alt = "avatar";
 photoImg.style.position = "absolute";
@@ -468,138 +506,343 @@ photoImg.style.inset = "0";
 photoImg.style.width = "100%";
 photoImg.style.height = "100%";
 photoImg.style.objectFit = "cover";
+photoImg.style.objectPosition = "center";
+photoImg.style.setProperty("height", "100%", "important");
+photoImg.style.setProperty("width", "100%", "important");
 photoImg.style.display = "none";
 photoBox.appendChild(photoImg);
+console.log("photoBox", photoBox.getBoundingClientRect());
+console.log("photoImg", photoImg.getBoundingClientRect());
 
-// 編輯按鈕
 const editBtn = document.createElement("button");
 editBtn.type = "button";
-editBtn.textContent = "編輯";
+editBtn.textContent = "Edit";
 editBtn.style.position = "absolute";
+// your measured relative in photoBox: left 49, top 173
 editBtn.style.left = "50%";
-editBtn.style.bottom = "14px";
+editBtn.style.bottom = "18px";
+editBtn.style.top = "";
 editBtn.style.transform = "translateX(-50%)";
+editBtn.style.width = "70px";
+editBtn.style.height = "33px";
 editBtn.style.border = "0";
 editBtn.style.cursor = "pointer";
-editBtn.style.height = "46px";
-editBtn.style.padding = "13px 26px 0 26px";
 editBtn.style.borderRadius = "999px";
-editBtn.style.background = "#fd6fff";
-editBtn.style.color = "white";
-editBtn.style.fontWeight = "800";
+editBtn.style.background = "#FD6FFF";
+editBtn.style.color = "#FFFFFF";
+editBtn.style.fontFamily = `"Pixelify Sans", system-ui, -apple-system, Segoe UI, Roboto, sans-serif`;
+editBtn.style.fontWeight = "600";
+editBtn.style.fontSize = "16px";
+editBtn.style.display = "flex";
+editBtn.style.alignItems = "center";
+editBtn.style.justifyContent = "center";
+editBtn.style.padding = "0";
+editBtn.style.lineHeight = "normal";
 editBtn.style.boxShadow = "0 10px 26px rgba(0,0,0,0.16)";
 photoBox.appendChild(editBtn);
 
-
 editBtn.addEventListener("click", (e) => {
-    e.preventDefault();
-    e.stopPropagation();
+  e.preventDefault();
+  e.stopPropagation();
+  openAvatarEditor();
 });
 
-
-
-// 右：資訊區
-const right = document.createElement("div");
-right.style.display = "flex";
-right.style.flexDirection = "column";
-right.style.alignItems = "flex-end";
-right.style.justifyItems = "end";
-right.style.height = "290px";
-right.style.gap = "8px";
-right.style.textAlign = "right";
-idCard.appendChild(right);
-
-// 右上：IDENTIFICATION CARD
+// --- title image ---
 const idTitle = document.createElement("img");
-idTitle.src = "/id.png";  
+idTitle.src = "/title.png";
 idTitle.alt = "IDENTIFICATION CARD";
-idTitle.style.height = "auto";     
-idTitle.style.width = "360px";
+idTitle.style.position = "absolute";
+idTitle.style.left = `${POS.titleLeft}px`;
+idTitle.style.top = `${POS.titleTop}px`;
+idTitle.style.width = `${POS.titleW}px`;
+idTitle.style.height = `${POS.titleH}px`;
 idTitle.style.objectFit = "contain";
-// idTitle.style.justifySelf = "end"; 
-right.appendChild(idTitle);
+idCard.appendChild(idTitle);
 
-// const spacerTop = document.createElement("div");
-// spacerTop.style.flex = "1";
-// right.appendChild(spacerTop);
+// --- Name row ---
+const nameLabel = document.createElement("div");
+nameLabel.textContent = "Name";
+nameLabel.style.position = "absolute";
+nameLabel.style.left = `${POS.nameLabelLeft}px`;
+nameLabel.style.top = `${POS.nameTop}px`;
+nameLabel.style.fontWeight = "600";
+nameLabel.style.fontSize = "20px";
+nameLabel.style.color = "#1248FF";
+idCard.appendChild(nameLabel);
 
-// 右中：留言
-const msgWrap = document.createElement("div");
-msgWrap.style.width = "325px";
-msgWrap.style.height = "200px"
-msgWrap.style.alignSelf = "flex-end";
-msgWrap.style.justifySelf = "end";
-msgWrap.style.border = "2px solid #fd6fff";
-msgWrap.style.borderRadius = "18px";
-msgWrap.style.padding = "14px";
-msgWrap.style.display = "grid";
-msgWrap.style.gridTemplateRows = "auto 1fr";
-msgWrap.style.rowGap = "12px";
-right.appendChild(msgWrap);
+const nameValue = document.createElement("div");
+nameValue.style.position = "absolute";
+nameValue.style.left = `${POS.nameValueLeft}px`;
+nameValue.style.top = `${POS.nameTop}px`;
+nameValue.style.fontWeight = "600";
+nameValue.style.fontSize = "20px";
+nameValue.style.color = "#1248FF";
+idCard.appendChild(nameValue);
 
-const msgHint = document.createElement("div");
-msgHint.textContent = "輸入任意留言（可選）";
-msgHint.style.fontSize = "14px";
-msgHint.style.fontWeight = "800";
-msgHint.style.color = "#fd6fff";
-msgHint.style.textAlign = "right";
-msgWrap.appendChild(msgHint);
+// --- Info label + box ---
+const infoLabel = document.createElement("div");
+infoLabel.textContent = "Info";
+infoLabel.style.position = "absolute";
+infoLabel.style.left = `${POS.infoLabelLeft}px`;
+infoLabel.style.top = `${POS.infoTop}px`;
+infoLabel.style.fontWeight = "600";
+infoLabel.style.fontSize = "20px";
+infoLabel.style.color = "#1248FF";
+idCard.appendChild(infoLabel);
 
-const msgInput = document.createElement("textarea");
-msgInput.style.rows = 3;
-msgInput.placeholder = "";
-msgInput.style.width = "100%";
-msgInput.style.resize = "none";
-msgInput.style.border = "0";
-msgInput.style.outline = "none";
-msgInput.style.fontSize = "14px";
-msgInput.style.fontWeight = "700";
-msgInput.style.textAlign = "right";
-msgInput.style.color = "#fd6fff";
-msgInput.style.background = "transparent";
-msgWrap.appendChild(msgInput);
+const infoBox = document.createElement("textarea");
+infoBox.placeholder = "（輸入任意留言）";
+infoBox.style.position = "absolute";
+infoBox.style.left = `${POS.infoBoxLeft}px`;
+infoBox.style.top = `${POS.infoBoxTop}px`;
+infoBox.style.width = `${POS.infoBoxW}px`;
+infoBox.style.height = `${POS.infoBoxH}px`;
+infoBox.style.background = "#F6F6F6";
+infoBox.style.border = "0";
+infoBox.style.outline = "none";
+infoBox.style.resize = "none";
+infoBox.style.padding = "0";
+infoBox.style.boxSizing = "border-box";
+infoBox.style.fontFamily = `"Pixelify Sans", system-ui, -apple-system, Segoe UI, Roboto, sans-serif`;
+infoBox.style.fontWeight = "600";
+infoBox.style.fontSize = "16px";
+infoBox.style.color = "#1248FF";
+infoBox.style.lineHeight = "1.25";
+idCard.appendChild(infoBox);
 
-msgInput.addEventListener("input", () => {
-    const profile = JSON.parse(localStorage.getItem("polypot_profile") || "null");
-    if (!profile) return;
-    profile.message = msgInput.value;
-    localStorage.setItem("polypot_profile", JSON.stringify(profile));
+// keep your placeholder color already set globally, but this one is grey in mock:
+infoBox.addEventListener("focus", () => {
+  // nothing; just to avoid accidental pointer lock behavior
 });
 
-const msgPrinted = document.createElement("div");
-msgPrinted.style.position = "absolute";
-msgPrinted.style.display = "none";
-idOverlay.appendChild(msgPrinted);
+// Persist info to profile.message (keep your existing schema)
+infoBox.addEventListener("input", () => {
+  const profile = JSON.parse(localStorage.getItem("polypot_profile") || "null");
+  if (!profile) return;
+  profile.message = infoBox.value;
+  localStorage.setItem("polypot_profile", JSON.stringify(profile));
+});
 
-// const spacerBottom = document.createElement("div");
-// spacerBottom.style.flex = "0.7";
-// right.appendChild(spacerBottom);
+// --- Signature label + clear X ---
+const signatureLabel = document.createElement("div");
+signatureLabel.textContent = "Signature";
+signatureLabel.style.position = "absolute";
+signatureLabel.style.left = `${POS.sigLabelLeft}px`;
+signatureLabel.style.top = `${POS.sigLabelTop}px`;
+signatureLabel.style.fontWeight = "600";
+signatureLabel.style.fontSize = "20px";
+signatureLabel.style.color = "#FD6FFF";
+idCard.appendChild(signatureLabel);
 
-const bottomRow = document.createElement("div");
-bottomRow.style.marginTop = "auto";
-bottomRow.style.display = "flex";
-bottomRow.style.flexDirection = "column";
-bottomRow.style.alignItems = "flex-end";
-bottomRow.style.gap = "0.8px";
-bottomRow.style.justifyContent = "space-between";
-right.appendChild(bottomRow);
+const sigClearBtn = document.createElement("button");
+sigClearBtn.type = "button";
+sigClearBtn.textContent = "×";
+sigClearBtn.title = "Clear signature";
+sigClearBtn.style.position = "absolute";
+sigClearBtn.style.left = `${POS.sigBoxLeft + POS.sigBoxW - 18}px`;
+sigClearBtn.style.top = `${POS.sigLabelTop + 2}px`;
+sigClearBtn.style.width = "18px";
+sigClearBtn.style.height = "18px";
+sigClearBtn.style.border = "0";
+sigClearBtn.style.padding = "0";
+sigClearBtn.style.cursor = "pointer";
+sigClearBtn.style.background = "transparent";
+sigClearBtn.style.color = "#FD6FFF";
+sigClearBtn.style.fontFamily = `"Pixelify Sans", system-ui`;
+sigClearBtn.style.fontSize = "18px";
+sigClearBtn.style.lineHeight = "18px";
+sigClearBtn.style.userSelect = "none";
+sigClearBtn.style.opacity = "0.9";
+sigClearBtn.addEventListener("pointerenter", () => (sigClearBtn.style.opacity = "1"));
+sigClearBtn.addEventListener("pointerleave", () => (sigClearBtn.style.opacity = "0.9"));
+idCard.appendChild(sigClearBtn);
 
+// --- Signature canvas box ---
+const signatureCanvas = document.createElement("canvas");
+signatureCanvas.width = Math.round(POS.sigBoxW * 2);   // retina
+signatureCanvas.height = Math.round(POS.sigBoxH * 2);
+signatureCanvas.style.position = "absolute";
+signatureCanvas.style.left = `${POS.sigBoxLeft}px`;
+signatureCanvas.style.top = `${POS.sigBoxTop}px`;
+signatureCanvas.style.width = `${POS.sigBoxW}px`;
+signatureCanvas.style.height = `${POS.sigBoxH}px`;
+signatureCanvas.style.background = "#FFFFFF";
+signatureCanvas.style.display = "block";
+signatureCanvas.style.touchAction = "none";
+idCard.appendChild(signatureCanvas);
+
+const sigCtx = signatureCanvas.getContext("2d");
+sigCtx.scale(2, 2);
+
+function sigClearCanvas() {
+  sigCtx.clearRect(0, 0, POS.sigBoxW, POS.sigBoxH);
+}
+
+function sigSaveToProfile() {
+  const profile = JSON.parse(localStorage.getItem("polypot_profile") || "null");
+  if (!profile) return;
+
+  // empty check (cheap): read a few pixels
+  const imgData = sigCtx.getImageData(0, 0, POS.sigBoxW, POS.sigBoxH).data;
+  let hasInk = false;
+  for (let i = 0; i < imgData.length; i += 16) {
+    if (imgData[i + 3] > 0) { hasInk = true; break; }
+  }
+
+  profile.signature = hasInk ? signatureCanvas.toDataURL("image/png") : null;
+  localStorage.setItem("polypot_profile", JSON.stringify(profile));
+}
+
+function sigLoadFromProfile(profile) {
+  sigClearCanvas();
+  if (!profile?.signature) return;
+
+  const img = new Image();
+  img.onload = () => {
+    sigClearCanvas();
+    sigCtx.drawImage(img, 0, 0, POS.sigBoxW, POS.sigBoxH);
+  };
+  img.src = profile.signature;
+}
+
+// draw behavior: "覆蓋"（pointerdown 先清空）
+let sigDrawing = false;
+let sigLast = { x: 0, y: 0 };
+
+function sigGetLocalPoint(e) {
+  const rect = signatureCanvas.getBoundingClientRect();
+  const x = (e.clientX - rect.left);
+  const y = (e.clientY - rect.top);
+  return { x, y };
+}
+
+function sigBegin(e) {
+  if (idCardState !== "EDIT") return;
+  e.preventDefault();
+  e.stopPropagation();
+
+  // 覆蓋：每次開始畫都先清空
+  sigClearCanvas();
+
+  sigDrawing = true;
+  const p = sigGetLocalPoint(e);
+  sigLast = p;
+
+  sigCtx.lineCap = "round";
+  sigCtx.lineJoin = "round";
+  sigCtx.strokeStyle = "#1248FF";
+  sigCtx.lineWidth = 3;
+
+  sigCtx.beginPath();
+  sigCtx.moveTo(p.x, p.y);
+}
+
+function sigMove(e) {
+  if (!sigDrawing) return;
+  e.preventDefault();
+  e.stopPropagation();
+
+  const p = sigGetLocalPoint(e);
+  sigCtx.lineTo(p.x, p.y);
+  sigCtx.stroke();
+  sigLast = p;
+}
+
+function sigEnd(e) {
+  if (!sigDrawing) return;
+  e.preventDefault();
+  e.stopPropagation();
+
+  sigDrawing = false;
+  sigCtx.closePath();
+  sigSaveToProfile();
+}
+
+signatureCanvas.addEventListener("pointerdown", sigBegin);
+signatureCanvas.addEventListener("pointermove", sigMove);
+window.addEventListener("pointerup", sigEnd);
+signatureCanvas.addEventListener("pointercancel", sigEnd);
+
+sigClearBtn.addEventListener("click", (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  if (idCardState !== "EDIT") return;
+  sigClearCanvas();
+  const profile = JSON.parse(localStorage.getItem("polypot_profile") || "null");
+  if (profile) {
+    profile.signature = null;
+    localStorage.setItem("polypot_profile", JSON.stringify(profile));
+  }
+});
+
+// --- Barcode + id code ---
+const barcodeImg = document.createElement("img");
+barcodeImg.src = "/barcode.png";
+barcodeImg.alt = "barcode";
+barcodeImg.style.position = "absolute";
+barcodeImg.style.left = `${POS.barcodeLeft}px`;
+barcodeImg.style.top = `${POS.barcodeTop}px`;
+barcodeImg.style.width = `${POS.barcodeW}px`;
+barcodeImg.style.height = `${POS.barcodeH}px`;
+barcodeImg.style.objectFit = "fill";
+barcodeImg.style.imageRendering = "pixelated";
+idCard.appendChild(barcodeImg);
+
+const idCodeLabel = document.createElement("div");
+idCodeLabel.textContent = "ID code";
+idCodeLabel.style.position = "absolute";
+idCodeLabel.style.left = `${POS.idCodeLeft}px`;
+idCodeLabel.style.top = `${POS.idCodeTop}px`;
+idCodeLabel.style.fontWeight = "600";
+idCodeLabel.style.fontSize = "16px";
+idCodeLabel.style.color = "#FD6FFF";
+idCard.appendChild(idCodeLabel);
 
 const serialText = document.createElement("div");
+serialText.style.position = "absolute";
+serialText.style.left = `${POS.serialLeft}px`;
+serialText.style.top = `${POS.serialTop}px`;
+serialText.style.fontWeight = "600";
 serialText.style.fontSize = "16px";
-serialText.style.fontWeight = "900";
-serialText.style.textAlign = "right";
-serialText.style.color = "#fd6fff";
-bottomRow.appendChild(serialText);
+serialText.style.color = "#FD6FFF";
+idCard.appendChild(serialText);
 
-const nameText = document.createElement("div");
-nameText.style.fontSize = "44px";
-nameText.style.fontWeight = "1000";
-nameText.style.letterSpacing = "0.02em";
-nameText.style.textAlign = "right";
-nameText.style.color = "#1248ff";
-bottomRow.appendChild(nameText);
+// footer buttons (keep your existing behavior)
+const footer = document.createElement("div");
+footer.style.position = "absolute";
+footer.style.left = "50%";
+footer.style.bottom = "-78px";
+footer.style.transform = "translateX(-50%)";
+footer.style.display = "flex";
+footer.style.gap = "16px";
+idCard.appendChild(footer);
 
+// --- helpers used by your existing flow ---
+function showIdCard(profile) {
+  idOverlay.style.display = "block";
+
+  nameValue.textContent = profile?.name ?? "";
+  serialText.textContent = profile?.serial ?? "";
+
+  // info uses profile.message (keep schema)
+  infoBox.value = profile?.message ?? "";
+
+  if (profile?.avatarPhoto) {
+    photoImg.src = profile.avatarPhoto;
+    photoImg.style.display = "block";
+  } else {
+    photoImg.style.display = "none";
+  }
+
+  sigLoadFromProfile(profile);
+
+  // default to edit when opening (your old logic did this once globally)
+  setIdCardState("EDIT");
+}
+
+function hideIdCard() {
+  idOverlay.style.display = "none";
+}
 // =========================
 // AVATAR EDITOR OVERLAY
 // =========================
@@ -693,14 +936,6 @@ cancelBtn.style.color = "#333";
 cancelBtn.style.fontWeight = "800";
 side.appendChild(cancelBtn);
 
-const footer = document.createElement("div");
-footer.style.position = "absolute";
-footer.style.left = "50%";
-footer.style.bottom = "-54px";
-footer.style.transform = "translateX(-50%)";
-footer.style.display = "flex";
-footer.style.gap = "16px";
-idCard.appendChild(footer);
 
 // =========================
 // DOOR UI
@@ -995,23 +1230,7 @@ function npcOpenNameInput() {
 
   setTimeout(() => nameInput.focus(), 0);
 }
-function showIdCard (profile) {
-    idOverlay.style.display = "block";
-    serialText.textContent = profile?.serial ?? "";
-    nameText.textContent = profile?.name ?? "";
 
-    msgInput.value = profile?.message ?? "";
-
-    if (profile?.avatarPhoto) {
-        photoImg.src = profile.avatarPhoto;
-        photoImg.style.display = "block";
-    } else {
-        photoImg.style.display = "none";
-    }
-}
-function hideIdCard(){
-    idOverlay.style.display = "none";
-}
 
 btnNo.addEventListener("pointerdown", (e) => {
   e.preventDefault();
@@ -1242,6 +1461,8 @@ function initAvatarPreview() {
         requestAnimationFrame(tick);
         if (!avatar3.renderer) return;
         avatar3.controls?.update();
+        avatar3.renderer.setClearColor(0xf3f3f3, 1); // 或你要的背景色
+        avatar3.renderer.clear(true, true, true);
         avatar3.renderer.render(avatar3.scene, avatar3.camera);
     }
     tick();
@@ -1276,51 +1497,104 @@ function applyTextureToAvatar(texture){
 }
 uploadBtn.addEventListener("click", () => fileInput.click());
 
+let pendingAvatarPhoto = null;
+
 fileInput.addEventListener("change", (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
     const url = URL.createObjectURL(file);
-    photoImg.src = url;
-    photoImg.style.display = "block";
 
     const img = new Image();
     img.onload = () => {
+
+        // 1️⃣ 3D 預覽還是可以保留
         const tex = new THREE.Texture(img);
         tex.needsUpdate = true;
         applyTextureToAvatar(tex);
+
+        // 2️⃣ 直接產生 ID card 用的大頭貼
+        pendingAvatarPhoto = cropTo34Pixelated(img, 512);
+
+        // 先在 ID 上預覽
+        photoImg.src = pendingAvatarPhoto;
+        photoImg.style.display = "block";
+
         URL.revokeObjectURL(url);
     };
     img.src = url;
 });
 
-function captureTopFaceIDPhoto() {
-  if (!avatar3?.root || !avatar3?.renderer || !avatar3?.scene) return null;
+function cropTo34Pixelated(img, outH = 512) {
+  const targetAspect = 3 / 4;
 
-  const box = new THREE.Box3().setFromObject(avatar3.root);
-  const size = new THREE.Vector3();
-  const center = new THREE.Vector3();
-  box.getSize(size);
-  box.getCenter(center);
+  const iw = img.naturalWidth;
+  const ih = img.naturalHeight;
+  if (!iw || !ih) return null;
+
+  const srcAspect = iw / ih;
+
+  let sw, sh;
+  if (srcAspect > targetAspect) {
+    sh = ih;
+    sw = Math.round(ih * targetAspect);
+  } else {
+    sw = iw;
+    sh = Math.round(iw / targetAspect);
+  }
+
+  // 隨機裁切位置（偏上）
+  const maxX = iw - sw;
+  const maxY = ih - sh;
+
+  const sx = Math.round(maxX * Math.random());
+  const sy = Math.round(maxY * Math.random() * 0.4);
+
+  // ===== 關鍵：先做「小畫素版本」 =====
+  const lowH = 128;                      // ← 故意低畫素
+  const lowW = Math.round(lowH * targetAspect);
+
+  const temp = document.createElement("canvas");
+  temp.width = lowW;
+  temp.height = lowH;
+  const tctx = temp.getContext("2d");
+  tctx.imageSmoothingEnabled = false;    // 不要平滑
+  tctx.drawImage(img, sx, sy, sw, sh, 0, 0, lowW, lowH);
+
+  // ===== 再放大到 512 =====
+  const final = document.createElement("canvas");
+  final.width = 384;
+  final.height = 512;
+  const fctx = final.getContext("2d");
+  fctx.imageSmoothingEnabled = false;    // 放大時也不要平滑
+  fctx.drawImage(temp, 0, 0, 384, 512);
+
+  return final.toDataURL("image/png");
+}
+
+function captureIDPhotoFromAvatarPreview() {
+  if (!avatar3?.renderer || !avatar3?.scene || !avatar3?.camera) return null;
 
   // 3:4（寬:高）
   const aspect = 3 / 4;
   const outH = 512;
   const outW = Math.round(outH * aspect);
 
-  // 這裡是你「從上往下」看，取一個視野範圍
-  const frustumH = Math.max(size.x, size.z) * 0.65;
-  const frustumW = frustumH * aspect;
+  // ---- 暫存相機與 renderer 狀態 ----
+  const cam = avatar3.camera;
 
-  const cam = new THREE.OrthographicCamera(
-    -frustumW, frustumW,
-    frustumH, -frustumH,
-    0.01, 100
-  );
+  const prevAspect = cam.aspect;
+  const prevRT = avatar3.renderer.getRenderTarget();
+  const prevViewport = avatar3.renderer.getViewport(new THREE.Vector4());
+  const prevScissor = avatar3.renderer.getScissor(new THREE.Vector4());
+  const prevScissorTest = avatar3.renderer.getScissorTest();
 
-  cam.position.set(center.x, box.max.y + 2.0, center.z);
-  cam.up.set(0, 0, -1);            // 可選：讓 top-view 的方向更像「正的」
-  cam.lookAt(center.x, center.y, center.z);
+  const prevClear = new THREE.Color();
+  avatar3.renderer.getClearColor(prevClear);
+  const prevClearAlpha = avatar3.renderer.getClearAlpha();
+
+  // ---- 讓相機輸出符合 3:4 ----
+  cam.aspect = aspect;
   cam.updateProjectionMatrix();
 
   const rt = new THREE.WebGLRenderTarget(outW, outH, {
@@ -1328,27 +1602,32 @@ function captureTopFaceIDPhoto() {
     stencilBuffer: false,
   });
 
-  const prevRT = avatar3.renderer.getRenderTarget();
-  const prevViewport = avatar3.renderer.getViewport(new THREE.Vector4());
-  const prevScissor = avatar3.renderer.getScissor(new THREE.Vector4());
-  const prevScissorTest = avatar3.renderer.getScissorTest();
-
-  // 確保 offscreen render 不受你主畫面 viewport/scissor 影響
+  // ---- offscreen render ----
   avatar3.renderer.setRenderTarget(rt);
   avatar3.renderer.setViewport(0, 0, outW, outH);
   avatar3.renderer.setScissor(0, 0, outW, outH);
   avatar3.renderer.setScissorTest(false);
+
+  // 你想要的底色（跟 preview 一致）
+  avatar3.renderer.setClearColor(0xf3f3f3, 1);
+  avatar3.renderer.clear(true, true, true);
 
   avatar3.renderer.render(avatar3.scene, cam);
 
   const pixels = new Uint8Array(outW * outH * 4);
   avatar3.renderer.readRenderTargetPixels(rt, 0, 0, outW, outH, pixels);
 
-  // 還原 renderer 狀態
+  // ---- 還原 ----
+  avatar3.renderer.setClearColor(prevClear, prevClearAlpha);
+  avatar3.renderer.setClearAlpha(prevClearAlpha);
+
   avatar3.renderer.setRenderTarget(prevRT);
   avatar3.renderer.setViewport(prevViewport);
   avatar3.renderer.setScissor(prevScissor);
   avatar3.renderer.setScissorTest(prevScissorTest);
+
+  cam.aspect = prevAspect;
+  cam.updateProjectionMatrix();
 
   rt.dispose();
 
@@ -1366,24 +1645,21 @@ function captureTopFaceIDPhoto() {
       imgData.data[dst + 0] = pixels[src + 0];
       imgData.data[dst + 1] = pixels[src + 1];
       imgData.data[dst + 2] = pixels[src + 2];
-      imgData.data[dst + 3] = pixels[src + 3];
+      imgData.data[dst + 3] = 255;
     }
   }
 
   ctx.putImageData(imgData, 0, 0);
   return cvs.toDataURL("image/png");
 }
-
 confirmBtn.addEventListener("click", () => {
-    const dataUrl = captureTopFaceIDPhoto();
-    if (!dataUrl) return;
+    if (!pendingAvatarPhoto) return;
 
-    photoImg.src = dataUrl;
-    photoImg.style.display = "block";
+    photoImg.src = pendingAvatarPhoto;
 
     const profile = JSON.parse(localStorage.getItem("polypot_profile") || "null");
     if (profile) {
-        profile.avatarPhoto = dataUrl;
+        profile.avatarPhoto = pendingAvatarPhoto;
         localStorage.setItem("polypot_profile", JSON.stringify(profile));
     }
     closeAvatarEditor();
@@ -1393,20 +1669,30 @@ avatarDim.addEventListener("click", () => closeAvatarEditor());
 
 let idCardState = "EDIT";
 
-function setIdCardState (next) {
-    idCardState = next;
+function setIdCardState(next) {
+  idCardState = next;
 
-    const isEdit = next === "EDIT";
+  const isEdit = next === "EDIT";
 
-    msgWrap.style.display = isEdit ? "grid" : "none";
-    editBtn.style.display = isEdit ? "inline-flex" : "none";
+  // photo box appearance
+  photoBox.style.background = isEdit ? "#F6F6F6" : "transparent";
 
-    photoBox.style.border = isEdit ? "2px solid #fd6fff" : "0";
-    photoBox.style.background = isEdit ? "#f7f7f7" : "transparent";
+  // edit button
+  editBtn.style.display = isEdit ? "inline-flex" : "none";
 
-    doneEditBtn.style.display = isEdit ? "inline-flex" : "none";
-    continueEditBtn.style.display = isEdit ? "none" : "inline-flex";
-    submitBtn.style.display = isEdit ? "none" : "inline-flex";
+  // infoBox behavior
+  infoBox.readOnly = !isEdit;
+  infoBox.style.background = isEdit ? "#F6F6F6" : "transparent";
+  infoBox.style.pointerEvents = isEdit ? "auto" : "none";
+
+  // signature behavior
+  signatureCanvas.style.pointerEvents = isEdit ? "auto" : "none";
+  sigClearBtn.style.display = isEdit ? "block" : "none";
+
+  // your footer buttons (must exist below this function in your code)
+  doneEditBtn.style.display = isEdit ? "inline-flex" : "none";
+  continueEditBtn.style.display = isEdit ? "none" : "inline-flex";
+  submitBtn.style.display = isEdit ? "none" : "inline-flex";
 }
 
 function makePill(text, variant){

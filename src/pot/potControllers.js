@@ -142,8 +142,6 @@ export function createPotController({ appEl, onClose, onRequestClose } = {}) {
     panelEl.style.borderRadius = "24px";
     panelEl.style.boxShadow = "0 12px 40px rgba(0,0,0,0.18)";
     panelEl.style.overflow = "hidden";
-    panelEl.style.transform = "translateY(-60px)";  // 往上移 60px，自行調
-    panelEl.style.willChange = "transform";
     overlayEl.appendChild(panelEl);
 
     const cs = getComputedStyle(appEl);
@@ -449,6 +447,8 @@ export function createPotController({ appEl, onClose, onRequestClose } = {}) {
       fluidColor = input.value;
       fluidCtrl?.setColor?.(fluidColor);
     });
+    // ---- left: material picker ----
+    renderMaterialPicker(picker, () => fluidCtrl);
 
     // ---- center: fluid mount ----
     // ✅ 用外層變數，不要 const shadow
@@ -499,6 +499,8 @@ export function createPotController({ appEl, onClose, onRequestClose } = {}) {
     nameInput.style.boxSizing = "border-box";
     nameInput.style.fontSize = "16px";
     nameInput.style.fontFamily = "ui-sans-serif, system-ui";
+    nameInput.style.transform = "translateY(-50px)";  
+    nameInput.style.willChange = "transform";
     panelEl.appendChild(nameInput);
 
     // ---- buttons: 存取 / 完成 ----
@@ -551,6 +553,8 @@ export function createPotController({ appEl, onClose, onRequestClose } = {}) {
     listWrap.style.padding = "12px";
     listWrap.style.boxSizing = "border-box";
     listWrap.style.overflowY = "auto";
+    listWrap.style.transform = "translateY(-80px)";  
+    listWrap.style.willChange = "transform";
 
     if (side === "right") listWrap.style.right = "90px";
     else listWrap.style.left = "90px";
@@ -736,6 +740,86 @@ function redrawStep2Base() {
   potCtx.fillStyle = "rgba(0,0,0,0.25)";
   potCtx.font = "16px ui-sans-serif, system-ui";
   potCtx.fillText(cutMode ? "Cut mode: draw rim-to-rim" : "Place mode: click to place", 18, 28);
+}
+
+function renderMaterialPicker(pickerEl, getFluidCtrl) {
+  const wrap = document.createElement("div");
+  wrap.style.marginTop = "14px";
+  wrap.style.paddingTop = "12px";
+  wrap.style.borderTop = "1px solid rgba(0,0,0,0.08)";
+  pickerEl.appendChild(wrap);
+
+  const title = document.createElement("div");
+  title.textContent = "Material";
+  title.style.color = "#666";
+  title.style.marginBottom = "10px";
+  title.style.fontSize = "14px";
+  wrap.appendChild(title);
+
+  const grid = document.createElement("div");
+  grid.style.display = "grid";
+  grid.style.gridTemplateColumns = "repeat(3, 1fr)";
+  grid.style.gap = "8px";
+  wrap.appendChild(grid);
+
+  const items = [
+    { key: "ink", label: "Ink" },
+    { key: "coral", label: "Coral" },
+    { key: "ring", label: "Ring" },
+    { key: "grain", label: "Grain" },
+    { key: "snow", label: "Snow" },
+  ];
+
+  let selectedKey = "ink";
+
+  function updateSelectedStyles() {
+    [...grid.children].forEach((btn) => {
+      const key = btn.dataset.key;
+      const active = key === selectedKey;
+      btn.style.borderColor = active ? "#111" : "#ddd";
+      btn.style.boxShadow = active ? "0 0 0 1px #111 inset" : "none";
+    });
+  }
+
+  items.forEach((it) => {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.dataset.key = it.key;
+    btn.textContent = it.label;
+
+    btn.style.height = "36px";
+    btn.style.borderRadius = "10px";
+    btn.style.border = "1px solid #ddd";
+    btn.style.background = "#fff";
+    btn.style.cursor = "pointer";
+    btn.style.fontSize = "12px";
+    btn.style.color = "#222";
+    btn.style.userSelect = "none";
+
+    btn.addEventListener("click", () => {
+      selectedKey = it.key;
+      updateSelectedStyles();
+
+      const fluidCtrl = getFluidCtrl?.();
+      if (!fluidCtrl?.applyMaterial) {
+        console.warn("[material] fluidCtrl not ready or applyMaterial missing");
+        return;
+      }
+      fluidCtrl.applyMaterial(it.key);
+    });
+
+    grid.appendChild(btn);
+  });
+
+  updateSelectedStyles();
+
+  // 回傳一個 handle，讓你需要時可以手動同步狀態/禁用
+  return {
+    setSelected(key) {
+      selectedKey = key;
+      updateSelectedStyles();
+    },
+  };
 }
 
 // --- Step2 interactions ---
