@@ -8,8 +8,8 @@ import { createPotController } from "./pot/potControllers.js";
 
 const scene = new THREE.Scene();
 
-const ambientLight = new THREE.AmbientLight(0xffffff, 1);
-scene.add(ambientLight);
+// const ambientLight = new THREE.AmbientLight(0xffffff, 1);
+// scene.add(ambientLight);
 
 const camera = new THREE.PerspectiveCamera(
   60, // 視角（越大越廣角）
@@ -18,6 +18,7 @@ const camera = new THREE.PerspectiveCamera(
   1000 // 最遠可看到的距離
 );
 const renderer = new THREE.WebGLRenderer();
+
 function resize(){
   const width = window.innerWidth;
   const height = window.innerHeight;
@@ -340,9 +341,14 @@ hub.style.display = "none";
 hub.style.zIndex = "9999";
 document.body.appendChild(hub);
 
-function showHUD(text){
-  hub.textContent = text;
-  hub.style.display = "block";
+function showHUD(text) {
+  if (state === FSM.SEATED) {
+    hideHUD();
+    return;
+  }
+
+  hudEl.textContent = text;
+  hudEl.style.display = "block";
 }
 function hideHUD(){
   hub.style.display = "none";
@@ -392,7 +398,7 @@ function buildTableInfo(tableRoot){
 }
 
 function findPotRef(tableRoot) {
-  const cadidates = ["potbody_", "soup_", "pothandle_", "potstand_", "stovebody_", "stovebutton_", "stovecap_", "fire_"];
+  const cadidates = ["potbody_", "soupBase_", "soupTransparent_", "pothandle_", "potstand_", "stovebody_", "stovebutton_", "stovecap_", "fire_"];
   let found = null;
   tableRoot.traverse((o) => {
     if (!o.name) return;
@@ -540,7 +546,7 @@ window.addEventListener("keyup", (e) => {
 
 const loader = new GLTFLoader();
 loader.load(
-  "/public/env.glb",
+  "/public/newenv.glb",
   (gltf) => {
     envRoot = gltf.scene;
     scene.add(envRoot);
@@ -634,13 +640,29 @@ loader.load(
     box.min.z = center.z - hz;
     box.max.z = center.z + hz;
 
-    const spawnLight = new THREE.PointLight(0xffffff, 90, 800);
-    spawnLight.position.set(
-    center.x,
-    center.y + 8,
-    center.z - 3,
-    );
-    scene.add(spawnLight);
+    // const spawnLight = new THREE.PointLight(0xffffff, 50, 100);
+    // spawnLight.position.set(
+    // center.x,
+    // center.y + 8,
+    // center.z - 3,
+    // );
+    // scene.add(spawnLight);
+
+    // 1. 基礎環境光：讓陰影處不至於全黑
+    const ambient = new THREE.AmbientLight(0xffffff, 0.4);
+    scene.add(ambient);
+
+    // 3. 局部點光源：放在場景的前後兩端，模擬圖三的佈局
+    const light1 = new THREE.PointLight(0xffffff, 0.5); 
+    light1.position.set(center.x, 8, center.z - 10);
+    scene.add(light1);
+
+    const light2 = new THREE.PointLight(0xffffff, 0.5);
+    light2.position.set(center.x, 8, center.z + 5);
+    scene.add(light2);
+
+    // 4. 渲染器設定（非常重要）
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
 
     return box;
     }
@@ -716,33 +738,19 @@ loader.load(
     const g = new THREE.Group();
     g.name = "__seatDebugGroup";
 
-    const geom = new THREE.SphereGeometry(0.25, 16, 12);
-    const mat = new THREE.MeshBasicMaterial({ color: 0xff00ff , depthTest: false, depthWrite: false});
-    const ball = new THREE.Mesh (geom, mat);
-    ball.renderOrder = 999; 
+  
     const HIT_Y_OFFSET = 1.2;
 
 
     for (const t of tableInfos) {
       for (const s of t.seats) {
         console.log("[debug seat world pos]", t.id, s.id, s.pos.toArray());
-        const m = new THREE.Mesh(geom, mat);
-        m.name = `DBG_SEAT_${t.id}_${s.id}`;
-        m.position.set(s.pos.x, s.pos.y + HIT_Y_OFFSET, s.pos.z);
-        m.renderOrder = 999;
-        m.frustumCulled = false;
-        g.add(m);
+      
 
-        const axes = new THREE.AxesHelper(0.6);
-        axes.name = `__seatAxes_${t.id}_${s.id}`;
-        axes.position.set(s.pos.x, s.pos.y + HIT_Y_OFFSET, s.pos.z);
-        axes.quaternion.copy(s.quat);
-        axes.renderOrder = 999;
-        axes.frustumCulled = false;
-        g.add(axes);
-
+        
         const hitGeom = new THREE.SphereGeometry(0.6, 12, 12);
         const hitMat = new THREE.MeshBasicMaterial({
+          visible: false,
           color: 0x00ff,
           wireframe: true,
           transparent: true,
@@ -757,7 +765,7 @@ loader.load(
         g.add(hit);
 
         const key = `${t.id}_${s.id}`;
-        seatVisualByKey.set(key, m);
+        seatVisualByKey.set(key, hit);
       }
     }
     
@@ -1110,23 +1118,18 @@ function dispatchAction(action) {
 function updateHUD() {
   if (state === FSM.FREE_ROAM) {
     if (hoveredTableId) showHUD(`Look: ${hoveredTableId}  (E to select)`);
-    else hideHUD();
+    hideHUD();
     return;
   }
 
   if (state === FSM.SEAT_SELECTING) {
     showHUD(`Selected: ${selectedTableId ?? "-"}  (E/Enter to sit, R/Esc cancel)`);
+    hideHUD();
     return;
   }
 
   if (state === FSM.SEATED) {
-    const potHit = getLookAtPotHitForActiveTable();
-    if (potHit) showHUD(`Pot ready (E to open)`);
-    else showHUD(`seated at ${seated?.tableId ?? "-"}(look at pot)`);
-  }
-
-  if (state === FSM.UI_OPEN) {
-    showHUD(`UI open  (Esc back)`);
+    hideHUD();
     return;
   }
 }
@@ -1480,7 +1483,9 @@ if (!window.__seatRayTick) {
 if (state === FSM.FREE_ROAM || state === FSM.SEAT_SELECTING) {
     if (hoveredSeatKey) {
       showHUD(`Seat ${hoveredSeatKey} - Press E`);
-    } 
+    } else {
+      hideHUD();
+    }
   }
 
   for (const s of seatsState.values()){

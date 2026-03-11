@@ -2,8 +2,6 @@ import { createPotData } from "./potData.js";
 import { createBallEditorFluid } from "./ballEditorFluid.js";
 import { createFluidPavel } from "./fluid/createFluidPavel.js";
 
-
-
 export function createPotController({ appEl, onClose, onRequestClose } = {}) {
   if (!appEl) throw new Error("[pot] createPotController: appEl is required");
 
@@ -13,71 +11,179 @@ export function createPotController({ appEl, onClose, onRequestClose } = {}) {
   let panelEl = null;
 
   let activeTableId = null;
-  let step = 0; // 0,1,2,3
+  // 0=intro, 1=soup blocks, 2=ingredients, 3=compose pot, 4=3d preview, 5=chairs
+  let step = 0;
 
-  const balls = []; // {id, name, previewUrl, createdAt}
+  // soup blocks (old balls)
+  const balls = [];
   let activeBallId = null;
 
+  // ingredient pngs
+  const ingredients = [];
+  let activeIngredientId = null;
 
-  // Step1 placeholders
-  let fluidCanvas = null; // 549x549 (you will replace with webgl fluid canvas later)
-  // Step1 fluid runtime
-  let fluidMountEl = null;   
-  let fluidCtrl = null;        
-  let fluidColor = "#ff5cff";  
-  let ballEditor = null; 
-  let listWrap = null;
-  let ballListEl = null;
-  let emptyTextEl = null;
+  // shared data store
   const potData = createPotData();
 
-  // Step2
-  let potCanvas = null; // 312x312
+  // step1 fluid
+  let fluidMountEl = null;
+  let fluidCtrl = null;
+  let fluidColor = "#ff5cff";
+  let ballEditor = null;
+
+  // step2 ingredient drawing
+  let ingredientCanvas = null;
+  let ingredientCtx = null;
+  let ingredientBrushColor = "#ff5cff";
+  let ingredientBrushSize = 22;
+  let ingredientDrawing = false;
+  let ingredientLastPoint = null;
+  let ingredientPreviewImgUrl = null;
+
+  // step3 composition
+  let potCanvas = null;
   let potCtx = null;
-  let placements = [];
-  let regionOverlayCanvas = null;
-  let regionOverlayCtx = null;
-  let step2Initialized = false;
-  
-  // --- Step2 cut ---
-  let cutMode = false;          
-  let isDrawingCut = false;
-  let cutPath = [];              
-  let cutLines = [];      
-  let step2Bound = false;   
-  let activeCutPath = [];
+  let composeMode = "soup"; // soup | ingredient | cut | delete
+  let cutDrawing = false;
+  let cutPath = [];
+  let cutLines = [];
+  let step3Bound = false;
 
-  // --- Step2 regions (raster partition) ---
-  let regionW = 0;
-  let regionH = 0;
-  let regionMap = null;           // Int32Array, size = W*H, -1=outside, 0..n-1=regionId
-  let regionCount = 0;
+  // 3d preview placeholders (mount points only for now)
+  let step4PreviewEl = null;
+  let chairPreviewEl = null;
 
-  let wallMap = null;             // Uint8Array, 1=wall(pixel blocked)
-  let hoverRegionId = -1;         // 滑到哪塊
-  let selectedRegionId = -1;      // 點選哪塊（你要“選到變灰”我建議用 selected）
-  
-  // Step3 fake diffusion
-  let diffCanvas = null;
-  let diffCtx = null;
-  let diffOff = null;       // offscreen buffer
-  let diffOffCtx = null;
-  let diffRaf = 0;
-  let diffRunning = false;
-  let lastT = 0;
+  // exported / final texture cache
+  let finalPotTextureUrl = null;
 
-  // ---------- helpers ----------
-
-
+  // ---------- ui spec ----------
   const UI = {
-    overlayW: 1310,
-    overlayH: 647,
-    btnW: 234,
-    btnH: 95,
-    ballDivW: 234,
-    ballDivH: 305,
-    fluidSize: 549,
-    potCanvasSize: 312,
+    overlayW: 1308,
+    overlayH: 643,
+
+    step0: {
+      pot: { x: 430, y: 157, w: 448, h: 329 },
+      bubble: { x: 148, y: -21, w: 361, h: 361 },
+      nextBtn: { x: 1074, y: 551, w: 199, h: 63 },
+      nextIcon: { x: 1095, y: 562, w: 42, h: 42 },
+      nextText: { x: 1174, y: 570 },
+    },
+
+    step1: {
+      worktop: { x: 0, y: 0, w: 1308, h: 643 },
+      title: { x: 590, y: 53 },
+      fluid: { x: 497, y: 53, w: 315, h: 315 },
+      nameInput: { x: 683, y: 280, w: 191, h: 60 },
+      confirmBtn: { x: 814, y: 280, w: 60, h: 60 },
+      confirmIcon: { x: 817, y: 283, w: 54, h: 54 },
+      deleteBtn: { x: 890, y: 280, w: 60, h: 60 },
+      deleteIcon: { x: 905, y: 292, w: 30, h: 37 },
+      listFrame: { x: 321, y: 387, w: 665, h: 87 },
+      listTitle: { x: 321, y: 387 },
+      listItemStart: { x: 321, y: 424 },
+      leftToolsFrame: { x: 84, y: 53, w: 220, h: 405 },
+      colorBtn: { x: 107, y: 53, w: 174, h: 174 },
+      materialBtn: { x: 84, y: 238, w: 220, h: 220 },
+      brushBtn: { x: 1037, y: 53, w: 176, h: 177 },
+      eraserBtn: { x: 986, y: 145, w: 164, h: 164 },
+      fingerBtn: { x: 1011, y: 300, w: 181, h: 181 },
+      nextBtn: { x: 1074, y: 551, w: 199, h: 63 },
+      nextIcon: { x: 1095, y: 562, w: 42, h: 42 },
+      nextText: { x: 1174, y: 570 },
+    },
+
+    step2: {
+      worktop: { x: 0, y: 0, w: 1308, h: 643 },
+      title: { x: 715, y: 53 },
+      drawCanvas: { x: 349, y: 110, w: 475, h: 230, radius: 999 },
+      drawTitle: { x: 369, y: 132 },
+      inflateBtn: { x: 819, y: 144, w: 126, h: 126 },
+      inflateLabel: { x: 851, y: 267, w: 62, h: 33 },
+      resultFrame: { x: 940, y: 110, w: 312, h: 230, radius: 999 },
+      resultPreview: { x: 940, y: 110, w: 312, h: 151 },
+      nameInput: { x: 683, y: 280, w: 191, h: 60 },
+      confirmBtn: { x: 814, y: 280, w: 60, h: 60 },
+      confirmIcon: { x: 817, y: 283, w: 54, h: 54 },
+      deleteBtn: { x: 890, y: 280, w: 60, h: 60 },
+      deleteIcon: { x: 905, y: 292, w: 30, h: 37 },
+      listFrame: { x: 321, y: 387, w: 910, h: 87 },
+      listTitle: { x: 321, y: 387 },
+      listItemStart: { x: 321, y: 424 },
+      colorBtn: { x: 107, y: 53, w: 174, h: 174 },
+      brushBtn: { x: 106, y: 212, w: 144, h: 144 },
+      eraserBtn: { x: 120, y: 328, w: 168, h: 168 },
+      nextBtn: { x: 1124, y: 551, w: 149, h: 63 },
+      nextIcon: { x: 1148, y: 562, w: 42, h: 42 },
+      nextText: { x: 1199, y: 570 },
+      prevBtn: { x: 35, y: 551, w: 199, h: 63 },
+      prevIcon: { x: 173, y: 562, w: 42, h: 42 },
+      prevText: { x: 57, y: 570 },
+    },
+
+    step3: {
+      potFrame: { x: 414, y: 0, w: 480, h: 480 },
+      potCanvas: { x: 499, y: 85, w: 310, h: 310 },
+      soupList: { x: 62, y: 68, w: 272, h: 518 },
+      soupListTitle: { x: 83, y: 95 },
+      ingList: { x: 971, y: 68, w: 272, h: 518 },
+      ingListTitle: { x: 992, y: 95 },
+      controlsY: 475,
+      labelsY: 586,
+      controls: {
+        continueMake: { x: 378, y: 475, w: 60, h: 60 },
+        cut: { x: 505, y: 475, w: 60, h: 60 },
+        restart: { x: 623, y: 475, w: 60, h: 60 },
+        delete: { x: 741, y: 475, w: 60, h: 60 },
+        finish: { x: 867, y: 475, w: 60, h: 60 },
+      },
+    },
+
+    step4: {
+      soupList: { x: 150, y: 140, w: 250, h: 345 },
+      ingList: { x: 908, y: 140, w: 250, h: 345 },
+      preview: { x: 504, y: 140, w: 300, h: 345 },
+      nextBtn: { x: 1158, y: 551, w: 199, h: 63 },
+      nextIcon: { x: 1180, y: 562, w: 42, h: 42 },
+      nextText: { x: 1225, y: 570 },
+      prevBtn: { x: 164, y: 551, w: 199, h: 63 },
+      prevIcon: { x: 302, y: 562, w: 42, h: 42 },
+      prevText: { x: 186, y: 570 },
+    },
+
+    step5: {
+      chairPreview: { x: 145, y: 95, w: 440, h: 360 },
+      title: { x: 708, y: 165 },
+      nextBtn: { x: 1158, y: 551, w: 199, h: 63 },
+      nextIcon: { x: 1180, y: 562, w: 42, h: 42 },
+      nextText: { x: 1225, y: 570 },
+      prevBtn: { x: 164, y: 551, w: 199, h: 63 },
+      prevIcon: { x: 302, y: 562, w: 42, h: 42 },
+      prevText: { x: 186, y: 570 },
+    },
+  };
+
+  const ASSETS = {
+    step0Pot: "/poticon.png",
+    emptyBubble: "/empty.png",
+    step1Worktop: "/step1worktop.png",
+    step2Worktop: "/step2worktop.png",
+    step3Pot: "/step3pot.png",
+
+    rightArrow: "/rightArrowBtn.png",
+    leftArrow: "/leftArrowBtn.png",
+    confirm: "/confirm.png",
+    delete: "/delete.png",
+    cut: "/cut.png",
+    restart: "/restart.png",
+
+    colorPicker: "/colorPicker.png",
+    material: "/material.png",
+    brushSize: "/brushSize.png",
+    brushSize2: "/brushSize2.png",
+    eraser: "/eraser.png",
+    eraser2: "/eraser2.png",
+    finger: "/finger.png",
+    inflate: "/inflate.png",
   };
 
   function isOpen() {
@@ -89,9 +195,13 @@ export function createPotController({ appEl, onClose, onRequestClose } = {}) {
     openFlag = true;
     activeTableId = tableId ?? null;
     step = 0;
-
     mount();
     renderStep();
+  }
+
+  function requestClose() {
+    if (typeof onRequestClose === "function") onRequestClose();
+    else close();
   }
 
   function close() {
@@ -100,79 +210,64 @@ export function createPotController({ appEl, onClose, onRequestClose } = {}) {
     activeTableId = null;
     step = 0;
     activeBallId = null;
+    activeIngredientId = null;
+
+    unmountFluidEditor();
 
     if (overlayEl?.parentNode) overlayEl.parentNode.removeChild(overlayEl);
     overlayEl = null;
     panelEl = null;
-    fluidCanvas = null;
+
     potCanvas = null;
     potCtx = null;
+    ingredientCanvas = null;
+    ingredientCtx = null;
+    step4PreviewEl = null;
+    chairPreviewEl = null;
 
+    window.removeEventListener("keydown", onKeyDownWhileOpen, true);
     if (typeof onClose === "function") onClose();
-  }
-
-  function requestClose() {
-    if (typeof onRequestClose === "function") onRequestClose();
-    else close();
   }
 
   function mount() {
     overlayEl = document.createElement("div");
     overlayEl.id = "pot-overlay";
-    overlayEl.style.position = "absolute";
-    overlayEl.style.inset = "0";
-    overlayEl.style.display = "flex";
-    overlayEl.style.alignItems = "center";
-    overlayEl.style.justifyContent = "center";
-    overlayEl.style.pointerEvents = "auto";
-    overlayEl.style.zIndex = "9999";
+    Object.assign(overlayEl.style, {
+      position: "absolute",
+      inset: "0",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      pointerEvents: "auto",
+      zIndex: "9999",
+    });
 
     const dim = document.createElement("div");
-    dim.style.position = "absolute";
-    dim.style.inset = "0";
-    dim.style.background = "rgba(0,0,0,0.12)";
-    overlayEl.appendChild(dim);
+    Object.assign(dim.style, {
+      position: "absolute",
+      inset: "0",
+      background: "rgba(0,0,0,0.12)",
+    });
     dim.addEventListener("click", requestClose);
+    overlayEl.appendChild(dim);
 
     panelEl = document.createElement("div");
-    panelEl.style.position = "relative";
-    panelEl.style.width = `${UI.overlayW}px`;
-    panelEl.style.height = `${UI.overlayH}px`;
-    panelEl.style.background = "#ffffff";
-    panelEl.style.borderRadius = "24px";
-    panelEl.style.boxShadow = "0 12px 40px rgba(0,0,0,0.18)";
-    panelEl.style.overflow = "hidden";
+    Object.assign(panelEl.style, {
+      position: "relative",
+      width: `${UI.overlayW}px`,
+      height: `${UI.overlayH}px`,
+      background: "#ffffff",
+      borderRadius: "24px",
+      boxShadow: "0 12px 40px rgba(0,0,0,0.18)",
+      overflow: "hidden",
+    });
     overlayEl.appendChild(panelEl);
 
     const cs = getComputedStyle(appEl);
     if (cs.position === "static") appEl.style.position = "relative";
     appEl.appendChild(overlayEl);
 
-    // Esc to close (UI scope)
     window.addEventListener("keydown", onKeyDownWhileOpen, true);
-  }
-
-  function unmountKey() {
-    window.removeEventListener("keydown", onKeyDownWhileOpen, true);
-  }
-
-  function mountFluidEditor() {
-    if (!fluidMountEl) return;
-    if (fluidCtrl) return;
-
-    fluidCtrl = createFluidPavel({
-      mountEl: fluidMountEl,
-      width: UI.fluidSize,
-      height: UI.fluidSize,
-      color: fluidColor,
-    });
-  }
-
-  function unmountFluidEditor() {
-    if (fluidCtrl?.destroy) fluidCtrl.destroy();
-    fluidCtrl = null;
-    fluidCanvas = null;
-    if (fluidMountEl) fluidMountEl.innerHTML = "";
   }
 
   function onKeyDownWhileOpen(e) {
@@ -188,1072 +283,1455 @@ export function createPotController({ appEl, onClose, onRequestClose } = {}) {
     panelEl.innerHTML = "";
   }
 
-  function makeBtn(label, { filled = false, onClick } = {}) {
-    const b = document.createElement("button");
-    b.textContent = label;
-    b.style.width = `${UI.btnW}px`;
-    b.style.height = `${UI.btnH}px`;
-    b.style.borderRadius = "48px";
-    b.style.cursor = "pointer";
-    b.style.fontSize = "22px";
-    b.style.fontFamily = "ui-sans-serif, system-ui";
-    b.style.letterSpacing = "1px";
-    b.style.border = filled ? "0" : "3px solid #ff5cff";
-    b.style.background = filled ? "#ff5cff" : "transparent";
-    b.style.color = filled ? "#ffffff" : "#ff5cff";
-    b.addEventListener("click", onClick);
-    return b;
-  }
-
-
-
-  function uuid() {
-    return crypto?.randomUUID?.() ?? `ball_${Math.random().toString(16).slice(2)}_${Date.now()}`;
-  }
-
-  // Step1: create a ball snapshot from the fluidCanvas placeholder
-    function randomColor() {
-    // 粉紫系先頂著，之後可改成從 preview 平均取色
-    const hues = [290, 305, 315, 275, 260];
-    const h = hues[Math.floor(Math.random() * hues.length)];
-    return `hsl(${h} 90% 65%)`;
-  }
-
-  function createBallFromFluidSnapshot() {
-    if (!fluidCanvas) return null;
-    const url = fluidCanvas.toDataURL("image/png");
-    const id = uuid();
-    const ball = {
-      id,
-      name: `Ball ${balls.length + 1}`,
-      previewUrl: url,
-      color: randomColor(),
-      createdAt: Date.now(),
-    };
-    balls.unshift(ball);
-    return ball;
-  }
-
-    function stopDiffusion() {
-    if (diffRaf) cancelAnimationFrame(diffRaf);
-    diffRaf = 0;
-    diffRunning = false;
-    lastT = 0;
-  }
-
-  function ensureDiffusionBuffers(size) {
-    if (!diffCanvas) return;
-
-    diffCanvas.width = size;
-    diffCanvas.height = size;
-    diffCtx = diffCanvas.getContext("2d");
-
-    diffOff = document.createElement("canvas");
-    diffOff.width = size;
-    diffOff.height = size;
-    diffOffCtx = diffOff.getContext("2d");
-
-    // init
-    diffOffCtx.clearRect(0, 0, size, size);
-    diffCtx.clearRect(0, 0, size, size);
-  }
-
-  function injectAt(x, y, color, r = 18) {
-    if (!diffOffCtx) return;
-
-    diffOffCtx.save();
-    diffOffCtx.globalAlpha = 0.9;
-    diffOffCtx.fillStyle = color || "rgba(255,92,255,0.8)";
-    diffOffCtx.beginPath();
-    diffOffCtx.arc(x, y, r, 0, Math.PI * 2);
-    diffOffCtx.fill();
-    diffOffCtx.restore();
-  }
-
-  function drawDiffusionFrame(size) {
-    if (!diffCtx || !diffOffCtx) return;
-
-    // 1) 讓 buffer 自己慢慢「糊掉」：把上一幀略微模糊、略微淡化回寫
-    diffOffCtx.save();
-    diffOffCtx.globalAlpha = 0.985;
-    diffOffCtx.filter = "blur(2px)";
-    diffOffCtx.drawImage(diffOff, 0, 0);
-    diffOffCtx.restore();
-
-    // 2) 畫到可見 canvas（更強 blur 一次，看起來像擴散）
-    diffCtx.clearRect(0, 0, size, size);
-
-    // clip 成鍋子圓形
-    diffCtx.save();
-    diffCtx.beginPath();
-    diffCtx.arc(size / 2, size / 2, size / 2 - 8, 0, Math.PI * 2);
-    diffCtx.clip();
-
-    diffCtx.filter = "blur(10px)";
-    diffCtx.drawImage(diffOff, 0, 0);
-    diffCtx.filter = "none";
-    diffCtx.globalAlpha = 0.55;
-    diffCtx.drawImage(diffOff, 0, 0);
-
-    diffCtx.restore();
-
-    // 外圈線
-    diffCtx.save();
-    diffCtx.beginPath();
-    diffCtx.arc(size / 2, size / 2, size / 2 - 8, 0, Math.PI * 2);
-    diffCtx.strokeStyle = "rgba(255,92,255,0.65)";
-    diffCtx.lineWidth = 8;
-    diffCtx.stroke();
-    diffCtx.restore();
-  }
-
-  function startDiffusion(size) {
-    if (diffRunning) return;
-    diffRunning = true;
-
-    const loop = (t) => {
-      if (!diffRunning) return;
-      if (!lastT) lastT = t;
-
-      drawDiffusionFrame(size);
-
-      diffRaf = requestAnimationFrame(loop);
-    };
-
-    diffRaf = requestAnimationFrame(loop);
-  }
-
-  // Step2: draw the selected ball preview onto potCanvas (MVP preview)
-  function placeActiveBallPreviewAt(x, y) {
-    if (!potCtx) return;
-    const ball = balls.find(b => b.id === activeBallId);
-    if (!ball) return;
-
-    const img = new Image();
-    img.onload = () => {
-      // draw as a circle stamp
-      const r = 34;
-      potCtx.save();
-      potCtx.beginPath();
-      potCtx.arc(x, y, r, 0, Math.PI * 2);
-      potCtx.closePath();
-      potCtx.clip();
-      potCtx.drawImage(img, x - r, y - r, r * 2, r * 2);
-      potCtx.restore();
-
-      // outline
-      potCtx.beginPath();
-      potCtx.arc(x, y, r, 0, Math.PI * 2);
-      potCtx.strokeStyle = "rgba(255,92,255,0.6)";
-      potCtx.lineWidth = 3;
-      potCtx.stroke();
-    };
-    img.src = ball.previewUrl;
-  }
-
-  // ---------- render steps ----------
   function renderStep() {
     if (!panelEl) return;
-    // 若離開 step1，確保 fluid 釋放
     if (step !== 1) unmountFluidEditor();
     clearPanel();
-
-    // top-left debug title
-    const debug = document.createElement("div");
-    debug.textContent = `table=${activeTableId ?? "-"}  step=${step}`;
-    debug.style.position = "absolute";
-    debug.style.left = "18px";
-    debug.style.top = "14px";
-    debug.style.fontFamily = "ui-monospace, SFMono-Regular";
-    debug.style.fontSize = "12px";
-    debug.style.color = "rgba(0,0,0,0.35)";
-    panelEl.appendChild(debug);
 
     if (step === 0) return renderStep0();
     if (step === 1) return renderStep1();
     if (step === 2) return renderStep2();
     if (step === 3) return renderStep3();
+    if (step === 4) return renderStep4();
+    if (step === 5) return renderStep5();
   }
 
-  // Step0 UI
-  function renderStep0() {
-    // center: pot placeholder (you will later mount GLB render / or image)
-    const center = document.createElement("div");
-    center.style.position = "absolute";
-    center.style.left = "50%";
-    center.style.top = "50%";
-    center.style.transform = "translate(-50%,-50%)";
-    center.style.width = "520px";
-    center.style.height = "520px";
-    center.style.borderRadius = "999px";
-    center.style.border = "6px solid rgba(255,92,255,0.35)";
-    center.style.display = "flex";
-    center.style.alignItems = "center";
-    center.style.justifyContent = "center";
-    center.style.color = "#ff5cff";
-    center.style.fontFamily = "ui-sans-serif, system-ui";
-    center.style.fontSize = "20px";
-    center.textContent = "Pot preview placeholder";
-    panelEl.appendChild(center);
+  // ---------- generic ui helpers ----------
+  function addImg(src, { x, y, w, h, rotate = 0, z = 1, opacity = 1, pointerEvents = "none" } = {}) {
+    const img = document.createElement("img");
+    img.src = src;
+    Object.assign(img.style, {
+      position: "absolute",
+      left: `${x}px`,
+      top: `${y}px`,
+      width: `${w}px`,
+      height: `${h}px`,
+      zIndex: String(z),
+      opacity: String(opacity),
+      pointerEvents,
+      transform: rotate ? `rotate(${rotate}deg)` : "none",
+      transformOrigin: "center center",
+      userSelect: "none",
+      WebkitUserDrag: "none",
+    });
+    panelEl.appendChild(img);
+    return img;
+  }
 
-    // button: 編輯 (go to step1)
-    const btnEdit = makeBtn("編輯", {
-      filled: false,
+  function addText(text, { x, y, size = 20, color = "#FD6FFF", z = 2, center = false } = {}) {
+    const el = document.createElement("div");
+    el.textContent = text;
+    Object.assign(el.style, {
+      position: "absolute",
+      left: `${x}px`,
+      top: `${y}px`,
+      fontFamily: '"zpix", ui-sans-serif, system-ui',
+      fontSize: `${size}px`,
+      lineHeight: "1",
+      color,
+      zIndex: String(z),
+      whiteSpace: "nowrap",
+      transform: center ? "translateX(-50%)" : "none",
+      pointerEvents: "none",
+    });
+    panelEl.appendChild(el);
+    return el;
+  }
+
+  function addCapsuleButton({ x, y, w, h, bg = "#ffffff", border = "2px solid #FD6FFF", radius = 999, onClick, z = 3 }) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    Object.assign(btn.style, {
+      position: "absolute",
+      left: `${x}px`,
+      top: `${y}px`,
+      width: `${w}px`,
+      height: `${h}px`,
+      borderRadius: `${radius}px`,
+      border,
+      background: bg,
+      cursor: "pointer",
+      zIndex: String(z),
+      padding: "0",
+    });
+    btn.addEventListener("click", onClick);
+    panelEl.appendChild(btn);
+    return btn;
+  }
+
+  function addImageButton(src, rect, { onClick, rotate = 0, bg = "transparent", border = "0", radius = 999, z = 3 } = {}) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    Object.assign(btn.style, {
+      position: "absolute",
+      left: `${rect.x}px`,
+      top: `${rect.y}px`,
+      width: `${rect.w}px`,
+      height: `${rect.h}px`,
+      background: bg,
+      border,
+      borderRadius: `${radius}px`,
+      padding: "0",
+      cursor: "pointer",
+      zIndex: String(z),
+    });
+    if (onClick) btn.addEventListener("click", onClick);
+
+    const img = document.createElement("img");
+    img.src = src;
+    Object.assign(img.style, {
+      width: "100%",
+      height: "100%",
+      objectFit: "contain",
+      transform: rotate ? `rotate(${rotate}deg)` : "none",
+      transformOrigin: "center center",
+      pointerEvents: "none",
+    });
+    btn.appendChild(img);
+    panelEl.appendChild(btn);
+    return btn;
+  }
+
+function addActionButton({ rect, label, iconSrc, iconRect, onClick, textOffsetX = 0 }) {
+  const btn = addCapsuleButton({
+    x: rect.x,
+    y: rect.y,
+    w: rect.w,
+    h: rect.h,
+    bg: "#fff",
+    border: "2px solid #FD6FFF",
+    onClick
+  });
+
+  addImg(iconSrc, {
+    x: iconRect.x,
+    y: iconRect.y,
+    w: iconRect.w,
+    h: iconRect.h,
+    z: 4
+  });
+
+  addText(label, {
+    x: rect.x + rect.w / 2 + textOffsetX,
+    y: rect.y + 19,
+    size: 25,
+    color: "#FD6FFF",
+    center: true,
+    z: 4
+  });
+
+  return btn;
+}
+
+  function addLabelChip(text, { x, y, w = 90, h = 33, bg = "#EAEAEA", color = "#000" }) {
+    const chip = document.createElement("div");
+    Object.assign(chip.style, {
+      position: "absolute",
+      left: `${x}px`,
+      top: `${y}px`,
+      width: `${w}px`,
+      height: `${h}px`,
+      background: bg,
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      zIndex: "3",
+    });
+    panelEl.appendChild(chip);
+    const t = document.createElement("div");
+    t.textContent = text;
+    Object.assign(t.style, {
+      fontFamily: '"zpix", ui-sans-serif, system-ui',
+      fontSize: "20px",
+      color,
+      lineHeight: "1",
+      pointerEvents: "none",
+    });
+    chip.appendChild(t);
+    return chip;
+  }
+
+  function addRoundedInput({ x, y, w, h, placeholder = "", value = "" }) {
+    const input = document.createElement("input");
+    input.type = "text";
+    input.value = value;
+    input.placeholder = placeholder;
+    Object.assign(input.style, {
+      position: "absolute",
+      left: `${x}px`,
+      top: `${y}px`,
+      width: `${w}px`,
+      height: `${h}px`,
+      borderRadius: "999px",
+      border: "2px solid #EAEAEA",
+      background: "#fff",
+      padding: "0 16px",
+      boxSizing: "border-box",
+      fontFamily: '"zpix", ui-sans-serif, system-ui',
+      fontSize: "18px",
+      zIndex: "3",
+    });
+    panelEl.appendChild(input);
+    return input;
+  }
+
+  function addFrameBox({ x, y, w, h, bg = "transparent", border = "2px solid #FD6FFF", radius = 0, z = 2 }) {
+    const el = document.createElement("div");
+    Object.assign(el.style, {
+      position: "absolute",
+      left: `${x}px`,
+      top: `${y}px`,
+      width: `${w}px`,
+      height: `${h}px`,
+      background: bg,
+      border,
+      borderRadius: `${radius}px`,
+      boxSizing: "border-box",
+      zIndex: String(z),
+    });
+    panelEl.appendChild(el);
+    return el;
+  }
+
+  function fitImgPreview(url, rect, { objectFit = "contain", borderRadius = 0, z = 4 } = {}) {
+    const img = document.createElement("img");
+    img.src = url;
+    Object.assign(img.style, {
+      position: "absolute",
+      left: `${rect.x}px`,
+      top: `${rect.y}px`,
+      width: `${rect.w}px`,
+      height: `${rect.h}px`,
+      objectFit,
+      borderRadius: `${borderRadius}px`,
+      zIndex: String(z),
+      pointerEvents: "none",
+    });
+    panelEl.appendChild(img);
+    return img;
+  }
+
+  // ---------- step0 ----------
+  function renderStep0() {
+    const s = UI.step0;
+
+    const potImg = addImg(ASSETS.step0Pot, { ...s.pot, z: 2, pointerEvents: "auto" });
+    const bubble = addImg(ASSETS.emptyBubble, { ...s.bubble, z: 3, opacity: 0 });
+    const bubbleText = addText("來製作你的火鍋吧！", {
+      x: 194,
+      y: 126,
+      size: 30,
+      color: "#FD6FFF",
+      z: 4,
+    });
+    bubbleText.style.opacity = "0";
+
+    potImg.addEventListener("mouseenter", () => {
+      bubble.style.opacity = "1";
+      bubbleText.style.opacity = "1";
+    });
+    potImg.addEventListener("mouseleave", () => {
+      bubble.style.opacity = "0";
+      bubbleText.style.opacity = "0";
+    });
+
+    addActionButton({
+      rect: s.nextBtn,
+      label: "開始製作",
+      iconSrc: ASSETS.rightArrow,
+      iconRect: s.nextIcon,
+      textOffsetX: 14,
       onClick: () => {
         step = 1;
         renderStep();
       },
     });
-    btnEdit.style.position = "absolute";
-    btnEdit.style.right = "90px";
-    btnEdit.style.bottom = "70px";
-    panelEl.appendChild(btnEdit);
   }
 
-  // Step1 UI (fluid editor)
-  function renderStep1() {
-    // ---- left: color picker ----
-    const picker = document.createElement("div");
-    picker.style.position = "absolute";
-    picker.style.left = "70px";
-    picker.style.top = "90px";
-    picker.style.width = "230px";
-    picker.style.height = "480px";
-    picker.style.borderRadius = "16px";
-    picker.style.background = "#f2f2f2";
-    picker.style.padding = "16px";
-    picker.style.boxSizing = "border-box";
-    picker.style.fontFamily = "ui-sans-serif, system-ui";
-    panelEl.appendChild(picker);
-
-    const label = document.createElement("div");
-    label.textContent = "Color";
-    label.style.color = "#666";
-    label.style.marginBottom = "10px";
-    label.style.fontSize = "14px";
-    picker.appendChild(label);
-
-    const input = document.createElement("input");
-    input.type = "color";
-    input.value = fluidColor;
-    input.style.width = "100%";
-    input.style.height = "56px";
-    input.style.border = "0";
-    input.style.background = "transparent";
-    input.style.cursor = "pointer";
-    picker.appendChild(input);
-
-    input.addEventListener("input", () => {
-      fluidColor = input.value;
-      fluidCtrl?.setColor?.(fluidColor);
+  // ---------- step1 soup blocks ----------
+  function mountFluidEditor() {
+    if (!fluidMountEl || fluidCtrl) return;
+    fluidCtrl = createFluidPavel({
+      mountEl: fluidMountEl,
+      width: UI.step1.fluid.w,
+      height: UI.step1.fluid.h,
+      color: fluidColor,
     });
-    // ---- left: material picker ----
-    renderMaterialPicker(picker, () => fluidCtrl);
+  }
 
-    // ---- center: fluid mount ----
-    // ✅ 用外層變數，不要 const shadow
+  function unmountFluidEditor() {
+    if (fluidCtrl?.destroy) fluidCtrl.destroy();
+    fluidCtrl = null;
+    if (fluidMountEl) fluidMountEl.innerHTML = "";
+    fluidMountEl = null;
+  }
+
+  function renderHorizontalSoupList(rect) {
+    addText("湯塊區", { x: rect.x, y: rect.y, size: 20, z: 3 });
+
+    const wrap = document.createElement("div");
+    Object.assign(wrap.style, {
+      position: "absolute",
+      left: `${rect.x}px`,
+      top: `${rect.y + 37}px`,
+      width: `${rect.w}px`,
+      height: `${rect.h - 37}px`,
+      display: "flex",
+      alignItems: "center",
+      gap: "17px",
+      overflowX: "auto",
+      overflowY: "hidden",
+      zIndex: "3",
+    });
+    panelEl.appendChild(wrap);
+
+    if (balls.length === 0) {
+      const empty = document.createElement("div");
+      empty.textContent = "尚無湯塊";
+      Object.assign(empty.style, {
+        fontFamily: '"zpix", ui-sans-serif, system-ui',
+        fontSize: "18px",
+        color: "#666",
+      });
+      wrap.appendChild(empty);
+      return wrap;
+    }
+
+    balls.forEach((ball) => {
+      const item = document.createElement("button");
+      item.type = "button";
+      Object.assign(item.style, {
+        width: "50px",
+        height: "50px",
+        minWidth: "50px",
+        borderRadius: "999px",
+        border: ball.id === activeBallId ? "3px solid #1248FF" : "2px solid #FD6FFF",
+        background: "#fff",
+        padding: "0",
+        cursor: "pointer",
+      });
+      item.addEventListener("click", () => {
+        activeBallId = ball.id;
+        composeMode = "soup";
+        renderStep();
+      });
+
+      const img = document.createElement("img");
+      img.src = ball.previewUrl;
+      Object.assign(img.style, {
+        width: "100%",
+        height: "100%",
+        objectFit: "cover",
+        borderRadius: "999px",
+        pointerEvents: "none",
+      });
+      item.appendChild(img);
+      wrap.appendChild(item);
+    });
+
+    return wrap;
+  }
+
+  function renderStep1() {
+    const s = UI.step1;
+    addImg(ASSETS.step1Worktop, { ...s.worktop, z: 1 });
+    addText("製作湯塊", { x: s.title.x, y: s.title.y, size: 25, z: 3 });
+
+    // center fluid mount
     fluidMountEl = document.createElement("div");
-    fluidMountEl.style.position = "absolute";
-    fluidMountEl.style.left = "50%";
-    fluidMountEl.style.top = "50%";
-    fluidMountEl.style.transform = "translate(-50%,-50%)";
-    fluidMountEl.style.width = `${UI.fluidSize}px`;
-    fluidMountEl.style.height = `${UI.fluidSize}px`;
-    fluidMountEl.style.border = "4px solid rgba(255,92,255,0.6)";
-    fluidMountEl.style.borderRadius = "6px";
-    fluidMountEl.style.overflow = "hidden";
+    Object.assign(fluidMountEl.style, {
+      position: "absolute",
+      left: `${s.fluid.x}px`,
+      top: `${s.fluid.y}px`,
+      width: `${s.fluid.w}px`,
+      height: `${s.fluid.h}px`,
+      overflow: "hidden",
+      borderRadius: "12px",
+      zIndex: "2",
+      background: "#fff",
+    });
     panelEl.appendChild(fluidMountEl);
-
-    // ✅ 先不要塞 placeholder canvas（避免兩個 canvas）
-    // 如果你真的想要 loading 底圖：
-    // fluidMountEl.innerHTML = '<div style="width:100%;height:100%;background:#fff"></div>';
-
-    // ✅ mount 真正 fluid（讓它自己 append canvas）
     mountFluidEditor();
 
-    // ---- right: ball list ----
-    const ui1 = mountBallListUI({ panelEl, side: "right" });
-    // ui1.ballListEl / ui1.emptyTextEl 才是真的
+    // controls shown as image buttons; functionality intentionally minimal for now
+    addImageButton(ASSETS.colorPicker, s.colorBtn, {
+      onClick: () => console.log("[step1] color picker ui only"),
+      border: "0",
+      bg: "transparent",
+      radius: 0,
+    });
+    addImageButton(ASSETS.material, s.materialBtn, {
+      onClick: () => console.log("[step1] material picker ui only"),
+      border: "0",
+      bg: "transparent",
+      radius: 0,
+    });
+    addImageButton(ASSETS.brushSize, s.brushBtn, {
+      onClick: () => console.log("[step1] brush size ui only"),
+      border: "0",
+      bg: "transparent",
+      radius: 0,
+    });
+    addImageButton(ASSETS.eraser, s.eraserBtn, {
+      onClick: () => console.log("[step1] eraser ui only"),
+      border: "0",
+      bg: "transparent",
+      radius: 0,
+    });
+    addImageButton(ASSETS.finger, s.fingerBtn, {
+      onClick: () => console.log("[step1] finger ui only"),
+      border: "0",
+      bg: "transparent",
+      radius: 0,
+    });
+
+    const nameInput = addRoundedInput({ x: s.nameInput.x, y: s.nameInput.y, w: s.nameInput.w, h: s.nameInput.h, placeholder: "" });
+    addText("命名湯塊", { x: 700, y: 301, size: 20, z: 4 });
+
+    addCapsuleButton({ x: s.confirmBtn.x, y: s.confirmBtn.y, w: s.confirmBtn.w, h: s.confirmBtn.h, bg: "#EAEAEA", border: "2px solid #EAEAEA", onClick: () => {
+      const nm = nameInput.value.trim() || `湯塊 ${balls.length + 1}`;
+      const ball = ballEditor?.storeSnapshot?.(nm);
+      if (!ball) return;
+      activeBallId = ball.id;
+      nameInput.value = "";
+      renderStep();
+    }});
+    addImg(ASSETS.confirm, { ...s.confirmIcon, z: 4 });
+
+    addCapsuleButton({ x: s.deleteBtn.x, y: s.deleteBtn.y, w: s.deleteBtn.w, h: s.deleteBtn.h, bg: "#EAEAEA", border: "2px solid #EAEAEA", onClick: () => {
+      if (!balls.length) return;
+      const idx = activeBallId ? balls.findIndex((b) => b.id === activeBallId) : 0;
+      const removeAt = idx >= 0 ? idx : 0;
+      const [removed] = balls.splice(removeAt, 1);
+      if (removed?.id === activeBallId) activeBallId = balls[0]?.id ?? null;
+      renderStep();
+    }});
+    addImg(ASSETS.delete, { ...s.deleteIcon, z: 4 });
+
+    // keep using existing data flow
+    const hiddenBallList = document.createElement("div");
+    const hiddenEmpty = document.createElement("div");
+    hiddenBallList.style.display = "none";
+    hiddenEmpty.style.display = "none";
+    panelEl.appendChild(hiddenBallList);
+    panelEl.appendChild(hiddenEmpty);
 
     ballEditor = createBallEditorFluid({
       getTableId: () => activeTableId,
       getFluidCanvas: () => fluidCtrl?.canvas,
       data: potData,
-      ui: { ballListEl: ui1.ballListEl, emptyTextEl: ui1.emptyText },
+      ui: { ballListEl: hiddenBallList, emptyTextEl: hiddenEmpty },
     });
 
-    ballEditor.renderBallList();
+    // sync balls[] with potData render source if needed, but still draw our own list from balls array
+    renderHorizontalSoupList(s.listFrame);
 
-    // ---- name input ----
-    const nameInput = document.createElement("input");
-    nameInput.type = "text";
-    nameInput.placeholder = "Ball name";
-    nameInput.style.position = "absolute";
-    nameInput.style.right = "90px";
-    nameInput.style.bottom = "250px";
-    nameInput.style.width = "234px";
-    nameInput.style.height = "42px";
-    nameInput.style.borderRadius = "12px";
-    nameInput.style.border = "2px solid rgba(255,92,255,0.35)";
-    nameInput.style.padding = "0 12px";
-    nameInput.style.boxSizing = "border-box";
-    nameInput.style.fontSize = "16px";
-    nameInput.style.fontFamily = "ui-sans-serif, system-ui";
-    nameInput.style.transform = "translateY(-50px)";  
-    nameInput.style.willChange = "transform";
-    panelEl.appendChild(nameInput);
-
-    // ---- buttons: 存取 / 完成 ----
-    const btnSave = makeBtn("存取", {
-      filled: true,
-      onClick: () => {
-        const nm = nameInput.value.trim();
-        const b = ballEditor?.storeSnapshot?.(nm);
-        if (!b) return;
-        nameInput.value = "";
-      },
-    });
-    btnSave.style.position = "absolute";
-    btnSave.style.right = "90px";
-    btnSave.style.bottom = "180px";
-    panelEl.appendChild(btnSave);
-
-    const btnDone = makeBtn("完成", {
-      filled: false,
+    addActionButton({
+      rect: s.nextBtn,
+      label: "製作配料",
+      iconSrc: ASSETS.rightArrow,
+      iconRect: s.nextIcon,
+      textOffsetX: 14,
       onClick: () => {
         step = 2;
-        leaveStep1(),
-        enterStep2();
         renderStep();
       },
     });
-    btnDone.style.position = "absolute";
-    btnDone.style.right = "90px";
-    btnDone.style.bottom = "70px";
-    panelEl.appendChild(btnDone);
   }
 
-  function leaveStep1() {
-    fluidCtrl?.destroy?.();
-    fluidCtrl = null;
-    // 不一定要清 ballEditor，因為它只管 list（但 UI DOM 會重建，所以通常也要重建）
-    ballEditor = null;
-    fluidMountEl = null;
+  // ---------- step2 ingredients ----------
+  function uuid() {
+    return crypto?.randomUUID?.() ?? `id_${Math.random().toString(16).slice(2)}_${Date.now()}`;
   }
 
-   function mountBallListUI({ panelEl, side = "right" }) {
-    // right: ball list container
-    const listWrap = document.createElement("div");
-    listWrap.style.position = "absolute";
-    listWrap.style.top = "120px";
-    listWrap.style.width = "234px";
-    listWrap.style.height = "305px";
-    listWrap.style.background = "#F7F7F7";
-    listWrap.style.borderRadius = "16px";
-    listWrap.style.padding = "12px";
-    listWrap.style.boxSizing = "border-box";
-    listWrap.style.overflowY = "auto";
-    listWrap.style.transform = "translateY(-80px)";  
-    listWrap.style.willChange = "transform";
-
-    if (side === "right") listWrap.style.right = "90px";
-    else listWrap.style.left = "90px";
-
-    panelEl.appendChild(listWrap);
-
-    const emptyText = document.createElement("div");
-    emptyText.textContent = "No balls yet";
-    emptyText.style.color = "#999";
-    emptyText.style.fontFamily = "ui-sans-serif, system-ui";
-    emptyText.style.fontSize = "16px";
-    emptyText.style.padding = "8px";
-    listWrap.appendChild(emptyText);
-
-    const ballListEl = document.createElement("div");
-    listWrap.appendChild(ballListEl);
-
-    return { listWrap, emptyText, ballListEl };
+  function startIngredientPath(e) {
+    if (!ingredientCanvas || !ingredientCtx) return;
+    ingredientDrawing = true;
+    const p = ingredientCanvasXY(e);
+    ingredientLastPoint = p;
+    ingredientCtx.beginPath();
+    ingredientCtx.moveTo(p.x, p.y);
   }
 
-  // Step2 UI (partition + placement preview on canvas)
+  function moveIngredientPath(e) {
+    if (!ingredientDrawing || !ingredientCanvas || !ingredientCtx) return;
+    const p = ingredientCanvasXY(e);
+    ingredientCtx.lineCap = "round";
+    ingredientCtx.lineJoin = "round";
+    ingredientCtx.strokeStyle = ingredientBrushColor;
+    ingredientCtx.lineWidth = ingredientBrushSize;
+    ingredientCtx.lineTo(p.x, p.y);
+    ingredientCtx.stroke();
+    ingredientLastPoint = p;
+  }
 
-function canvasXY(e) {
-  const rect = potCanvas.getBoundingClientRect();
-  const x = (e.clientX - rect.left) * (potCanvas.width / rect.width);
-  const y = (e.clientY - rect.top) * (potCanvas.height / rect.height);
-  return { x, y };
-}
+  function endIngredientPath() {
+    ingredientDrawing = false;
+    ingredientLastPoint = null;
+  }
 
-function isNearRim(p, tol = 26) {
-  const s = UI.potCanvasSize;
-  const cx = s / 2, cy = s / 2;
-  const r = s / 2 - 10;
-  const d = Math.hypot(p.x - cx, p.y - cy);
-  return Math.abs(d - r) <= tol;
-}
+  function ingredientCanvasXY(e) {
+    const rect = ingredientCanvas.getBoundingClientRect();
+    const x = (e.clientX - rect.left) * (ingredientCanvas.width / rect.width);
+    const y = (e.clientY - rect.top) * (ingredientCanvas.height / rect.height);
+    return { x, y };
+  }
 
-// --- 平滑：Chaikin (很便宜又夠用) ---
-function smoothChaikin(points, iterations = 2) {
-  if (!points || points.length < 3) return points || [];
-  let pts = points;
-  for (let k = 0; k < iterations; k++) {
-    const out = [pts[0]];
-    for (let i = 0; i < pts.length - 1; i++) {
-      const p0 = pts[i];
-      const p1 = pts[i + 1];
-      const Q = { x: 0.75 * p0.x + 0.25 * p1.x, y: 0.75 * p0.y + 0.25 * p1.y };
-      const R = { x: 0.25 * p0.x + 0.75 * p1.x, y: 0.25 * p0.y + 0.75 * p1.y };
-      out.push(Q, R);
+  function bindIngredientCanvasEvents() {
+    if (!ingredientCanvas) return;
+    ingredientCanvas.onpointerdown = startIngredientPath;
+    ingredientCanvas.onpointermove = moveIngredientPath;
+    ingredientCanvas.onpointerup = endIngredientPath;
+    ingredientCanvas.onpointerleave = endIngredientPath;
+    ingredientCanvas.onpointercancel = endIngredientPath;
+  }
+
+  function clearIngredientCanvas() {
+    if (!ingredientCtx || !ingredientCanvas) return;
+    ingredientCtx.clearRect(0, 0, ingredientCanvas.width, ingredientCanvas.height);
+  }
+
+  function inflateIngredientPreview() {
+    if (!ingredientCanvas) return null;
+    const src = ingredientCanvas;
+    const off = document.createElement("canvas");
+    off.width = 312;
+    off.height = 151;
+    const ctx = off.getContext("2d");
+    ctx.clearRect(0, 0, off.width, off.height);
+    ctx.save();
+    ctx.filter = "blur(1.2px)";
+    ctx.drawImage(src, 0, 0, off.width, off.height);
+    ctx.restore();
+    ingredientPreviewImgUrl = off.toDataURL("image/png");
+    return ingredientPreviewImgUrl;
+  }
+
+  function storeIngredient(name = "") {
+    const previewUrl = ingredientPreviewImgUrl || inflateIngredientPreview();
+    if (!previewUrl) return null;
+    const item = {
+      id: uuid(),
+      name: name || `配料 ${ingredients.length + 1}`,
+      previewUrl,
+      createdAt: Date.now(),
+    };
+    ingredients.unshift(item);
+    activeIngredientId = item.id;
+    return item;
+  }
+
+  function renderHorizontalIngredientList(rect) {
+    addText("配料區", { x: rect.x, y: rect.y, size: 20, color: "#1248FF", z: 3 });
+
+    const wrap = document.createElement("div");
+    Object.assign(wrap.style, {
+      position: "absolute",
+      left: `${rect.x}px`,
+      top: `${rect.y + 37}px`,
+      width: `${rect.w}px`,
+      height: `${rect.h - 37}px`,
+      display: "flex",
+      alignItems: "center",
+      gap: "17px",
+      overflowX: "auto",
+      overflowY: "hidden",
+      zIndex: "3",
+    });
+    panelEl.appendChild(wrap);
+
+    if (ingredients.length === 0) {
+      const empty = document.createElement("div");
+      empty.textContent = "尚無配料";
+      Object.assign(empty.style, {
+        fontFamily: '"zpix", ui-sans-serif, system-ui',
+        fontSize: "18px",
+        color: "#666",
+      });
+      wrap.appendChild(empty);
+      return wrap;
     }
-    out.push(pts[pts.length - 1]);
-    pts = out;
+
+    ingredients.forEach((item) => {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      Object.assign(btn.style, {
+        width: "103px",
+        height: "50px",
+        minWidth: "103px",
+        borderRadius: "12px",
+        border: item.id === activeIngredientId ? "3px solid #1248FF" : "2px solid #FD6FFF",
+        background: "#fff",
+        padding: "0",
+        cursor: "pointer",
+        overflow: "hidden",
+      });
+      btn.addEventListener("click", () => {
+        activeIngredientId = item.id;
+        composeMode = "ingredient";
+        renderStep();
+      });
+      const img = document.createElement("img");
+      img.src = item.previewUrl;
+      Object.assign(img.style, {
+        width: "100%",
+        height: "100%",
+        objectFit: "contain",
+        pointerEvents: "none",
+      });
+      btn.appendChild(img);
+      wrap.appendChild(btn);
+    });
+
+    return wrap;
   }
-  return pts;
-}
 
-function strokePath(ctx, pts, smooth = true) {
-  if (!pts || pts.length < 2) return;
-  const p = smooth ? smoothChaikin(pts, 2) : pts;
+  function renderStep2() {
+    const s = UI.step2;
+    addImg(ASSETS.step2Worktop, { ...s.worktop, z: 1 });
+    addText("製作配料", { x: s.title.x, y: s.title.y, size: 25, color: "#FD6FFF", z: 3 });
+    addText("畫出配料", { x: s.drawTitle.x, y: s.drawTitle.y, size: 20, color: "#FD6FFF", z: 3 });
 
-  ctx.beginPath();
-  ctx.moveTo(p[0].x, p[0].y);
-  for (let i = 1; i < p.length; i++) ctx.lineTo(p[i].x, p[i].y);
-  ctx.stroke();
-}
+    ingredientCanvas = document.createElement("canvas");
+    ingredientCanvas.width = s.drawCanvas.w;
+    ingredientCanvas.height = s.drawCanvas.h;
+    ingredientCtx = ingredientCanvas.getContext("2d");
+    Object.assign(ingredientCanvas.style, {
+      position: "absolute",
+      left: `${s.drawCanvas.x}px`,
+      top: `${s.drawCanvas.y}px`,
+      width: `${s.drawCanvas.w}px`,
+      height: `${s.drawCanvas.h}px`,
+      borderRadius: "28px",
+      background: "transparent",
+      border: "2px solid #FD6FFF",
+      boxSizing: "border-box",
+      zIndex: "2",
+      touchAction: "none",
+    });
+    panelEl.appendChild(ingredientCanvas);
+    bindIngredientCanvasEvents();
 
-function redrawStep2Base() {
-  console.log("[draw] cutLines len =", cutLines?.length, "cutPath len =", cutPath?.length);
-  if (!potCtx || !potCanvas) return;
+    addImageButton(ASSETS.colorPicker, s.colorBtn, {
+      onClick: () => console.log("[step2] color picker ui only"),
+      border: "0",
+      bg: "transparent",
+      radius: 0,
+    });
+    addImageButton(ASSETS.brushSize2, s.brushBtn, {
+      onClick: () => console.log("[step2] brush size ui only"),
+      border: "0",
+      bg: "transparent",
+      radius: 0,
+    });
+    addImageButton(ASSETS.eraser2, s.eraserBtn, {
+      onClick: () => clearIngredientCanvas(),
+      border: "0",
+      bg: "transparent",
+      radius: 0,
+    });
 
-  const s = UI.potCanvasSize;
-  const cx = s / 2;
-  const cy = s / 2;
-  const r = s / 2 - 10;
+    addImageButton(ASSETS.inflate, s.inflateBtn, {
+      onClick: () => {
+        inflateIngredientPreview();
+        renderStep();
+      },
+      border: "0",
+      bg: "transparent",
+      radius: 0,
+    });
+    addLabelChip("充氣", {
+      x: s.inflateLabel.x,
+      y: s.inflateLabel.y,
+      w: s.inflateLabel.w,
+      h: s.inflateLabel.h,
+      color: "#1248FF",
+    });
 
-  // 0) clear
-  potCtx.clearRect(0, 0, s, s);
+  addFrameBox({
+    x: s.resultFrame.x,
+    y: s.resultFrame.y,
+    w: s.resultFrame.w,
+    h: s.resultFrame.h,
+    bg: "transparent",
+    border: "2px solid #FD6FFF",
+    radius: 28,
+    z: 1,
+  });
 
-  // 1) 圓形內容（全部都在 clip 內畫）
-  potCtx.save();
-  potCtx.beginPath();
-  potCtx.arc(cx, cy, r, 0, Math.PI * 2);
-  potCtx.clip();
+  if (ingredientPreviewImgUrl) {
+    fitImgPreview(ingredientPreviewImgUrl, s.resultPreview, {
+      objectFit: "contain",
+      borderRadius: 18,
+      z: 3,
+    });
+  }
 
-  // 1-1) 底色
-  potCtx.fillStyle = "rgba(255,92,255,0.12)";
-  potCtx.fillRect(0, 0, s, s);
+  const nameWrap = document.createElement("div");
+Object.assign(nameWrap.style, {
+  position: "absolute",
+  left: "964px",
+  top: "260px",
+  width: "326px",   // 191 + 60 + 60 + 間距
+  height: "60px",
+  zIndex: "3",
+});
+panelEl.appendChild(nameWrap);
 
-  // 1-2) placements preview（球）
-  // ---- Diffusion Preview Layer ----
-  if (placements.length > 0 && regionMap) {
-    for (let rid = 0; rid < regionCount; rid++) {
+// input frame
+const inputFrame = document.createElement("div");
+Object.assign(inputFrame.style, {
+  position: "absolute",
+  left: "0px",
+  top: "0px",
+  width: "191px",
+  height: "60px",
+  borderRadius: "999px",
+  border: "2px solid #EAEAEA",
+  background: "#FFFFFF",
+  boxSizing: "border-box",
+});
+nameWrap.appendChild(inputFrame);
 
-      const preview = document.createElement("canvas");
-      preview.width = s;
-      preview.height = s;
-      const pctx = preview.getContext("2d");
+  // real input
+const previewNameInput = document.createElement("input");
+previewNameInput.type = "text";
+previewNameInput.placeholder = "";
+Object.assign(previewNameInput.style, {
+  position: "absolute",
+  left: "0px",
+  top: "0px",
+  width: "100%",
+  height: "100%",
+  border: "0",
+  outline: "none",
+  background: "transparent",
+  padding: "0 16px",
+  boxSizing: "border-box",
+  fontFamily: '"zpix", ui-sans-serif, system-ui',
+  fontSize: "18px",
+  color: "#FD6FFF",
+});
+inputFrame.appendChild(previewNameInput);
 
-      for (const p of placements) {
-        if (p.regionId !== rid) continue;
-        pctx.fillStyle = p.color ?? "rgba(0,0,0,0.6)";
-        pctx.beginPath();
-        pctx.arc(p.x, p.y, 16, 0, Math.PI * 2);
-        pctx.fill();
+// label text
+const inputLabel = document.createElement("div");
+inputLabel.textContent = "命名配料";
+Object.assign(inputLabel.style, {
+  position: "absolute",
+  left: "18px",
+  top: "18px",
+  fontFamily: '"zpix", ui-sans-serif, system-ui',
+  fontSize: "20px",
+  color: "#EAEAEA",
+  lineHeight: "1",
+  pointerEvents: "none",
+});
+inputFrame.appendChild(inputLabel);
+
+// confirm button
+const confirmBtn = document.createElement("button");
+confirmBtn.type = "button";
+Object.assign(confirmBtn.style, {
+  position: "absolute",
+  left: "129px",
+  top: "0px",
+  width: "60px",
+  height: "60px",
+  borderRadius: "999px",
+  border: "2px solid #EAEAEA",
+  background: "#EAEAEA",
+  cursor: "pointer",
+  padding: "0",
+});
+confirmBtn.addEventListener("click", () => {
+  const nm = previewNameInput.value.trim() || `配料 ${ingredients.length + 1}`;
+  const item = storeIngredient(nm);
+  if (!item) return;
+  previewNameInput.value = "";
+  renderStep();
+});
+nameWrap.appendChild(confirmBtn);
+
+const confirmIcon = document.createElement("img");
+confirmIcon.src = ASSETS.confirm;
+Object.assign(confirmIcon.style, {
+  position: "absolute",
+  left: "3px",
+  top: "3px",
+  width: "54px",
+  height: "54px",
+  pointerEvents: "none",
+});
+confirmBtn.appendChild(confirmIcon);
+
+// delete button
+const deleteBtn = document.createElement("button");
+deleteBtn.type = "button";
+Object.assign(deleteBtn.style, {
+  position: "absolute",
+  left: "204px",
+  top: "0px",
+  width: "60px",
+  height: "60px",
+  borderRadius: "999px",
+  border: "2px solid #EAEAEA",
+  background: "#EAEAEA",
+  cursor: "pointer",
+  padding: "0",
+});
+deleteBtn.addEventListener("click", () => {
+  if (!ingredients.length) return;
+  const idx = activeIngredientId ? ingredients.findIndex((it) => it.id === activeIngredientId) : 0;
+  const removeAt = idx >= 0 ? idx : 0;
+  const [removed] = ingredients.splice(removeAt, 1);
+  if (removed?.id === activeIngredientId) activeIngredientId = ingredients[0]?.id ?? null;
+  renderStep();
+});
+nameWrap.appendChild(deleteBtn);
+
+const deleteIcon = document.createElement("img");
+deleteIcon.src = ASSETS.delete;
+Object.assign(deleteIcon.style, {
+  position: "absolute",
+  left: "15px",
+  top: "12px",
+  width: "30px",
+  height: "37px",
+  pointerEvents: "none",
+});
+deleteBtn.appendChild(deleteIcon);
+
+    renderHorizontalIngredientList(s.listFrame);
+
+    addActionButton({
+      rect: s.prevBtn,
+      label: "製作湯塊",
+      iconSrc: ASSETS.leftArrow,
+      iconRect: s.prevIcon,
+      textOffsetX: -16,
+      onClick: () => {
+        step = 1;
+        renderStep();
+      },
+    });
+
+    addActionButton({
+      rect: s.nextBtn,
+      label: "下鍋",
+      iconSrc: ASSETS.rightArrow,
+      iconRect: s.nextIcon,
+      textOffsetX: 12,
+      onClick: () => {
+        ensureStep3Canvas();
+        step = 3;
+        renderStep();
+      },
+    });
+  }
+
+  // ---------- step3 compose pot ----------
+  function ensureStep3Canvas() {
+    if (potCanvas) return;
+    potCanvas = document.createElement("canvas");
+    potCanvas.width = UI.step3.potCanvas.w;
+    potCanvas.height = UI.step3.potCanvas.h;
+    potCtx = potCanvas.getContext("2d");
+    redrawComposeCanvas();
+  }
+
+  function bindStep3CanvasEvents() {
+    if (!potCanvas || step3Bound) return;
+    potCanvas.addEventListener("click", onComposeClick);
+    potCanvas.addEventListener("pointerdown", onCutPointerDown);
+    potCanvas.addEventListener("pointermove", onCutPointerMove);
+    potCanvas.addEventListener("pointerup", onCutPointerUp);
+    potCanvas.addEventListener("pointerleave", onCutPointerUp);
+    potCanvas.addEventListener("pointercancel", onCutPointerUp);
+    step3Bound = true;
+  }
+
+  function composeCanvasXY(e) {
+    const rect = potCanvas.getBoundingClientRect();
+    const x = (e.clientX - rect.left) * (potCanvas.width / rect.width);
+    const y = (e.clientY - rect.top) * (potCanvas.height / rect.height);
+    return { x, y };
+  }
+
+  function isInsideComposeCircle(x, y) {
+    const s = UI.step3.potCanvas.w;
+    const cx = s / 2;
+    const cy = s / 2;
+    const r = s / 2 - 6;
+    return Math.hypot(x - cx, y - cy) <= r;
+  }
+
+  function drawCircleMask(ctx, size, drawFn) {
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(size / 2, size / 2, size / 2 - 6, 0, Math.PI * 2);
+    ctx.clip();
+    drawFn();
+    ctx.restore();
+  }
+
+  function drawSoupPlacement(ctx, placement) {
+    const ball = balls.find((b) => b.id === placement.itemId);
+    if (!ball) return;
+    const img = new Image();
+    img.src = ball.previewUrl;
+    img.onload = () => redrawComposeCanvas();
+    if (!img.complete) return;
+    const r = 26;
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(placement.x, placement.y, r, 0, Math.PI * 2);
+    ctx.clip();
+    ctx.drawImage(img, placement.x - r, placement.y - r, r * 2, r * 2);
+    ctx.restore();
+  }
+
+  function drawIngredientPlacement(ctx, placement) {
+    const item = ingredients.find((it) => it.id === placement.itemId);
+    if (!item) return;
+    const img = new Image();
+    img.src = item.previewUrl;
+    img.onload = () => redrawComposeCanvas();
+    if (!img.complete) return;
+    ctx.drawImage(img, placement.x - 36, placement.y - 18, 72, 36);
+  }
+
+  const composePlacements = [];
+
+  function redrawComposeCanvas() {
+    if (!potCtx || !potCanvas) return;
+    const s = potCanvas.width;
+
+    potCtx.clearRect(0, 0, s, s);
+
+    drawCircleMask(potCtx, s, () => {
+      potCtx.fillStyle = "rgba(255,92,255,0.10)";
+      potCtx.fillRect(0, 0, s, s);
+
+      for (const p of composePlacements) {
+        if (p.type === "soup") drawSoupPlacement(potCtx, p);
+        if (p.type === "ingredient") drawIngredientPlacement(potCtx, p);
       }
+    });
 
-      pctx.filter = "blur(35px)";
-      pctx.globalCompositeOperation = "lighter";
+    // pot rim
+    potCtx.beginPath();
+    potCtx.arc(s / 2, s / 2, s / 2 - 6, 0, Math.PI * 2);
+    potCtx.strokeStyle = "transparent";
+    potCtx.lineWidth = 0;
+    potCtx.stroke();
 
-      // clip 到該 region
-      const mask = potCtx.createImageData(regionW, regionH);
-      const d = mask.data;
-      for (let i = 0; i < regionMap.length; i++) {
-        if (regionMap[i] === rid) {
-          const k = i * 4;
-          d[k+3] = 255;
+    // cut lines are ALWAYS top-most
+    potCtx.save();
+    potCtx.beginPath();
+    potCtx.arc(s / 2, s / 2, s / 2 - 6, 0, Math.PI * 2);
+    potCtx.clip();
+    potCtx.strokeStyle = "rgba(0,0,0,0.95)";
+    potCtx.lineWidth = 4;
+    potCtx.lineCap = "round";
+    potCtx.lineJoin = "round";
+    for (const line of cutLines) strokePath(potCtx, line, true);
+    if (cutPath.length >= 2) strokePath(potCtx, cutPath, true);
+    potCtx.restore();
+  }
+
+  function strokePath(ctx, pts, smooth = true) {
+    if (!pts || pts.length < 2) return;
+    const p = smooth ? smoothChaikin(pts, 2) : pts;
+    ctx.beginPath();
+    ctx.moveTo(p[0].x, p[0].y);
+    for (let i = 1; i < p.length; i++) ctx.lineTo(p[i].x, p[i].y);
+    ctx.stroke();
+  }
+
+  function smoothChaikin(points, iterations = 2) {
+    if (!points || points.length < 3) return points || [];
+    let pts = points;
+    for (let k = 0; k < iterations; k++) {
+      const out = [pts[0]];
+      for (let i = 0; i < pts.length - 1; i++) {
+        const p0 = pts[i];
+        const p1 = pts[i + 1];
+        const Q = { x: 0.75 * p0.x + 0.25 * p1.x, y: 0.75 * p0.y + 0.25 * p1.y };
+        const R = { x: 0.25 * p0.x + 0.75 * p1.x, y: 0.25 * p0.y + 0.75 * p1.y };
+        out.push(Q, R);
+      }
+      out.push(pts[pts.length - 1]);
+      pts = out;
+    }
+    return pts;
+  }
+
+  function onComposeClick(e) {
+    if (!potCanvas) return;
+    const { x, y } = composeCanvasXY(e);
+    if (!isInsideComposeCircle(x, y)) return;
+
+    if (composeMode === "soup") {
+      if (!activeBallId) return;
+      composePlacements.push({ type: "soup", itemId: activeBallId, x, y, createdAt: Date.now() });
+      redrawComposeCanvas();
+      return;
+    }
+
+    if (composeMode === "ingredient") {
+      if (!activeIngredientId) return;
+      composePlacements.push({ type: "ingredient", itemId: activeIngredientId, x, y, createdAt: Date.now() });
+      redrawComposeCanvas();
+      return;
+    }
+
+    if (composeMode === "delete") {
+      if (!composePlacements.length) return;
+      let bestIdx = -1;
+      let bestD = Infinity;
+      for (let i = 0; i < composePlacements.length; i++) {
+        const p = composePlacements[i];
+        const d = Math.hypot(p.x - x, p.y - y);
+        if (d < bestD) {
+          bestD = d;
+          bestIdx = i;
         }
       }
-
-      pctx.globalCompositeOperation = "destination-in";
-      pctx.putImageData(mask, 0, 0);
-
-      potCtx.drawImage(preview, 0, 0);
+      if (bestIdx >= 0 && bestD < 40) {
+        composePlacements.splice(bestIdx, 1);
+        redrawComposeCanvas();
+      }
     }
   }
 
-  // 1-3) 已完成 cut lines
-  potCtx.strokeStyle = "rgba(255,92,255,0.85)";
-  potCtx.lineWidth = 6;
-  potCtx.lineCap = "round";
-  potCtx.lineJoin = "round";
-  for (const line of cutLines) strokePath(potCtx, line, true);
-
-  // 1-4) 正在畫的線（cutPath）
-  if (cutPath && cutPath.length >= 2) {
-    strokePath(potCtx, cutPath, true);
+  function onCutPointerDown(e) {
+    if (composeMode !== "cut") return;
+    const p = composeCanvasXY(e);
+    if (!isInsideComposeCircle(p.x, p.y)) return;
+    cutDrawing = true;
+    cutPath = [p];
+    potCanvas.setPointerCapture?.(e.pointerId);
+    redrawComposeCanvas();
   }
 
-  // 1-5) hover / selected 遮罩
-  // 規則：hover 只在 cutMode 時顯示；selected 永遠顯示（如果有選）
-  if (regionMap && regionW === s && regionH === s) {
-    // hover (淡)
-    if (cutMode && hoverRegionId >= 0) {
-      const img = potCtx.createImageData(regionW, regionH);
-      const d = img.data;
-      for (let i = 0; i < regionMap.length; i++) {
-        if (regionMap[i] !== hoverRegionId) continue;
-        const k = i * 4;
-        d[k + 0] = 0;
-        d[k + 1] = 0;
-        d[k + 2] = 0;
-        d[k + 3] = 22; // hover alpha
-      }
-      potCtx.putImageData(img, 0, 0);
-    }
-
-    // selected (深)
-    if (selectedRegionId >= 0) {
-      const img = potCtx.createImageData(regionW, regionH);
-      const d = img.data;
-      for (let i = 0; i < regionMap.length; i++) {
-        if (regionMap[i] !== selectedRegionId) continue;
-        const k = i * 4;
-        d[k + 0] = 0;
-        d[k + 1] = 0;
-        d[k + 2] = 0;
-        d[k + 3] = 70; // selected alpha
-      }
-      potCtx.putImageData(img, 0, 0);
-    }
-  }
-
-  potCtx.restore(); // 結束 clip
-
-  // 2) 外圈線（不在 clip 內）
-  potCtx.beginPath();
-  potCtx.arc(cx, cy, r, 0, Math.PI * 2);
-  potCtx.strokeStyle = "rgba(255,92,255,0.65)";
-  potCtx.lineWidth = 8;
-  potCtx.stroke();
-
-  // 3) hint 文案
-  potCtx.fillStyle = "rgba(0,0,0,0.25)";
-  potCtx.font = "16px ui-sans-serif, system-ui";
-  potCtx.fillText(cutMode ? "Cut mode: draw rim-to-rim" : "Place mode: click to place", 18, 28);
-}
-
-function renderMaterialPicker(pickerEl, getFluidCtrl) {
-  const wrap = document.createElement("div");
-  wrap.style.marginTop = "14px";
-  wrap.style.paddingTop = "12px";
-  wrap.style.borderTop = "1px solid rgba(0,0,0,0.08)";
-  pickerEl.appendChild(wrap);
-
-  const title = document.createElement("div");
-  title.textContent = "Material";
-  title.style.color = "#666";
-  title.style.marginBottom = "10px";
-  title.style.fontSize = "14px";
-  wrap.appendChild(title);
-
-  const grid = document.createElement("div");
-  grid.style.display = "grid";
-  grid.style.gridTemplateColumns = "repeat(3, 1fr)";
-  grid.style.gap = "8px";
-  wrap.appendChild(grid);
-
-  const items = [
-    { key: "ink", label: "Ink" },
-    { key: "coral", label: "Coral" },
-    { key: "ring", label: "Ring" },
-    { key: "grain", label: "Grain" },
-    { key: "snow", label: "Snow" },
-  ];
-
-  let selectedKey = "ink";
-
-  function updateSelectedStyles() {
-    [...grid.children].forEach((btn) => {
-      const key = btn.dataset.key;
-      const active = key === selectedKey;
-      btn.style.borderColor = active ? "#111" : "#ddd";
-      btn.style.boxShadow = active ? "0 0 0 1px #111 inset" : "none";
-    });
-  }
-
-  items.forEach((it) => {
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.dataset.key = it.key;
-    btn.textContent = it.label;
-
-    btn.style.height = "36px";
-    btn.style.borderRadius = "10px";
-    btn.style.border = "1px solid #ddd";
-    btn.style.background = "#fff";
-    btn.style.cursor = "pointer";
-    btn.style.fontSize = "12px";
-    btn.style.color = "#222";
-    btn.style.userSelect = "none";
-
-    btn.addEventListener("click", () => {
-      selectedKey = it.key;
-      updateSelectedStyles();
-
-      const fluidCtrl = getFluidCtrl?.();
-      if (!fluidCtrl?.applyMaterial) {
-        console.warn("[material] fluidCtrl not ready or applyMaterial missing");
-        return;
-      }
-      fluidCtrl.applyMaterial(it.key);
-    });
-
-    grid.appendChild(btn);
-  });
-
-  updateSelectedStyles();
-
-  // 回傳一個 handle，讓你需要時可以手動同步狀態/禁用
-  return {
-    setSelected(key) {
-      selectedKey = key;
-      updateSelectedStyles();
-    },
-  };
-}
-
-// --- Step2 interactions ---
-function onStep2Click(e) {
-  if (cutMode) return;
-  const { x, y } = canvasXY(e);
-
-  // 先確保 regionMap 有
-  if (!regionMap) rebuildRegions();
-
-  // 永遠允許「點一下就選區」
-  const id = regionAtCanvasXY(x, y);
-  if (id >= 0) {
-    selectedRegionId = id;
-  } else {
-    selectedRegionId = -1;
-  }
-
-  // 放球：要有 activeBall + 選到區塊，且點擊位置在該區塊內
-  if (!activeBallId) {
-    redrawStep2Base();
-    return;
-  }
-  if (selectedRegionId < 0) {
-    console.log("[place] no selected region yet");
-    redrawStep2Base();
-    return;
-  }
-  if (id !== selectedRegionId) {
-    // 理論上不會發生（因為我們剛用 id 設 selectedRegionId）
-    console.log("[place] clicked outside selected region");
-    redrawStep2Base();
-    return;
-  }
-
-  const ball = balls.find(b => b.id === activeBallId);
-  if (!ball) {
-    redrawStep2Base();
-    return;
-  }
-
-  placements.push({
-    ballId: ball.id,
-    x,
-    y,
-    color: ball.color,
-    regionId: selectedRegionId, // ✅ 存一下，後面 Step3/擴散要用也方便
-  });
-
-  redrawStep2Base();
-}
-
-function onPointerDown(e) {
-  console.log("[cut] down", { cutMode, x: e.clientX, y: e.clientY, target: e.target });
-  if (!cutMode) return;
-
-  const p0raw = canvasXY(e);
-  if (!isNearRim(p0raw)) return;     // 仍然要求從 rim 附近開始
-
-  isDrawingCut = true;
-
-  const p0 = snapToRim(p0raw);       // ✅ 起點吸到 rim
-  cutPath = [p0];
-
-  potCanvas.setPointerCapture?.(e.pointerId);
-  redrawStep2Base();
-}
-
-function onPointerMove(e) {
-  const p = canvasXY(e);
-
-  // A) 切割模式 + 正在畫線：記錄 path
-  if (cutMode && isDrawingCut) {
+  function onCutPointerMove(e) {
+    if (composeMode !== "cut" || !cutDrawing) return;
+    const p = composeCanvasXY(e);
     const last = cutPath[cutPath.length - 1];
     if (last && Math.hypot(p.x - last.x, p.y - last.y) < 2) return;
     cutPath.push(p);
-    redrawStep2Base();
-    return;
+    redrawComposeCanvas();
   }
 
-  // B) hover
-  const id = regionAtCanvasXY(p.x, p.y);
-  if (id !== hoverRegionId) {
-    hoverRegionId = id;
-    redrawStep2Base();
-  }
-}
-
-function onPointerUp(e) {
-  if (!cutMode || !isDrawingCut) return;
-  isDrawingCut = false;
-
-  if (!cutPath || cutPath.length < 2) {
+  function onCutPointerUp() {
+    if (composeMode !== "cut" || !cutDrawing) return;
+    cutDrawing = false;
+    if (cutPath.length >= 2) cutLines.push([...cutPath]);
     cutPath = [];
-    redrawStep2Base();
-    return;
+    redrawComposeCanvas();
   }
 
-  const end = cutPath[cutPath.length - 1];
-  const ok = isNearRim(end);
+  function renderVerticalList({ title, frame, items, activeId, getPreviewUrl, onSelect }) {
+    addFrameBox({ x: frame.x, y: frame.y, w: frame.w, h: frame.h, bg: "#fff", border: "2px solid #FD6FFF", radius: 0, z: 1 });
+    addText(title, { x: title === "湯塊區" ? UI.step3.soupListTitle.x : UI.step3.ingListTitle.x, y: title === "湯塊區" ? UI.step3.soupListTitle.y : UI.step3.ingListTitle.y, size: 20, color: "#1248FF", z: 3 });
 
-  if (ok) {
-    cutLines.push(cutPath);
-    cutPath = [];
+    const wrap = document.createElement("div");
+    Object.assign(wrap.style, {
+      position: "absolute",
+      left: `${frame.x + 18}px`,
+      top: `${frame.y + 44}px`,
+      width: `${frame.w - 36}px`,
+      height: `${frame.h - 58}px`,
+      overflowY: "auto",
+      display: "flex",
+      flexDirection: "column",
+      gap: "12px",
+      zIndex: "3",
+    });
+    panelEl.appendChild(wrap);
 
-    rebuildRegions();        // ✅ 重建牆/區塊
-    selectedRegionId = -1;   // ✅ 重要：切完讓使用者重新選區，避免舊 id 不存在
-  } else {
-    cutPath = [];
-  }
-
-  redrawStep2Base();
-}
-
-function snapToRim(p) {
-  const s = UI.potCanvasSize;
-  const cx = s / 2, cy = s / 2;
-  const r  = s / 2 - 10; // 要跟你畫鍋子圓的半徑一致
-  const dx = p.x - cx, dy = p.y - cy;
-  const len = Math.hypot(dx, dy) || 1;
-  return { x: cx + (dx / len) * r, y: cy + (dy / len) * r };
-}
-
-function bindStep2CanvasEvents() {
-  if (step2Bound) return;
-  if (!potCanvas) return;
-
-  potCanvas.addEventListener("click", onStep2Click);
-
-  potCanvas.addEventListener("pointerdown", onPointerDown);
-  potCanvas.addEventListener("pointermove", onPointerMove);
-  potCanvas.addEventListener("pointerup", onPointerUp);
-
-  // 防止手指/滑鼠跑出 canvas 時卡住
-  potCanvas.addEventListener("pointercancel", onPointerUp);
-  potCanvas.addEventListener("pointerleave", onPointerUp);
-  potCanvas.addEventListener("lostpointercapture", onPointerUp);
-
-  step2Bound = true;
-}
-
-function enterStep2() {
-  console.log("[step2] enterStep2 called");
-  console.trace("[TRACE enterStep2]");
-  if (step2Initialized) {
-    console.log("[step2] enterStep2 skipped (already initialized)");
-    return;
-  }
-  step2Initialized = true;
-
-  cutPath = [];
-  placements = [];
-  cutLines = [];
-  isDrawingCut = false;
-  cutMode = false;
-
-  // 分區相關也一起 reset，避免殘留
-  regionMap = null;
-  wallMap = null;
-  regionCount = 0;
-  hoverRegionId = -1;
-  selectedRegionId = -1;
-
-  console.log("[step2] initialized (state cleared)");
-  redrawStep2Base();
-}
-function buildWallMapFromCuts(W, H, cutLines, wallThicknessPx = 6) {
-  const wall = new Uint8Array(W * H);
-
-  const put = (x, y) => {
-    x |= 0; y |= 0;
-    if (x < 0 || y < 0 || x >= W || y >= H) return;
-    wall[y * W + x] = 1;
-  };
-
-  // 用簡單 stamp：沿著線段每隔 1px 放一個圓
-  function stampDisc(cx, cy, r) {
-    const r2 = r * r;
-    const x0 = Math.max(0, Math.floor(cx - r));
-    const x1 = Math.min(W - 1, Math.ceil(cx + r));
-    const y0 = Math.max(0, Math.floor(cy - r));
-    const y1 = Math.min(H - 1, Math.ceil(cy + r));
-    for (let y = y0; y <= y1; y++) {
-      for (let x = x0; x <= x1; x++) {
-        const dx = x - cx, dy = y - cy;
-        if (dx * dx + dy * dy <= r2) put(x, y);
-      }
-    }
-  }
-
-  for (const line of cutLines) {
-    if (!line || line.length < 2) continue;
-    for (let i = 1; i < line.length; i++) {
-      const a = line[i - 1], b = line[i];
-      const dx = b.x - a.x, dy = b.y - a.y;
-      const steps = Math.max(1, Math.ceil(Math.hypot(dx, dy)));
-      for (let s = 0; s <= steps; s++) {
-        const t = s / steps;
-        const x = a.x + dx * t;
-        const y = a.y + dy * t;
-        stampDisc(x, y, wallThicknessPx / 2);
-      }
-    }
-  }
-
-  return wall;
-}
-function buildRegionMap(W, H, wall, circleCx, circleCy, circleR) {
-  const map = new Int32Array(W * H);
-  map.fill(-1);
-
-  // 先標出圓內可走的地方：-2 = unvisited inside
-  const r2 = circleR * circleR;
-  for (let y = 0; y < H; y++) {
-    for (let x = 0; x < W; x++) {
-      const dx = x - circleCx;
-      const dy = y - circleCy;
-      const inside = (dx * dx + dy * dy <= r2);
-      const idx = y * W + x;
-      if (!inside) continue;
-      if (wall[idx]) continue;       // 牆本身不屬於任何區域
-      map[idx] = -2;
-    }
-  }
-
-  // flood fill
-  let regionId = 0;
-  const qx = new Int32Array(W * H);
-  const qy = new Int32Array(W * H);
-
-  for (let y = 0; y < H; y++) {
-    for (let x = 0; x < W; x++) {
-      const startIdx = y * W + x;
-      if (map[startIdx] !== -2) continue;
-
-      // BFS
-      let head = 0, tail = 0;
-      qx[tail] = x; qy[tail] = y; tail++;
-      map[startIdx] = regionId;
-
-      while (head < tail) {
-        const cx = qx[head], cy = qy[head]; head++;
-        // 4-neighbors
-        const n = [
-          [cx + 1, cy], [cx - 1, cy], [cx, cy + 1], [cx, cy - 1],
-        ];
-        for (const [nx, ny] of n) {
-          if (nx < 0 || ny < 0 || nx >= W || ny >= H) continue;
-          const ni = ny * W + nx;
-          if (map[ni] !== -2) continue;
-          map[ni] = regionId;
-          qx[tail] = nx; qy[tail] = ny; tail++;
-        }
-      }
-
-      regionId++;
-    }
-  }
-
-  return { map, count: regionId };
-}
-function rebuildRegions() {
-  const W = UI.potCanvasSize;
-  const H = UI.potCanvasSize;
-  const cx = W / 2;
-  const cy = H / 2;
-  const r  = W / 2 - 10;
-
-  regionW = W;
-  regionH = H;
-
-  wallMap = buildWallMapFromCuts(W, H, cutLines, 8);
-  const { map, count } = buildRegionMap(W, H, wallMap, cx, cy, r);
-
-  regionMap = map;
-  regionCount = count;
-
-  // 如果原本選到的區塊不存在了，就清掉
-  if (selectedRegionId >= regionCount) selectedRegionId = -1;
-  if (hoverRegionId >= regionCount) hoverRegionId = -1;
-
-  console.log("[region] rebuilt count=", regionCount);
-}
-function regionAtCanvasXY(x, y) {
-  if (!regionMap) return -1;
-  const ix = Math.max(0, Math.min(regionW - 1, x | 0));
-  const iy = Math.max(0, Math.min(regionH - 1, y | 0));
-  const id = regionMap[iy * regionW + ix];
-  return id; // -1 outside, 0..n-1 region
-}
-
-
-function renderStep2() {
-  console.log("[step2] renderStep2 called. cutLines len =", cutLines.length);
-
-  const ui2 = mountBallListUI({ panelEl, side: "left" }); // 你截圖 step2 是左邊
-  ui2.listWrap.style.zIndex = "10";
-  ui2.listWrap.style.pointerEvents = "auto";
-  const listEditor2 = createBallEditorFluid({
-    rootEl: panelEl, // step2 不用 rootEl 也行，隨便塞
-    getTableId: () => activeTableId,
-    getFluidCanvas: () => null, // step2 不用存球
-    data: potData,              // ✅ 同一份
-    ui: { ballListEl: ui2.ballListEl, emptyTextEl: ui2.emptyText },
-  });
-  listEditor2.renderBallList();
-
-  // 建立 canvas 只一次
-  if (!potCanvas) {
-    potCanvas = document.createElement("canvas");
-    potCanvas.width = UI.potCanvasSize;
-    potCanvas.height = UI.potCanvasSize;
-    potCanvas.style.position = "absolute";
-    potCanvas.style.left = "50%";
-    potCanvas.style.top = "50%";
-    potCanvas.style.transform = "translate(-50%,-50%)";
-    potCanvas.style.borderRadius = "999px";
-    potCanvas.style.border = "8px solid rgba(255,92,255,0.65)";
-    potCanvas.style.background = "rgba(255,255,255,1)";
-    potCanvas.style.zIndex = "50";
-    potCanvas.style.pointerEvents = "auto";
-    potCanvas.style.touchAction = "none"; // 防止觸控裝置把拖曳當捲動
-    potCtx = potCanvas.getContext("2d");
-
-    bindStep2CanvasEvents();
-  }
-
-  panelEl.appendChild(potCanvas);
-  if (!regionMap) rebuildRegions();
-  redrawStep2Base();
-
-
-  // 切割 / 完成
-  const btnCut = makeBtn("切割", {
-    filled: false,
-    onClick: () => {
-      cutMode = !cutMode;
-      redrawStep2Base();
-      console.log("[pot] cutMode =", cutMode);
-    },
-  });
-  btnCut.style.position = "absolute";
-  btnCut.style.right = "90px";
-  btnCut.style.top = "210px";
-  panelEl.appendChild(btnCut);
-
-  const btnDone = makeBtn("完成", {
-    filled: false,
-    onClick: () => {
-      step = 3;
-      renderStep();
-    },
-  });
-  btnDone.style.position = "absolute";
-  btnDone.style.right = "90px";
-  btnDone.style.top = "330px";
-  panelEl.appendChild(btnDone);
-}
-
-  // Step3 UI (diffusion result) - placeholder
-    function renderStep3() {
-    stopDiffusion(); // 防重入（從 step2->3 或 3->3）
-
-    const size = UI.fluidSize; // 先用 549x549，之後可獨立一個 UI.step3Size
-    diffCanvas = document.createElement("canvas");
-    diffCanvas.style.position = "absolute";
-    diffCanvas.style.left = "50%";
-    diffCanvas.style.top = "50%";
-    diffCanvas.style.transform = "translate(-50%,-50%)";
-    diffCanvas.style.borderRadius = "999px";
-    diffCanvas.style.background = "#fff";
-    panelEl.appendChild(diffCanvas);
-
-    ensureDiffusionBuffers(size);
-
-    // seed：把 Step2 placements 注入進 diffusion buffer
-    for (const p of placements) {
-      injectAt(p.x, p.y, p.color, 18);
+    if (!items.length) {
+      const empty = document.createElement("div");
+      empty.textContent = "尚無內容";
+      Object.assign(empty.style, {
+        fontFamily: '"zpix", ui-sans-serif, system-ui',
+        fontSize: "18px",
+        color: "#666",
+        marginleft: "12px",
+        marginTop: "12px",
+      });
+      wrap.appendChild(empty);
+      return wrap;
     }
 
-    startDiffusion(size);
+    items.forEach((item) => {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      Object.assign(btn.style, {
+        width: "100%",
+        height: "78px",
+        borderRadius: "14px",
+        border: item.id === activeId ? "3px solid #1248FF" : "2px solid #FD6FFF",
+        background: "#fff",
+        cursor: "pointer",
+        padding: "8px",
+        display: "flex",
+        alignItems: "center",
+        gap: "10px",
+      });
+      btn.addEventListener("click", () => onSelect(item.id));
 
-    // buttons
-    const btnBack = makeBtn("返回", {
-      filled: false,
-      onClick: () => {
-        stopDiffusion();
-        step = 2;
+      const img = document.createElement("img");
+      img.src = getPreviewUrl(item);
+      Object.assign(img.style, {
+        width: "62px",
+        height: "62px",
+        objectFit: "cover",
+        borderRadius: item.name?.includes("配料") ? "8px" : "999px",
+        pointerEvents: "none",
+      });
+      btn.appendChild(img);
+
+      const label = document.createElement("div");
+      label.textContent = item.name || "未命名";
+      Object.assign(label.style, {
+        fontFamily: '"zpix", ui-sans-serif, system-ui',
+        fontSize: "18px",
+        color: "#000",
+      });
+      btn.appendChild(label);
+      wrap.appendChild(btn);
+    });
+
+    return wrap;
+  }
+
+  function renderStep3() {
+    const s = UI.step3;
+    ensureStep3Canvas();
+
+    addImg(ASSETS.step3Pot, { ...s.potFrame, z: 1 });
+    Object.assign(potCanvas.style, {
+      position: "absolute",
+      left: `${s.potCanvas.x}px`,
+      top: `${s.potCanvas.y}px`,
+      width: `${s.potCanvas.w}px`,
+      height: `${s.potCanvas.h}px`,
+      zIndex: "2",
+      background: "transparent",
+      touchAction: "none",
+    });
+    panelEl.appendChild(potCanvas);
+    bindStep3CanvasEvents();
+    redrawComposeCanvas();
+
+    renderVerticalList({
+      title: "湯塊區",
+      frame: s.soupList,
+      items: balls,
+      activeId: activeBallId,
+      getPreviewUrl: (item) => item.previewUrl,
+      onSelect: (id) => {
+        activeBallId = id;
+        composeMode = "soup";
         renderStep();
       },
     });
-    btnBack.style.position = "absolute";
-    btnBack.style.left = "90px";
-    btnBack.style.bottom = "70px";
-    panelEl.appendChild(btnBack);
 
-    const btnClose = makeBtn("完成", {
-      filled: false,
+    renderVerticalList({
+      title: "配料區",
+      frame: s.ingList,
+      items: ingredients,
+      activeId: activeIngredientId,
+      getPreviewUrl: (item) => item.previewUrl,
+      onSelect: (id) => {
+        activeIngredientId = id;
+        composeMode = "ingredient";
+        renderStep();
+      },
+    });
+
+    // controls
+    addCapsuleButton({ x: s.controls.continueMake.x, y: s.controls.continueMake.y, w: 60, h: 60, bg: "#FFFFFF", border: "2px solid #FD6FFF", onClick: () => { step = 2; renderStep(); } });
+    addImg(ASSETS.leftArrow, { x: s.controls.continueMake.x + 9, y: s.controls.continueMake.y + 9, w: 42, h: 42, z: 4 });
+    addLabelChip("繼續製作", { x: s.controls.continueMake.x - 20, y: 551, w: 100, h: 33, color: "#1248FF" });
+
+    addCapsuleButton({ x: s.controls.cut.x, y: s.controls.cut.y, w: 60, h: 60, bg: composeMode === "cut" ? "#FD6FFF" : "#EAEAEA", border: "0", onClick: () => { composeMode = "cut"; renderStep(); } });
+    addImg(ASSETS.cut, { x: s.controls.cut.x + 4, y: s.controls.cut.y + 4, w: 52, h: 52, z: 4, rotate: 30 });
+    addLabelChip("切割", { x: s.controls.cut.x - 1, y: 551, w: 62, h: 33, color: "#1248FF" });
+
+    addCapsuleButton({ x: s.controls.restart.x, y: s.controls.restart.y, w: 60, h: 60, bg: "#EAEAEA", border: "0", onClick: () => {
+      if (composePlacements.length) composePlacements.pop();
+      else if (cutLines.length) cutLines.pop();
+      redrawComposeCanvas();
+    } });
+    addImg(ASSETS.restart, { x: s.controls.restart.x + 9, y: s.controls.restart.y + 10, w: 45, h: 40, z: 4 });
+    addLabelChip("上一步", { x: s.controls.restart.x - 10, y: 551, w: 82, h: 33, color: "#1248FF" });
+
+    addCapsuleButton({ x: s.controls.delete.x, y: s.controls.delete.y, w: 60, h: 60, bg: composeMode === "delete" ? "#FD6FFF" : "#EAEAEA", border: "0", onClick: () => { composeMode = "delete"; renderStep(); } });
+    addImg(ASSETS.delete, { x: s.controls.delete.x + 14, y: s.controls.delete.y + 10, w: 32, h: 40, z: 4 });
+    addLabelChip("刪除", { x: s.controls.delete.x - 10, y: 551, w: 82, h: 33, color: "#1248FF" });
+
+    addCapsuleButton({ x: s.controls.finish.x, y: s.controls.finish.y, w: 60, h: 60, bg: "#FFFFFF", border: "2px solid #FD6FFF",  onClick: () => {
+      finalPotTextureUrl = exportFinalPotTexture();
+      step = 4;
+      renderStep();
+    } });
+    addImg(ASSETS.rightArrow, { x: s.controls.finish.x + 9, y: s.controls.finish.y + 9, w: 42, h: 42, z: 4 });
+    addLabelChip("完成火鍋!", { x: s.controls.finish.x - 18, y: 551, w: 100, h: 33, color: "#1248FF" });
+  }
+
+  function exportFinalPotTexture() {
+    if (!potCanvas) return null;
+    return potCanvas.toDataURL("image/png");
+  }
+
+  // ---------- step4 3d preview ----------
+  function renderStep4() {
+    const s = UI.step4;
+    const prevRect = { x: 35, y: 551, w: 199, h: 63 };
+    const prevIconRect = { x: 173, y: 562, w: 42, h: 42 };
+    const nextRect = { x: 1074, y: 551, w: 199, h: 63 };
+    const nextIconRect = { x: 1095, y: 562, w: 42, h: 42 };
+    
+
+    addFrameBox({ x: s.soupList.x, y: s.soupList.y, w: s.soupList.w, h: s.soupList.h, bg: "#EAEAEA", border: "0", radius: 0, z: 1 });
+    addFrameBox({ x: s.ingList.x, y: s.ingList.y, w: s.ingList.w, h: s.ingList.h, bg: "#EAEAEA", border: "0", radius: 0, z: 1 });
+
+    renderPreviewListInBox({ box: s.soupList, items: balls, activeId: activeBallId, getPreviewUrl: (x) => x.previewUrl });
+    renderPreviewListInBox({ box: s.ingList, items: ingredients, activeId: activeIngredientId, getPreviewUrl: (x) => x.previewUrl });
+
+    step4PreviewEl = document.createElement("div");
+    Object.assign(step4PreviewEl.style, {
+      position: "absolute",
+      left: `${s.preview.x}px`,
+      top: `${s.preview.y}px`,
+      width: `${s.preview.w}px`,
+      height: `${s.preview.h}px`,
+      zIndex: "2",
+      display: "flex",
+      flexDirection: "column",
+      alignItems: "center",
+      justifyContent: "center",
+      borderRadius: "18px",
+      border: "2px dashed rgba(0,0,0,0.15)",
+      overflow: "hidden",
+      background: "#fff",
+    });
+    panelEl.appendChild(step4PreviewEl);
+
+    const title = document.createElement("div");
+    title.textContent = "pott.glb preview mount";
+    Object.assign(title.style, {
+      fontFamily: '"zpix", ui-sans-serif, system-ui',
+      fontSize: "20px",
+      color: "#666",
+      marginBottom: "12px",
+    });
+    step4PreviewEl.appendChild(title);
+
+    if (finalPotTextureUrl) {
+      const previewImg = document.createElement("img");
+      previewImg.src = finalPotTextureUrl;
+      Object.assign(previewImg.style, {
+        width: "220px",
+        height: "220px",
+        objectFit: "contain",
+      });
+      step4PreviewEl.appendChild(previewImg);
+    }
+
+   addActionButton({
+      rect: prevRect,
+      label: "繼續製作",
+      iconSrc: ASSETS.leftArrow,
+      iconRect: prevIconRect,
+      textOffsetX: -16,
       onClick: () => {
-        stopDiffusion();
+        step = 3;
+        renderStep();
+      },
+    });
+
+    addActionButton({
+      rect: nextRect,
+      label: "安排座位",
+      iconSrc: ASSETS.rightArrow,
+      iconRect: nextIconRect,
+      textOffsetX: 12,
+      onClick: () => {
+        step = 5;
+        renderStep();
+      },
+    });
+  }
+
+  function renderPreviewListInBox({ box, items, activeId, getPreviewUrl }) {
+    const wrap = document.createElement("div");
+    Object.assign(wrap.style, {
+      position: "absolute",
+      left: `${box.x + 10}px`,
+      top: `${box.y + 10}px`,
+      width: `${box.w - 20}px`,
+      height: `${box.h - 20}px`,
+      overflowY: "auto",
+      display: "flex",
+      flexDirection: "column",
+      gap: "10px",
+      zIndex: "2",
+      justifyContent: items.length ? "center" : "flex-start",
+      alignItems: "stretch",
+    });
+    panelEl.appendChild(wrap);
+
+    if (!items.length) {
+      const empty = document.createElement("div");
+      empty.textContent = "尚無內容";
+      Object.assign(empty.style, {
+        fontFamily: '"zpix", ui-sans-serif, system-ui',
+        fontSize: "18px",
+        color: "#666",
+        marginTop: "8px",
+      });
+      wrap.appendChild(empty);
+      return wrap;
+    }
+
+    if (!items.length) {
+      const empty = document.createElement("div");
+      empty.textContent = "尚無內容";
+      Object.assign(empty.style, {
+        fontFamily: '"zpix", ui-sans-serif, system-ui',
+        fontSize: "18px",
+        color: "#666",
+      });
+      wrap.appendChild(empty);
+      return wrap;
+    }
+
+    items.forEach((item) => {
+      const row = document.createElement("div");
+      Object.assign(row.style, {
+        display: "flex",
+        alignItems: "center",
+        gap: "10px",
+        background: item.id === activeId ? "rgba(18,72,255,0.10)" : "rgba(255,255,255,0.7)",
+        borderRadius: "12px",
+        padding: "8px",
+        width: "100%",
+        boxSizing: "border-box",
+      });
+
+      const img = document.createElement("img");
+      img.src = getPreviewUrl(item);
+      Object.assign(img.style, {
+        width: "48px",
+        height: "48px",
+        objectFit: "cover",
+        borderRadius: "8px",
+      });
+
+      const label = document.createElement("div");
+      label.textContent = item.name || "未命名";
+      Object.assign(label.style, {
+        fontFamily: '"zpix", ui-sans-serif, system-ui',
+        fontSize: "18px",
+        color: "#FD6FFF",
+      });
+
+      row.appendChild(img);
+      row.appendChild(label);
+      wrap.appendChild(row);
+    });
+
+    return wrap;
+  }
+
+  // ---------- step5 chair ----------
+  function renderStep5() {
+    const s = UI.step5;
+    const prevRect = { x: 35, y: 551, w: 199, h: 63 };
+    const prevIconRect = { x: 173, y: 562, w: 42, h: 42 };
+    const nextRect = { x: 1074, y: 551, w: 199, h: 63 };
+    const nextIconRect = { x: 1095, y: 562, w: 42, h: 42 };
+
+    chairPreviewEl = document.createElement("div");
+    Object.assign(chairPreviewEl.style, {
+      position: "absolute",
+      left: `${s.chairPreview.x}px`,
+      top: `${s.chairPreview.y}px`,
+      width: `${s.chairPreview.w}px`,
+      height: `${s.chairPreview.h}px`,
+      zIndex: "2",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      border: "2px dashed rgba(0,0,0,0.15)",
+      background: "#fff",
+      borderRadius: "18px",
+      fontFamily: '"zpix", ui-sans-serif, system-ui',
+      fontSize: "22px",
+      color: "#666",
+    });
+    chairPreviewEl.textContent = "addChair.glb preview mount";
+    panelEl.appendChild(chairPreviewEl);
+
+    addText("您希望和多少人分享您的火鍋呢?", {
+      x: s.title.x,
+      y: s.title.y,
+      size: 25,
+      color: "#FD6FFF",
+      z: 3,
+    });
+
+    addActionButton({
+      rect: prevRect,
+      label: "回到火鍋",
+      iconSrc: ASSETS.leftArrow,
+      iconRect: prevIconRect,
+      textOffsetX: -16,
+      onClick: () => {
+        step = 4;
+        renderStep();
+      },
+    });
+
+    addActionButton({
+      rect: nextRect,
+      label: "繼續宴會",
+      iconSrc: ASSETS.rightArrow,
+      iconRect: nextIconRect,
+      textOffsetX: 12,
+      onClick: () => {
         requestClose();
       },
     });
-    btnClose.style.position = "absolute";
-    btnClose.style.right = "90px";
-    btnClose.style.bottom = "70px";
-    panelEl.appendChild(btnClose);
   }
 
-  // ensure keydown listener removed when closed via code
-  const _close = close;
-  close = function () {
-    unmountKey();
-    _close();
-  };
+  function getState() {
+    return {
+      isOpen: openFlag,
+      tableId: activeTableId,
+      step,
+      ballsCount: balls.length,
+      ingredientsCount: ingredients.length,
+      activeBallId,
+      activeIngredientId,
+      composeMode,
+      finalPotTextureUrl,
+    };
+  }
 
-  function setFluidCanvas(externalCanvas) {
-  // 你之後 webgl fluid 會自己建立 canvas
-  // 這裡做的是：把它塞進 Step1 的位置，並同步給 createBallFromFluidSnapshot 用
-  fluidCanvas = externalCanvas;
-}
+  function getPlacements() {
+    return composePlacements;
+  }
 
-function getState() {
   return {
-    isOpen: openFlag,
-    tableId: activeTableId,
-    step,
-    ballsCount: balls.length,
-    activeBallId,
+    open,
+    close,
+    isOpen,
+    getState,
+    getPlacements,
   };
-}
-function getPlacements() {
-  return placements;
-}
-
-return { open, close, isOpen, setFluidCanvas, getState, getPlacements};
 }

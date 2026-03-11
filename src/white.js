@@ -8,14 +8,19 @@ import { depth } from "three/tsl";
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0xffffff);
 
-const ambient = new THREE.AmbientLight(0xffffff, 1.5);
-scene.add(ambient);
+const hemiLight = new THREE.HemisphereLight(0xffffff, 0xbbbbbb, 3); 
+scene.add(hemiLight);
 
 const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+// renderer.outputColorSpace = THREE.SRGBColorSpace; // 確保顏色解析正確
+// renderer.toneMapping = THREE.ACESFilmicToneMapping; // 模擬底片色調
+// renderer.toneMappingExposure = 1.8; // 調整這個值來控制整體的「乾淨度」
 document.querySelector("#app").appendChild(renderer.domElement);
+
+
 
 window.addEventListener("resize", () => {
     camera.aspect = window.innerWidth / window.innerHeight;
@@ -1778,7 +1783,7 @@ setIdCardState("EDIT");
 
 
 let envRoot = null;
-loader.load("/white_B.glb", (gltf) => {
+loader.load("/white.glb", (gltf) => {
     envRoot = gltf.scene;
     scene.add(envRoot);
     envRoot.updateWorldMatrix(true, true);
@@ -1822,13 +1827,22 @@ loader.load("/white_B.glb", (gltf) => {
     obj.lookAt(target);
 
 
-    const spawnLight = new THREE.PointLight(0xffffff, 180, 800);
-    spawnLight.position.set(
-    center.x,
-    center.y + 3,
-    center.z
-    );
-    scene.add(spawnLight);
+    // const spawnLight = new THREE.PointLight(0xffffff, 80, 100);
+    // spawnLight.position.set(
+    // center.x,
+    // center.y + 3,
+    // center.z
+    // );
+    // scene.add(spawnLight);
+
+    // 既然你的場景是長形的，建議前後各放一盞，強度降低
+    const light1 = new THREE.PointLight(0xffffff, 50); // 強度大幅調低
+    light1.position.set(center.x, 8, center.z - 5);
+    scene.add(light1);
+
+    const light2 = new THREE.PointLight(0xffffff, 50);
+    light2.position.set(center.x, 8, center.z + 5);
+    scene.add(light2);
 
     const bounds = box.clone();
     const padding = 0.6;
