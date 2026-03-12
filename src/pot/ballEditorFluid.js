@@ -1,11 +1,11 @@
 export function createBallEditorFluid({
-  rootEl,         // 目前未使用，先保留
+  rootEl,
   getTableId,
-  getFluidCanvas, // () => HTMLCanvasElement
-  data,           // potData（務必是同一個單例，不要每次 createPotData()）
-  ui,             // { ballListEl, emptyTextEl }
+  getFluidCtrl, // () => fluidCtrl — 方案B：單一 ctrl，內部管 6 個 dye FBO
+  data,
+  ui,
 }) {
-  const THUMB = 52; // 你要 56 就改這裡
+  const THUMB = 52;
 
   function styleBallRow(el) {
     el.style.width = "100%";
@@ -48,7 +48,6 @@ export function createBallEditorFluid({
     if (!tableId) return;
 
     const st = data.getState(tableId);
-
     ui.ballListEl.innerHTML = "";
 
     if (!st.balls.length) {
@@ -95,16 +94,15 @@ export function createBallEditorFluid({
     const tableId = getTableId?.();
     if (!tableId) return null;
 
-    const canvas = getFluidCanvas?.();
-    if (!canvas) {
-      console.warn("[pot] missing fluid canvas");
+    const ctrl = getFluidCtrl?.();
+    if (!ctrl) {
+      console.warn("[pot] missing fluidCtrl");
       return null;
     }
 
-    // ✅ 圓形縮圖請統一交給 data.createBallFromCanvas 內部處理
-    // previewSize 建議 >= THUMB*2（例如 96）縮放比較不糊
-    const ball = data.createBallFromCanvas(tableId, canvas, { name, previewSize: 96 });
-
+    // 方案B：fluidCtrl.storeSnapshot() 回傳合併後的 canvas
+    const mergedCanvas = ctrl.storeSnapshot();
+    const ball = data.createBallFromCanvas(tableId, mergedCanvas, { name, previewSize: 96 });
     renderBallList();
     return ball;
   }

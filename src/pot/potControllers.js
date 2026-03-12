@@ -1,6 +1,11 @@
 import { createPotData } from "./potData.js";
 import { createBallEditorFluid } from "./ballEditorFluid.js";
 import { createFluidPavel } from "./fluid/createFluidPavel.js";
+import {
+  inflateIngredientPreview,
+  clearIngredientDrawing,
+  revokePreviewUrl,
+} from "./ingredientInflate.js";
 
 export function createPotController({ appEl, onClose, onRequestClose } = {}) {
   if (!appEl) throw new Error("[pot] createPotController: appEl is required");
@@ -11,49 +16,48 @@ export function createPotController({ appEl, onClose, onRequestClose } = {}) {
   let panelEl = null;
 
   let activeTableId = null;
-  // 0=intro, 1=soup blocks, 2=ingredients, 3=compose pot, 4=3d preview, 5=chairs
   let step = 0;
 
-  // soup blocks (old balls)
   const balls = [];
   let activeBallId = null;
 
-  // ingredient pngs
   const ingredients = [];
   let activeIngredientId = null;
 
-  // shared data store
   const potData = createPotData();
 
-  // step1 fluid
   let fluidMountEl = null;
   let fluidCtrl = null;
-  let fluidColor = "#ff5cff";
+  let fluidColor = "#fd6fff";
   let ballEditor = null;
 
-  // step2 ingredient drawing
   let ingredientCanvas = null;
   let ingredientCtx = null;
-  let ingredientBrushColor = "#ff5cff";
+  let ingredientBrushColor = "#fd6fff";
   let ingredientBrushSize = 22;
   let ingredientDrawing = false;
   let ingredientLastPoint = null;
   let ingredientPreviewImgUrl = null;
+  let ingredientToolMode = "draw";
 
-  // step3 composition
   let potCanvas = null;
   let potCtx = null;
-  let composeMode = "soup"; // soup | ingredient | cut | delete
+  let composeMode = "soup";
   let cutDrawing = false;
   let cutPath = [];
   let cutLines = [];
+  // ★ NEW: per-line color tracking
+  let cutLineColors = [];
+  let cutColor = "#000000";
   let step3Bound = false;
 
-  // 3d preview placeholders (mount points only for now)
+  // ★ per-item "next placement" scale — only affects the NEXT placement, not existing ones
+  const ballNextScale = new Map();       // itemId -> scale for next drop
+  const ingredientNextScale = new Map(); // itemId -> scale for next drop
+
   let step4PreviewEl = null;
   let chairPreviewEl = null;
 
-  // exported / final texture cache
   let finalPotTextureUrl = null;
 
   // ---------- ui spec ----------
@@ -281,6 +285,11 @@ export function createPotController({ appEl, onClose, onRequestClose } = {}) {
   function clearPanel() {
     if (!panelEl) return;
     panelEl.innerHTML = "";
+    // reset canvas references so they get recreated fresh each time
+    ingredientCanvas = null;
+    ingredientCtx = null;
+    // reset step3 bind flag so events get re-attached when re-entering step3
+    step3Bound = false;
   }
 
   function renderStep() {
@@ -294,6 +303,61 @@ export function createPotController({ appEl, onClose, onRequestClose } = {}) {
     if (step === 3) return renderStep3();
     if (step === 4) return renderStep4();
     if (step === 5) return renderStep5();
+  }
+
+  // ---------- inflate ----------
+  async function handleInflateIngredient(previewImgEl) {
+    if (!ingredientCanvas) return;
+
+    if (ingredientPreviewImgUrl && !ingredients.some(it => it.previewUrl === ingredientPreviewImgUrl)) {
+      revokePreviewUrl(ingredientPreviewImgUrl);
+    }
+    ingredientPreviewImgUrl = null;
+
+    const result = await inflateIngredientPreview(ingredientCanvas, {
+      width: 320,
+      height: 180,
+      padding: 20,
+      baseColor: ingredientBrushColor,
+    });
+
+    if (result.isEmpty || !result.url) {
+      previewImgEl.removeAttribute("src");
+      previewImgEl.style.display = "none";
+      return;
+    }
+
+    ingredientPreviewImgUrl = result.url;
+    previewImgEl.src = ingredientPreviewImgUrl;
+    previewImgEl.style.display = "block";
+  }
+
+  function handleClearIngredientDrawing(previewImgEl) {
+    clearIngredientDrawing(ingredientCanvas, ingredientCtx);
+
+    if (ingredientPreviewImgUrl && !ingredients.some(it => it.previewUrl === ingredientPreviewImgUrl)) {
+      revokePreviewUrl(ingredientPreviewImgUrl);
+    }
+    ingredientPreviewImgUrl = null;
+
+    previewImgEl.removeAttribute("src");
+    previewImgEl.style.display = "none";
+  }
+
+  function storeIngredient(name) {
+    if (!ingredientPreviewImgUrl) return;
+
+    const item = {
+      id: crypto.randomUUID(),
+      name: name?.trim() || "Unnamed",
+      previewUrl: ingredientPreviewImgUrl,
+      createdAt: Date.now(),
+    };
+
+    ingredients.unshift(item);
+    activeIngredientId = item.id;
+
+    renderHorizontalIngredientList(UI.step2.listFrame);
   }
 
   // ---------- generic ui helpers ----------
@@ -392,36 +456,36 @@ export function createPotController({ appEl, onClose, onRequestClose } = {}) {
     return btn;
   }
 
-function addActionButton({ rect, label, iconSrc, iconRect, onClick, textOffsetX = 0 }) {
-  const btn = addCapsuleButton({
-    x: rect.x,
-    y: rect.y,
-    w: rect.w,
-    h: rect.h,
-    bg: "#fff",
-    border: "2px solid #FD6FFF",
-    onClick
-  });
+  function addActionButton({ rect, label, iconSrc, iconRect, onClick, textOffsetX = 0 }) {
+    const btn = addCapsuleButton({
+      x: rect.x,
+      y: rect.y,
+      w: rect.w,
+      h: rect.h,
+      bg: "#fff",
+      border: "2px solid #FD6FFF",
+      onClick
+    });
 
-  addImg(iconSrc, {
-    x: iconRect.x,
-    y: iconRect.y,
-    w: iconRect.w,
-    h: iconRect.h,
-    z: 4
-  });
+    addImg(iconSrc, {
+      x: iconRect.x,
+      y: iconRect.y,
+      w: iconRect.w,
+      h: iconRect.h,
+      z: 4
+    });
 
-  addText(label, {
-    x: rect.x + rect.w / 2 + textOffsetX,
-    y: rect.y + 19,
-    size: 25,
-    color: "#FD6FFF",
-    center: true,
-    z: 4
-  });
+    addText(label, {
+      x: rect.x + rect.w / 2 + textOffsetX,
+      y: rect.y + 19,
+      size: 25,
+      color: "#FD6FFF",
+      center: true,
+      z: 4
+    });
 
-  return btn;
-}
+    return btn;
+  }
 
   function addLabelChip(text, { x, y, w = 90, h = 33, bg = "#EAEAEA", color = "#000" }) {
     const chip = document.createElement("div");
@@ -550,7 +614,7 @@ function addActionButton({ rect, label, iconSrc, iconRect, onClick, textOffsetX 
 
   // ---------- step1 soup blocks ----------
   function mountFluidEditor() {
-    if (!fluidMountEl || fluidCtrl) return;
+    if (!fluidMountEl) return;
     fluidCtrl = createFluidPavel({
       mountEl: fluidMountEl,
       width: UI.step1.fluid.w,
@@ -560,15 +624,13 @@ function addActionButton({ rect, label, iconSrc, iconRect, onClick, textOffsetX 
   }
 
   function unmountFluidEditor() {
-    if (fluidCtrl?.destroy) fluidCtrl.destroy();
+    try { fluidCtrl?.destroy?.(); } catch(e) {}
     fluidCtrl = null;
     if (fluidMountEl) fluidMountEl.innerHTML = "";
     fluidMountEl = null;
   }
 
   function renderHorizontalSoupList(rect) {
-    addText("湯塊區", { x: rect.x, y: rect.y, size: 20, z: 3 });
-
     const wrap = document.createElement("div");
     Object.assign(wrap.style, {
       position: "absolute",
@@ -605,7 +667,7 @@ function addActionButton({ rect, label, iconSrc, iconRect, onClick, textOffsetX 
         height: "50px",
         minWidth: "50px",
         borderRadius: "999px",
-        border: ball.id === activeBallId ? "3px solid #1248FF" : "2px solid #FD6FFF",
+        border: "transparent",
         background: "#fff",
         padding: "0",
         cursor: "pointer",
@@ -635,9 +697,9 @@ function addActionButton({ rect, label, iconSrc, iconRect, onClick, textOffsetX 
   function renderStep1() {
     const s = UI.step1;
     addImg(ASSETS.step1Worktop, { ...s.worktop, z: 1 });
+    addText("湯塊區", { x: s.listFrame.x, y: s.listFrame.y, size: 20, z: 3 });
     addText("製作湯塊", { x: s.title.x, y: s.title.y, size: 25, z: 3 });
 
-    // center fluid mount
     fluidMountEl = document.createElement("div");
     Object.assign(fluidMountEl.style, {
       position: "absolute",
@@ -653,62 +715,283 @@ function addActionButton({ rect, label, iconSrc, iconRect, onClick, textOffsetX 
     panelEl.appendChild(fluidMountEl);
     mountFluidEditor();
 
-    // controls shown as image buttons; functionality intentionally minimal for now
     addImageButton(ASSETS.colorPicker, s.colorBtn, {
-      onClick: () => console.log("[step1] color picker ui only"),
-      border: "0",
-      bg: "transparent",
-      radius: 0,
+      onClick: () => {
+        const colorInput = document.createElement("input");
+        colorInput.type = "color";
+        colorInput.value = fluidColor;
+        colorInput.style.cssText = "position:absolute;opacity:0;pointer-events:none;";
+        panelEl.appendChild(colorInput);
+        colorInput.addEventListener("input", (e) => {
+          fluidColor = e.target.value;
+          fluidCtrl?.setColor(fluidColor);
+        });
+        colorInput.addEventListener("change", () => colorInput.remove());
+        colorInput.click();
+      },
+      border: "0", bg: "transparent", radius: 0,
     });
+
+    let matPopupOpen = false;
+
+    const matPopup = document.createElement("div");
+    Object.assign(matPopup.style, {
+      position: "absolute",
+      left: `${s.materialBtn.x}px`,
+      top: `${s.materialBtn.y + s.materialBtn.h + 8}px`,
+      background: "#1a1a1a",
+      borderRadius: "16px",
+      padding: "10px 8px",
+      display: "none",
+      flexDirection: "column",
+      gap: "6px",
+      zIndex: "10010",
+      boxShadow: "0 4px 16px rgba(0,0,0,0.3)",
+      minWidth: "120px",
+      maxHeight: "400px",
+      overflowY: "auto",
+    });
+    overlayEl.appendChild(matPopup);
+
+    const mats = [
+      { key: "ink",    label: "Ink" },
+      { key: "latex",  label: "液態乳膠" },
+      { key: "wax",    label: "融蠟" },
+      { key: "chrome", label: "流體金屬" },
+      { key: "pearl",  label: "珍珠母貝" },
+      { key: "clay",   label: "黏土" },
+    ];
+    let activeMat = "ink";
+
+    mats.forEach(({ key, label }) => {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.textContent = label;
+      btn.dataset.matKey = key;
+      Object.assign(btn.style, {
+        background: key === activeMat ? "#FD6FFF" : "transparent",
+        color: key === activeMat ? "#fff" : "#ccc",
+        border: "none",
+        borderRadius: "999px",
+        padding: "6px 14px",
+        fontFamily: '"zpix", ui-sans-serif, system-ui',
+        fontSize: "16px",
+        cursor: "pointer",
+        textAlign: "left",
+        outline: "none",
+      });
+      btn.addEventListener("click", () => {
+        activeMat = key;
+        fluidCtrl?.setActiveMaterial(key);
+        fluidCtrl?.setColor(fluidColor);
+        matPopup.querySelectorAll("button").forEach((b) => {
+          const isActive = b.dataset.matKey === key;
+          b.style.background = isActive ? "#FD6FFF" : "transparent";
+          b.style.color = isActive ? "#fff" : "#ccc";
+        });
+      });
+      matPopup.appendChild(btn);
+    });
+
+    const closeMatPopup = (e) => {
+      if (matPopupOpen && !matPopup.contains(e.target)) {
+        matPopup.style.display = "none";
+        matPopupOpen = false;
+        document.removeEventListener("pointerdown", closeMatPopup);
+      }
+    };
+
     addImageButton(ASSETS.material, s.materialBtn, {
-      onClick: () => console.log("[step1] material picker ui only"),
-      border: "0",
-      bg: "transparent",
-      radius: 0,
+      onClick: () => {
+        matPopupOpen = !matPopupOpen;
+        if (matPopupOpen) {
+          const r = panelEl.getBoundingClientRect();
+          matPopup.style.left = `${r.left + s.materialBtn.x}px`;
+          matPopup.style.top  = `${r.top  + s.materialBtn.y + s.materialBtn.h + 8}px`;
+        }
+        matPopup.style.display = matPopupOpen ? "flex" : "none";
+        if (matPopupOpen) setTimeout(() => document.addEventListener("pointerdown", closeMatPopup), 0);
+      },
+      border: "0", bg: "transparent", radius: 0,
     });
+
+    let fluidBrushRadius = 20;
+
+    const brushPopup = document.createElement("div");
+    Object.assign(brushPopup.style, {
+      position: "absolute",
+      left: `${s.brushBtn.x - 20}px`,
+      top: `${s.brushBtn.y + s.brushBtn.h + 8}px`,
+      width: "220px",
+      background: "#1a1a1a",
+      borderRadius: "999px",
+      padding: "10px 16px",
+      display: "none",
+      alignItems: "center",
+      gap: "10px",
+      zIndex: "10",
+      boxShadow: "0 4px 16px rgba(0,0,0,0.3)",
+    });
+    const sliderEl = document.createElement("input");
+    sliderEl.type = "range";
+    sliderEl.min = "2";
+    sliderEl.max = "80";
+    sliderEl.value = String(fluidBrushRadius);
+    Object.assign(sliderEl.style, { flex: "1", accentColor: "#FD6FFF", cursor: "pointer" });
+    const brushValLabel = document.createElement("div");
+    brushValLabel.textContent = String(fluidBrushRadius);
+    Object.assign(brushValLabel.style, {
+      color: "#fff",
+      fontFamily: '"zpix", ui-sans-serif, system-ui',
+      fontSize: "14px",
+      minWidth: "24px",
+      textAlign: "right",
+    });
+    sliderEl.addEventListener("input", (e) => {
+      fluidBrushRadius = Number(e.target.value);
+      brushValLabel.textContent = fluidBrushRadius;
+      fluidCtrl?.setSplatRadius(fluidBrushRadius);
+    });
+    brushPopup.appendChild(sliderEl);
+    brushPopup.appendChild(brushValLabel);
+    panelEl.appendChild(brushPopup);
+
+    let brushPopupOpen = false;
+    const closeBrushPopup = (e) => {
+      if (brushPopupOpen && !brushPopup.contains(e.target)) {
+        brushPopup.style.display = "none";
+        brushPopupOpen = false;
+        document.removeEventListener("pointerdown", closeBrushPopup);
+      }
+    };
     addImageButton(ASSETS.brushSize, s.brushBtn, {
-      onClick: () => console.log("[step1] brush size ui only"),
-      border: "0",
-      bg: "transparent",
-      radius: 0,
-    });
-    addImageButton(ASSETS.eraser, s.eraserBtn, {
-      onClick: () => console.log("[step1] eraser ui only"),
-      border: "0",
-      bg: "transparent",
-      radius: 0,
-    });
-    addImageButton(ASSETS.finger, s.fingerBtn, {
-      onClick: () => console.log("[step1] finger ui only"),
-      border: "0",
-      bg: "transparent",
-      radius: 0,
+      onClick: () => {
+        brushPopupOpen = !brushPopupOpen;
+        brushPopup.style.display = brushPopupOpen ? "flex" : "none";
+        if (brushPopupOpen) setTimeout(() => document.addEventListener("pointerdown", closeBrushPopup), 0);
+      },
+      border: "0", bg: "transparent", radius: 0,
     });
 
-    const nameInput = addRoundedInput({ x: s.nameInput.x, y: s.nameInput.y, w: s.nameInput.w, h: s.nameInput.h, placeholder: "" });
-    addText("命名湯塊", { x: 700, y: 301, size: 20, z: 4 });
+    let fluidEraserOn = false;
+    let fluidFingerOn = false;
 
-    addCapsuleButton({ x: s.confirmBtn.x, y: s.confirmBtn.y, w: s.confirmBtn.w, h: s.confirmBtn.h, bg: "#EAEAEA", border: "2px solid #EAEAEA", onClick: () => {
-      const nm = nameInput.value.trim() || `湯塊 ${balls.length + 1}`;
-      const ball = ballEditor?.storeSnapshot?.(nm);
-      if (!ball) return;
-      activeBallId = ball.id;
-      nameInput.value = "";
-      renderStep();
-    }});
+    const eraserBtn = addImageButton(ASSETS.eraser, s.eraserBtn, {
+      onClick: () => {
+        fluidEraserOn = !fluidEraserOn;
+        eraserBtn.style.outline = fluidEraserOn ? "3px solid #FD6FFF" : "none";
+        if (fluidEraserOn) {
+          fluidFingerOn = false;
+          fingerBtn.style.outline = "none";
+          fluidCtrl?.setFingerMode(false);
+          fluidCtrl?.setColor("#ffffff");
+        } else {
+          fluidCtrl?.setColor(fluidColor);
+        }
+      },
+      border: "0", bg: "transparent", radius: 0,
+    });
+
+    const fingerBtn = addImageButton(ASSETS.finger, s.fingerBtn, {
+      onClick: () => {
+        fluidFingerOn = !fluidFingerOn;
+        fingerBtn.style.outline = fluidFingerOn ? "3px solid #FD6FFF" : "none";
+        fluidCtrl?.setFingerMode(fluidFingerOn);
+        if (fluidFingerOn) {
+          fluidEraserOn = false;
+          eraserBtn.style.outline = "none";
+          fluidCtrl?.setColor(fluidColor);
+        }
+      },
+      border: "0", bg: "transparent", radius: 0,
+    });
+
+    const nameWrap = document.createElement("div");
+    Object.assign(nameWrap.style, {
+      position: "absolute",
+      left: `${s.nameInput.x}px`,
+      top: `${s.nameInput.y}px`,
+      width: `${s.nameInput.w}px`,
+      height: `${s.nameInput.h}px`,
+      zIndex: "3",
+    });
+    panelEl.appendChild(nameWrap);
+
+    const nameFrame = document.createElement("div");
+    Object.assign(nameFrame.style, {
+      position: "absolute",
+      inset: "0",
+      borderRadius: "999px",
+      border: "2px solid #EAEAEA",
+      background: "#fff",
+      boxSizing: "border-box",
+    });
+    nameWrap.appendChild(nameFrame);
+
+    const nameInput = document.createElement("input");
+    nameInput.type = "text";
+    Object.assign(nameInput.style, {
+      position: "absolute",
+      inset: "0",
+      width: "100%",
+      height: "100%",
+      border: "none",
+      outline: "none",
+      background: "transparent",
+      padding: "0 16px",
+      boxSizing: "border-box",
+      fontFamily: '"zpix", ui-sans-serif, system-ui',
+      fontSize: "18px",
+      color: "#FD6FFF",
+    });
+    nameFrame.appendChild(nameInput);
+
+    const nameLabel = document.createElement("div");
+    nameLabel.textContent = "命名湯塊";
+    Object.assign(nameLabel.style, {
+      position: "absolute",
+      left: "18px",
+      top: "18px",
+      fontFamily: '"zpix", ui-sans-serif, system-ui',
+      fontSize: "20px",
+      color: "#EAEAEA",
+      lineHeight: "1",
+      pointerEvents: "none",
+    });
+    nameFrame.appendChild(nameLabel);
+
+    const updateNameLabel = () => {
+      nameLabel.style.display = nameInput.value.length > 0 ? "none" : "block";
+    };
+    nameInput.addEventListener("input", updateNameLabel);
+    updateNameLabel();
+
+    addCapsuleButton({
+      x: s.confirmBtn.x, y: s.confirmBtn.y, w: s.confirmBtn.w, h: s.confirmBtn.h,
+      bg: "#EAEAEA", border: "2px solid #EAEAEA",
+      onClick: () => {
+        const nm = nameInput.value.trim() || `湯塊 ${balls.length + 1}`;
+        const ball = ballEditor?.storeSnapshot?.(nm);
+        if (!ball) return;
+        balls.unshift({ id: ball.id, name: ball.name, previewUrl: ball.previewDataURL });
+        activeBallId = ball.id;
+        nameInput.value = "";
+        updateNameLabel();
+        const old = panelEl.querySelector(".soup-list-wrap");
+        if (old) old.remove();
+        const newWrap = renderHorizontalSoupList(s.listFrame);
+        newWrap.classList.add("soup-list-wrap");
+      }
+    });
     addImg(ASSETS.confirm, { ...s.confirmIcon, z: 4 });
 
-    addCapsuleButton({ x: s.deleteBtn.x, y: s.deleteBtn.y, w: s.deleteBtn.w, h: s.deleteBtn.h, bg: "#EAEAEA", border: "2px solid #EAEAEA", onClick: () => {
-      if (!balls.length) return;
-      const idx = activeBallId ? balls.findIndex((b) => b.id === activeBallId) : 0;
-      const removeAt = idx >= 0 ? idx : 0;
-      const [removed] = balls.splice(removeAt, 1);
-      if (removed?.id === activeBallId) activeBallId = balls[0]?.id ?? null;
-      renderStep();
-    }});
+    addCapsuleButton({
+      x: s.deleteBtn.x, y: s.deleteBtn.y, w: s.deleteBtn.w, h: s.deleteBtn.h,
+      bg: "#EAEAEA", border: "2px solid #EAEAEA",
+      onClick: () => { fluidCtrl?.clearCanvas(); }
+    });
     addImg(ASSETS.delete, { ...s.deleteIcon, z: 4 });
 
-    // keep using existing data flow
     const hiddenBallList = document.createElement("div");
     const hiddenEmpty = document.createElement("div");
     hiddenBallList.style.display = "none";
@@ -718,13 +1001,13 @@ function addActionButton({ rect, label, iconSrc, iconRect, onClick, textOffsetX 
 
     ballEditor = createBallEditorFluid({
       getTableId: () => activeTableId,
-      getFluidCanvas: () => fluidCtrl?.canvas,
+      getFluidCtrl: () => fluidCtrl,
       data: potData,
       ui: { ballListEl: hiddenBallList, emptyTextEl: hiddenEmpty },
     });
 
-    // sync balls[] with potData render source if needed, but still draw our own list from balls array
-    renderHorizontalSoupList(s.listFrame);
+    const soupWrap = renderHorizontalSoupList(s.listFrame);
+    soupWrap.classList.add("soup-list-wrap");
 
     addActionButton({
       rect: s.nextBtn,
@@ -732,10 +1015,7 @@ function addActionButton({ rect, label, iconSrc, iconRect, onClick, textOffsetX 
       iconSrc: ASSETS.rightArrow,
       iconRect: s.nextIcon,
       textOffsetX: 14,
-      onClick: () => {
-        step = 2;
-        renderStep();
-      },
+      onClick: () => { step = 2; renderStep(); },
     });
   }
 
@@ -758,8 +1038,17 @@ function addActionButton({ rect, label, iconSrc, iconRect, onClick, textOffsetX 
     const p = ingredientCanvasXY(e);
     ingredientCtx.lineCap = "round";
     ingredientCtx.lineJoin = "round";
-    ingredientCtx.strokeStyle = ingredientBrushColor;
-    ingredientCtx.lineWidth = ingredientBrushSize;
+
+    if (ingredientToolMode === "erase") {
+      ingredientCtx.globalCompositeOperation = "destination-out";
+      ingredientCtx.strokeStyle = "rgba(0,0,0,1)";
+      ingredientCtx.lineWidth = ingredientBrushSize * 2;
+    } else {
+      ingredientCtx.globalCompositeOperation = "source-over";
+      ingredientCtx.strokeStyle = ingredientBrushColor;
+      ingredientCtx.lineWidth = ingredientBrushSize;
+    }
+
     ingredientCtx.lineTo(p.x, p.y);
     ingredientCtx.stroke();
     ingredientLastPoint = p;
@@ -791,36 +1080,6 @@ function addActionButton({ rect, label, iconSrc, iconRect, onClick, textOffsetX 
     ingredientCtx.clearRect(0, 0, ingredientCanvas.width, ingredientCanvas.height);
   }
 
-  function inflateIngredientPreview() {
-    if (!ingredientCanvas) return null;
-    const src = ingredientCanvas;
-    const off = document.createElement("canvas");
-    off.width = 312;
-    off.height = 151;
-    const ctx = off.getContext("2d");
-    ctx.clearRect(0, 0, off.width, off.height);
-    ctx.save();
-    ctx.filter = "blur(1.2px)";
-    ctx.drawImage(src, 0, 0, off.width, off.height);
-    ctx.restore();
-    ingredientPreviewImgUrl = off.toDataURL("image/png");
-    return ingredientPreviewImgUrl;
-  }
-
-  function storeIngredient(name = "") {
-    const previewUrl = ingredientPreviewImgUrl || inflateIngredientPreview();
-    if (!previewUrl) return null;
-    const item = {
-      id: uuid(),
-      name: name || `配料 ${ingredients.length + 1}`,
-      previewUrl,
-      createdAt: Date.now(),
-    };
-    ingredients.unshift(item);
-    activeIngredientId = item.id;
-    return item;
-  }
-
   function renderHorizontalIngredientList(rect) {
     addText("配料區", { x: rect.x, y: rect.y, size: 20, color: "#1248FF", z: 3 });
 
@@ -840,18 +1099,6 @@ function addActionButton({ rect, label, iconSrc, iconRect, onClick, textOffsetX 
     });
     panelEl.appendChild(wrap);
 
-    if (ingredients.length === 0) {
-      const empty = document.createElement("div");
-      empty.textContent = "尚無配料";
-      Object.assign(empty.style, {
-        fontFamily: '"zpix", ui-sans-serif, system-ui',
-        fontSize: "18px",
-        color: "#666",
-      });
-      wrap.appendChild(empty);
-      return wrap;
-    }
-
     ingredients.forEach((item) => {
       const btn = document.createElement("button");
       btn.type = "button";
@@ -860,8 +1107,8 @@ function addActionButton({ rect, label, iconSrc, iconRect, onClick, textOffsetX 
         height: "50px",
         minWidth: "103px",
         borderRadius: "12px",
-        border: item.id === activeIngredientId ? "3px solid #1248FF" : "2px solid #FD6FFF",
-        background: "#fff",
+        border: "transparent",
+        background: "transparent",
         padding: "0",
         cursor: "pointer",
         overflow: "hidden",
@@ -913,28 +1160,58 @@ function addActionButton({ rect, label, iconSrc, iconRect, onClick, textOffsetX 
     bindIngredientCanvasEvents();
 
     addImageButton(ASSETS.colorPicker, s.colorBtn, {
-      onClick: () => console.log("[step2] color picker ui only"),
-      border: "0",
-      bg: "transparent",
-      radius: 0,
+      onClick: () => {
+        const colorInput = document.createElement("input");
+        colorInput.type = "color";
+        colorInput.value = ingredientBrushColor;
+        colorInput.style.cssText = "position:absolute;opacity:0;pointer-events:none;";
+        panelEl.appendChild(colorInput);
+        colorInput.addEventListener("input", (e) => {
+          ingredientBrushColor = e.target.value;
+        });
+        colorInput.addEventListener("change", () => colorInput.remove());
+        colorInput.click();
+      },
+      border: "0", bg: "transparent", radius: 0,
     });
+
+    const BRUSH_SIZES = [8, 16, 28, 42];
+
+    const brushLabel = document.createElement("div");
+    brushLabel.textContent = `${ingredientBrushSize}px`;
+    Object.assign(brushLabel.style, {
+      position: "absolute",
+      left: `${s.brushBtn.x + s.brushBtn.w / 2}px`,
+      top: `${s.brushBtn.y + s.brushBtn.h + 4}px`,
+      transform: "translateX(-50%)",
+      fontFamily: '"zpix", ui-sans-serif, system-ui',
+      fontSize: "16px",
+      color: "#FD6FFF",
+      zIndex: "4",
+      pointerEvents: "none",
+      whiteSpace: "nowrap",
+    });
+    panelEl.appendChild(brushLabel);
+
     addImageButton(ASSETS.brushSize2, s.brushBtn, {
-      onClick: () => console.log("[step2] brush size ui only"),
-      border: "0",
-      bg: "transparent",
-      radius: 0,
+      onClick: () => {
+        const idx = BRUSH_SIZES.indexOf(ingredientBrushSize);
+        ingredientBrushSize = BRUSH_SIZES[(idx + 1) % BRUSH_SIZES.length];
+        brushLabel.textContent = `${ingredientBrushSize}px`;
+      },
+      border: "0", bg: "transparent", radius: 0,
     });
+
     addImageButton(ASSETS.eraser2, s.eraserBtn, {
-      onClick: () => clearIngredientCanvas(),
-      border: "0",
-      bg: "transparent",
-      radius: 0,
+      onClick: () => {
+        ingredientToolMode = ingredientToolMode === "erase" ? "draw" : "erase";
+      },
+      border: "0", bg: "transparent", radius: 0,
     });
 
     addImageButton(ASSETS.inflate, s.inflateBtn, {
       onClick: () => {
-        inflateIngredientPreview();
-        renderStep();
+        handleInflateIngredient(previewImgEl);
       },
       border: "0",
       bg: "transparent",
@@ -948,159 +1225,171 @@ function addActionButton({ rect, label, iconSrc, iconRect, onClick, textOffsetX 
       color: "#1248FF",
     });
 
-  addFrameBox({
-    x: s.resultFrame.x,
-    y: s.resultFrame.y,
-    w: s.resultFrame.w,
-    h: s.resultFrame.h,
-    bg: "transparent",
-    border: "2px solid #FD6FFF",
-    radius: 28,
-    z: 1,
-  });
-
-  if (ingredientPreviewImgUrl) {
-    fitImgPreview(ingredientPreviewImgUrl, s.resultPreview, {
-      objectFit: "contain",
-      borderRadius: 18,
-      z: 3,
+    addFrameBox({
+      x: s.resultFrame.x,
+      y: s.resultFrame.y,
+      w: s.resultFrame.w,
+      h: s.resultFrame.h,
+      bg: "transparent",
+      border: "2px solid #FD6FFF",
+      radius: 28,
+      z: 1,
     });
-  }
 
-  const nameWrap = document.createElement("div");
-Object.assign(nameWrap.style, {
-  position: "absolute",
-  left: "964px",
-  top: "260px",
-  width: "326px",   // 191 + 60 + 60 + 間距
-  height: "60px",
-  zIndex: "3",
-});
-panelEl.appendChild(nameWrap);
+    const oldPreview = panelEl.querySelector(".ingredient-preview-img");
+    if (oldPreview) oldPreview.remove();
 
-// input frame
-const inputFrame = document.createElement("div");
-Object.assign(inputFrame.style, {
-  position: "absolute",
-  left: "0px",
-  top: "0px",
-  width: "191px",
-  height: "60px",
-  borderRadius: "999px",
-  border: "2px solid #EAEAEA",
-  background: "#FFFFFF",
-  boxSizing: "border-box",
-});
-nameWrap.appendChild(inputFrame);
+    const previewImgEl = document.createElement("img");
+    Object.assign(previewImgEl.style, {
+      position: "absolute",
+      left: `${s.resultPreview.x}px`,
+      top: `${s.resultPreview.y}px`,
+      width: `${s.resultPreview.w}px`,
+      height: `${s.resultPreview.h}px`,
+      objectFit: "contain",
+      borderRadius: "18px",
+      zIndex: "3",
+      pointerEvents: "none",
+      display: ingredientPreviewImgUrl ? "block" : "none",
+    });
+    if (ingredientPreviewImgUrl) previewImgEl.src = ingredientPreviewImgUrl;
+    panelEl.appendChild(previewImgEl);
 
-  // real input
-const previewNameInput = document.createElement("input");
-previewNameInput.type = "text";
-previewNameInput.placeholder = "";
-Object.assign(previewNameInput.style, {
-  position: "absolute",
-  left: "0px",
-  top: "0px",
-  width: "100%",
-  height: "100%",
-  border: "0",
-  outline: "none",
-  background: "transparent",
-  padding: "0 16px",
-  boxSizing: "border-box",
-  fontFamily: '"zpix", ui-sans-serif, system-ui',
-  fontSize: "18px",
-  color: "#FD6FFF",
-});
-inputFrame.appendChild(previewNameInput);
+    const nameWrap = document.createElement("div");
+    Object.assign(nameWrap.style, {
+      position: "absolute",
+      left: "964px",
+      top: "260px",
+      width: "326px",
+      height: "60px",
+      zIndex: "3",
+    });
+    panelEl.appendChild(nameWrap);
 
-// label text
-const inputLabel = document.createElement("div");
-inputLabel.textContent = "命名配料";
-Object.assign(inputLabel.style, {
-  position: "absolute",
-  left: "18px",
-  top: "18px",
-  fontFamily: '"zpix", ui-sans-serif, system-ui',
-  fontSize: "20px",
-  color: "#EAEAEA",
-  lineHeight: "1",
-  pointerEvents: "none",
-});
-inputFrame.appendChild(inputLabel);
+    const inputFrame = document.createElement("div");
+    Object.assign(inputFrame.style, {
+      position: "absolute",
+      left: "0px",
+      top: "0px",
+      width: "191px",
+      height: "60px",
+      borderRadius: "999px",
+      border: "2px solid #EAEAEA",
+      background: "#FFFFFF",
+      boxSizing: "border-box",
+    });
+    nameWrap.appendChild(inputFrame);
 
-// confirm button
-const confirmBtn = document.createElement("button");
-confirmBtn.type = "button";
-Object.assign(confirmBtn.style, {
-  position: "absolute",
-  left: "129px",
-  top: "0px",
-  width: "60px",
-  height: "60px",
-  borderRadius: "999px",
-  border: "2px solid #EAEAEA",
-  background: "#EAEAEA",
-  cursor: "pointer",
-  padding: "0",
-});
-confirmBtn.addEventListener("click", () => {
-  const nm = previewNameInput.value.trim() || `配料 ${ingredients.length + 1}`;
-  const item = storeIngredient(nm);
-  if (!item) return;
-  previewNameInput.value = "";
-  renderStep();
-});
-nameWrap.appendChild(confirmBtn);
+    const previewNameInput = document.createElement("input");
+    previewNameInput.type = "text";
+    previewNameInput.placeholder = "";
+    Object.assign(previewNameInput.style, {
+      position: "absolute",
+      left: "0px",
+      top: "0px",
+      width: "100%",
+      height: "100%",
+      border: "0",
+      outline: "none",
+      background: "transparent",
+      padding: "0 16px",
+      boxSizing: "border-box",
+      fontFamily: '"zpix", ui-sans-serif, system-ui',
+      fontSize: "18px",
+      color: "#FD6FFF",
+    });
+    inputFrame.appendChild(previewNameInput);
 
-const confirmIcon = document.createElement("img");
-confirmIcon.src = ASSETS.confirm;
-Object.assign(confirmIcon.style, {
-  position: "absolute",
-  left: "3px",
-  top: "3px",
-  width: "54px",
-  height: "54px",
-  pointerEvents: "none",
-});
-confirmBtn.appendChild(confirmIcon);
+    const inputLabel = document.createElement("div");
+    inputLabel.textContent = "命名配料";
+    Object.assign(inputLabel.style, {
+      position: "absolute",
+      left: "18px",
+      top: "18px",
+      fontFamily: '"zpix", ui-sans-serif, system-ui',
+      fontSize: "20px",
+      color: "#EAEAEA",
+      lineHeight: "1",
+      pointerEvents: "none",
+    });
+    inputFrame.appendChild(inputLabel);
+    const updateLabel = () => {
+      inputLabel.style.display = previewNameInput.value.length > 0 ? "none" : "block";
+    };
+    previewNameInput.addEventListener("input", updateLabel);
+    updateLabel();
 
-// delete button
-const deleteBtn = document.createElement("button");
-deleteBtn.type = "button";
-Object.assign(deleteBtn.style, {
-  position: "absolute",
-  left: "204px",
-  top: "0px",
-  width: "60px",
-  height: "60px",
-  borderRadius: "999px",
-  border: "2px solid #EAEAEA",
-  background: "#EAEAEA",
-  cursor: "pointer",
-  padding: "0",
-});
-deleteBtn.addEventListener("click", () => {
-  if (!ingredients.length) return;
-  const idx = activeIngredientId ? ingredients.findIndex((it) => it.id === activeIngredientId) : 0;
-  const removeAt = idx >= 0 ? idx : 0;
-  const [removed] = ingredients.splice(removeAt, 1);
-  if (removed?.id === activeIngredientId) activeIngredientId = ingredients[0]?.id ?? null;
-  renderStep();
-});
-nameWrap.appendChild(deleteBtn);
+    const confirmBtn = document.createElement("button");
+    confirmBtn.type = "button";
+    Object.assign(confirmBtn.style, {
+      position: "absolute",
+      left: "129px",
+      top: "0px",
+      width: "60px",
+      height: "60px",
+      borderRadius: "999px",
+      border: "2px solid #EAEAEA",
+      background: "#EAEAEA",
+      cursor: "pointer",
+      padding: "0",
+    });
+    confirmBtn.addEventListener("click", () => {
+      const nm = previewNameInput.value.trim() || `配料 ${ingredients.length + 1}`;
+      storeIngredient(nm);
+      ingredientPreviewImgUrl = null;
+      clearIngredientDrawing(ingredientCanvas, ingredientCtx);
+      previewNameInput.value = "";
+      renderStep();
+    });
+    nameWrap.appendChild(confirmBtn);
 
-const deleteIcon = document.createElement("img");
-deleteIcon.src = ASSETS.delete;
-Object.assign(deleteIcon.style, {
-  position: "absolute",
-  left: "15px",
-  top: "12px",
-  width: "30px",
-  height: "37px",
-  pointerEvents: "none",
-});
-deleteBtn.appendChild(deleteIcon);
+    const confirmIcon = document.createElement("img");
+    confirmIcon.src = ASSETS.confirm;
+    Object.assign(confirmIcon.style, {
+      position: "absolute",
+      left: "3px",
+      top: "3px",
+      width: "54px",
+      height: "54px",
+      pointerEvents: "none",
+    });
+    confirmBtn.appendChild(confirmIcon);
+
+    const deleteBtn = document.createElement("button");
+    deleteBtn.type = "button";
+    Object.assign(deleteBtn.style, {
+      position: "absolute",
+      left: "204px",
+      top: "0px",
+      width: "60px",
+      height: "60px",
+      borderRadius: "999px",
+      border: "2px solid #EAEAEA",
+      background: "#EAEAEA",
+      cursor: "pointer",
+      padding: "0",
+    });
+    deleteBtn.addEventListener("click", () => {
+      if (!ingredients.length) return;
+      const idx = activeIngredientId ? ingredients.findIndex((it) => it.id === activeIngredientId) : 0;
+      const removeAt = idx >= 0 ? idx : 0;
+      const [removed] = ingredients.splice(removeAt, 1);
+      if (removed?.id === activeIngredientId) activeIngredientId = ingredients[0]?.id ?? null;
+      renderStep();
+    });
+    nameWrap.appendChild(deleteBtn);
+
+    const deleteIcon = document.createElement("img");
+    deleteIcon.src = ASSETS.delete;
+    Object.assign(deleteIcon.style, {
+      position: "absolute",
+      left: "15px",
+      top: "12px",
+      width: "30px",
+      height: "37px",
+      pointerEvents: "none",
+    });
+    deleteBtn.appendChild(deleteIcon);
 
     renderHorizontalIngredientList(s.listFrame);
 
@@ -1175,6 +1464,7 @@ deleteBtn.appendChild(deleteIcon);
     ctx.restore();
   }
 
+  // ★ MODIFIED: use scale stored on the placement itself
   function drawSoupPlacement(ctx, placement) {
     const ball = balls.find((b) => b.id === placement.itemId);
     if (!ball) return;
@@ -1182,7 +1472,8 @@ deleteBtn.appendChild(deleteIcon);
     img.src = ball.previewUrl;
     img.onload = () => redrawComposeCanvas();
     if (!img.complete) return;
-    const r = 26;
+    const scale = placement.scale ?? 1.0;
+    const r = Math.round(26 * scale);
     ctx.save();
     ctx.beginPath();
     ctx.arc(placement.x, placement.y, r, 0, Math.PI * 2);
@@ -1191,6 +1482,7 @@ deleteBtn.appendChild(deleteIcon);
     ctx.restore();
   }
 
+  // ★ MODIFIED: use scale stored on the placement itself
   function drawIngredientPlacement(ctx, placement) {
     const item = ingredients.find((it) => it.id === placement.itemId);
     if (!item) return;
@@ -1198,7 +1490,10 @@ deleteBtn.appendChild(deleteIcon);
     img.src = item.previewUrl;
     img.onload = () => redrawComposeCanvas();
     if (!img.complete) return;
-    ctx.drawImage(img, placement.x - 36, placement.y - 18, 72, 36);
+    const scale = placement.scale ?? 1.0;
+    const w = Math.round(72 * scale);
+    const h = Math.round(36 * scale);
+    ctx.drawImage(img, placement.x - w / 2, placement.y - h / 2, w, h);
   }
 
   const composePlacements = [];
@@ -1219,24 +1514,32 @@ deleteBtn.appendChild(deleteIcon);
       }
     });
 
-    // pot rim
     potCtx.beginPath();
     potCtx.arc(s / 2, s / 2, s / 2 - 6, 0, Math.PI * 2);
     potCtx.strokeStyle = "transparent";
     potCtx.lineWidth = 0;
     potCtx.stroke();
 
-    // cut lines are ALWAYS top-most
+    // ★ MODIFIED: draw each cut line with its own stored color
     potCtx.save();
     potCtx.beginPath();
     potCtx.arc(s / 2, s / 2, s / 2 - 6, 0, Math.PI * 2);
     potCtx.clip();
-    potCtx.strokeStyle = "rgba(0,0,0,0.95)";
     potCtx.lineWidth = 4;
     potCtx.lineCap = "round";
     potCtx.lineJoin = "round";
-    for (const line of cutLines) strokePath(potCtx, line, true);
-    if (cutPath.length >= 2) strokePath(potCtx, cutPath, true);
+
+    cutLines.forEach((line, idx) => {
+      potCtx.strokeStyle = cutLineColors[idx] ?? "#000000";
+      strokePath(potCtx, line, true);
+    });
+
+    // in-progress cut line uses current cutColor
+    if (cutPath.length >= 2) {
+      potCtx.strokeStyle = cutColor;
+      strokePath(potCtx, cutPath, true);
+    }
+
     potCtx.restore();
   }
 
@@ -1274,34 +1577,18 @@ deleteBtn.appendChild(deleteIcon);
 
     if (composeMode === "soup") {
       if (!activeBallId) return;
-      composePlacements.push({ type: "soup", itemId: activeBallId, x, y, createdAt: Date.now() });
+      const scale = ballNextScale.get(activeBallId) ?? 1.0;
+      composePlacements.push({ type: "soup", itemId: activeBallId, x, y, scale, createdAt: Date.now() });
       redrawComposeCanvas();
       return;
     }
 
     if (composeMode === "ingredient") {
       if (!activeIngredientId) return;
-      composePlacements.push({ type: "ingredient", itemId: activeIngredientId, x, y, createdAt: Date.now() });
+      const scale = ingredientNextScale.get(activeIngredientId) ?? 1.0;
+      composePlacements.push({ type: "ingredient", itemId: activeIngredientId, x, y, scale, createdAt: Date.now() });
       redrawComposeCanvas();
       return;
-    }
-
-    if (composeMode === "delete") {
-      if (!composePlacements.length) return;
-      let bestIdx = -1;
-      let bestD = Infinity;
-      for (let i = 0; i < composePlacements.length; i++) {
-        const p = composePlacements[i];
-        const d = Math.hypot(p.x - x, p.y - y);
-        if (d < bestD) {
-          bestD = d;
-          bestIdx = i;
-        }
-      }
-      if (bestIdx >= 0 && bestD < 40) {
-        composePlacements.splice(bestIdx, 1);
-        redrawComposeCanvas();
-      }
     }
   }
 
@@ -1324,17 +1611,25 @@ deleteBtn.appendChild(deleteIcon);
     redrawComposeCanvas();
   }
 
+  // ★ MODIFIED: store cutColor alongside each cutLine
   function onCutPointerUp() {
     if (composeMode !== "cut" || !cutDrawing) return;
     cutDrawing = false;
-    if (cutPath.length >= 2) cutLines.push([...cutPath]);
+    if (cutPath.length >= 2) {
+      cutLines.push([...cutPath]);
+      cutLineColors.push(cutColor);
+    }
     cutPath = [];
     redrawComposeCanvas();
   }
 
-  function renderVerticalList({ title, frame, items, activeId, getPreviewUrl, onSelect }) {
+  // ★ MODIFIED: renderVerticalList with transparent border by default,
+  //   #FD6FFF border when active, and a size slider shown for the active item
+  function renderVerticalList({ title, frame, items, activeId, getPreviewUrl, onSelect, sizeMap }) {
     addFrameBox({ x: frame.x, y: frame.y, w: frame.w, h: frame.h, bg: "#fff", border: "2px solid #FD6FFF", radius: 0, z: 1 });
-    addText(title, { x: title === "湯塊區" ? UI.step3.soupListTitle.x : UI.step3.ingListTitle.x, y: title === "湯塊區" ? UI.step3.soupListTitle.y : UI.step3.ingListTitle.y, size: 20, color: "#1248FF", z: 3 });
+    const titleX = title === "湯塊區" ? UI.step3.soupListTitle.x : UI.step3.ingListTitle.x;
+    const titleY = title === "湯塊區" ? UI.step3.soupListTitle.y : UI.step3.ingListTitle.y;
+    addText(title, { x: titleX, y: titleY, size: 20, color: "#1248FF", z: 3 });
 
     const wrap = document.createElement("div");
     Object.assign(wrap.style, {
@@ -1358,7 +1653,6 @@ deleteBtn.appendChild(deleteIcon);
         fontFamily: '"zpix", ui-sans-serif, system-ui',
         fontSize: "18px",
         color: "#666",
-        marginleft: "12px",
         marginTop: "12px",
       });
       wrap.appendChild(empty);
@@ -1366,19 +1660,32 @@ deleteBtn.appendChild(deleteIcon);
     }
 
     items.forEach((item) => {
+      const isActive = item.id === activeId;
+
+      // ★ container for button + slider
+      const itemWrap = document.createElement("div");
+      Object.assign(itemWrap.style, {
+        display: "flex",
+        flexDirection: "column",
+        gap: "4px",
+      });
+      wrap.appendChild(itemWrap);
+
       const btn = document.createElement("button");
       btn.type = "button";
       Object.assign(btn.style, {
         width: "100%",
         height: "78px",
         borderRadius: "14px",
-        border: item.id === activeId ? "3px solid #1248FF" : "2px solid #FD6FFF",
+        // ★ transparent by default, #FD6FFF when active
+        border: isActive ? "2px solid #FD6FFF" : "2px solid transparent",
         background: "#fff",
         cursor: "pointer",
         padding: "8px",
         display: "flex",
         alignItems: "center",
         gap: "10px",
+        boxSizing: "border-box",
       });
       btn.addEventListener("click", () => onSelect(item.id));
 
@@ -1401,7 +1708,65 @@ deleteBtn.appendChild(deleteIcon);
         color: "#000",
       });
       btn.appendChild(label);
-      wrap.appendChild(btn);
+      itemWrap.appendChild(btn);
+
+      // ★ show size slider only for the active item
+      // slider controls the NEXT placement scale, not existing ones
+      if (isActive && sizeMap) {
+        const currentScale = sizeMap.get(item.id) ?? 1.0;
+
+        const sliderRow = document.createElement("div");
+        Object.assign(sliderRow.style, {
+          display: "flex",
+          alignItems: "center",
+          gap: "8px",
+          padding: "2px 8px",
+        });
+
+        const sizeLabel = document.createElement("div");
+        sizeLabel.textContent = "大小";
+        Object.assign(sizeLabel.style, {
+          fontFamily: '"zpix", ui-sans-serif, system-ui',
+          fontSize: "14px",
+          color: "#FD6FFF",
+          whiteSpace: "nowrap",
+        });
+
+        const sizeSlider = document.createElement("input");
+        sizeSlider.type = "range";
+        sizeSlider.min = "0.4";
+        sizeSlider.max = "3.0";
+        sizeSlider.step = "0.1";
+        sizeSlider.value = String(currentScale);
+        Object.assign(sizeSlider.style, {
+          flex: "1",
+          accentColor: "#FD6FFF",
+          cursor: "pointer",
+        });
+
+        const sizeVal = document.createElement("div");
+        sizeVal.textContent = `${Math.round(currentScale * 100)}%`;
+        Object.assign(sizeVal.style, {
+          fontFamily: '"zpix", ui-sans-serif, system-ui',
+          fontSize: "13px",
+          color: "#666",
+          minWidth: "38px",
+          textAlign: "right",
+        });
+
+        // ★ only update nextScale — does NOT touch existing placements
+        sizeSlider.addEventListener("input", (e) => {
+          const v = parseFloat(e.target.value);
+          sizeMap.set(item.id, v);
+          sizeVal.textContent = `${Math.round(v * 100)}%`;
+          // no redrawComposeCanvas() here — existing placements are untouched
+        });
+
+        sliderRow.appendChild(sizeLabel);
+        sliderRow.appendChild(sizeSlider);
+        sliderRow.appendChild(sizeVal);
+        itemWrap.appendChild(sliderRow);
+      }
     });
 
     return wrap;
@@ -1432,6 +1797,7 @@ deleteBtn.appendChild(deleteIcon);
       items: balls,
       activeId: activeBallId,
       getPreviewUrl: (item) => item.previewUrl,
+      sizeMap: ballNextScale,
       onSelect: (id) => {
         activeBallId = id;
         composeMode = "soup";
@@ -1445,6 +1811,7 @@ deleteBtn.appendChild(deleteIcon);
       items: ingredients,
       activeId: activeIngredientId,
       getPreviewUrl: (item) => item.previewUrl,
+      sizeMap: ingredientNextScale,
       onSelect: (id) => {
         activeIngredientId = id;
         composeMode = "ingredient";
@@ -1452,28 +1819,85 @@ deleteBtn.appendChild(deleteIcon);
       },
     });
 
-    // controls
+    // continueMake button
     addCapsuleButton({ x: s.controls.continueMake.x, y: s.controls.continueMake.y, w: 60, h: 60, bg: "#FFFFFF", border: "2px solid #FD6FFF", onClick: () => { step = 2; renderStep(); } });
     addImg(ASSETS.leftArrow, { x: s.controls.continueMake.x + 9, y: s.controls.continueMake.y + 9, w: 42, h: 42, z: 4 });
     addLabelChip("繼續製作", { x: s.controls.continueMake.x - 20, y: 551, w: 100, h: 33, color: "#1248FF" });
 
-    addCapsuleButton({ x: s.controls.cut.x, y: s.controls.cut.y, w: 60, h: 60, bg: composeMode === "cut" ? "#FD6FFF" : "#EAEAEA", border: "0", onClick: () => { composeMode = "cut"; renderStep(); } });
+    // ★ cut button — native color picker mounted on overlayEl (outside overflow:hidden panelEl)
+    // The input is absolutely positioned over the button so the user's real click hits it directly
+    const cutNativeInput = document.createElement("input");
+    cutNativeInput.type = "color";
+    cutNativeInput.value = cutColor;
+
+    // compute position relative to overlayEl
+    const panelOffsetX = (UI.overlayW - UI.overlayW) / 2; // panelEl is centered inside overlayEl
+    Object.assign(cutNativeInput.style, {
+      position: "absolute",
+      left: `${s.controls.cut.x + (overlayEl.offsetWidth - UI.overlayW) / 2}px`,
+      top: `${s.controls.cut.y + (overlayEl.offsetHeight - UI.overlayH) / 2}px`,
+      width: "60px",
+      height: "60px",
+      opacity: "0",
+      cursor: "pointer",
+      zIndex: "99999",
+      padding: "0",
+      border: "none",
+    });
+
+    cutNativeInput.addEventListener("input", (e) => {
+      cutColor = e.target.value;
+    });
+    cutNativeInput.addEventListener("change", (e) => {
+      cutColor = e.target.value;
+      cutNativeInput.remove();
+      composeMode = "cut";
+      renderStep();
+    });
+
+    overlayEl.appendChild(cutNativeInput);
+
+    // visual button behind the input
+    addCapsuleButton({
+      x: s.controls.cut.x,
+      y: s.controls.cut.y,
+      w: 60, h: 60,
+      bg: composeMode === "cut" ? "#FD6FFF" : "#EAEAEA",
+      border: "0",
+      onClick: () => {}
+    });
     addImg(ASSETS.cut, { x: s.controls.cut.x + 4, y: s.controls.cut.y + 4, w: 52, h: 52, z: 4, rotate: 30 });
     addLabelChip("切割", { x: s.controls.cut.x - 1, y: 551, w: 62, h: 33, color: "#1248FF" });
 
+    // restart (undo last placement or last cut line)
     addCapsuleButton({ x: s.controls.restart.x, y: s.controls.restart.y, w: 60, h: 60, bg: "#EAEAEA", border: "0", onClick: () => {
       if (composePlacements.length) composePlacements.pop();
-      else if (cutLines.length) cutLines.pop();
+      else if (cutLines.length) {
+        cutLines.pop();
+        cutLineColors.pop();
+      }
       redrawComposeCanvas();
     } });
     addImg(ASSETS.restart, { x: s.controls.restart.x + 9, y: s.controls.restart.y + 10, w: 45, h: 40, z: 4 });
     addLabelChip("上一步", { x: s.controls.restart.x - 10, y: 551, w: 82, h: 33, color: "#1248FF" });
 
-    addCapsuleButton({ x: s.controls.delete.x, y: s.controls.delete.y, w: 60, h: 60, bg: composeMode === "delete" ? "#FD6FFF" : "#EAEAEA", border: "0", onClick: () => { composeMode = "delete"; renderStep(); } });
+    // ★ MODIFIED: delete button now clears entire canvas
+    addCapsuleButton({
+      x: s.controls.delete.x, y: s.controls.delete.y, w: 60, h: 60,
+      bg: "#EAEAEA", border: "0",
+      onClick: () => {
+        composePlacements.length = 0;
+        cutLines.length = 0;
+        cutLineColors.length = 0;
+        cutPath = [];
+        redrawComposeCanvas();
+      }
+    });
     addImg(ASSETS.delete, { x: s.controls.delete.x + 14, y: s.controls.delete.y + 10, w: 32, h: 40, z: 4 });
     addLabelChip("刪除", { x: s.controls.delete.x - 10, y: 551, w: 82, h: 33, color: "#1248FF" });
 
-    addCapsuleButton({ x: s.controls.finish.x, y: s.controls.finish.y, w: 60, h: 60, bg: "#FFFFFF", border: "2px solid #FD6FFF",  onClick: () => {
+    // finish
+    addCapsuleButton({ x: s.controls.finish.x, y: s.controls.finish.y, w: 60, h: 60, bg: "#FFFFFF", border: "2px solid #FD6FFF", onClick: () => {
       finalPotTextureUrl = exportFinalPotTexture();
       step = 4;
       renderStep();
@@ -1494,7 +1918,6 @@ deleteBtn.appendChild(deleteIcon);
     const prevIconRect = { x: 173, y: 562, w: 42, h: 42 };
     const nextRect = { x: 1074, y: 551, w: 199, h: 63 };
     const nextIconRect = { x: 1095, y: 562, w: 42, h: 42 };
-    
 
     addFrameBox({ x: s.soupList.x, y: s.soupList.y, w: s.soupList.w, h: s.soupList.h, bg: "#EAEAEA", border: "0", radius: 0, z: 1 });
     addFrameBox({ x: s.ingList.x, y: s.ingList.y, w: s.ingList.w, h: s.ingList.h, bg: "#EAEAEA", border: "0", radius: 0, z: 1 });
@@ -1542,7 +1965,7 @@ deleteBtn.appendChild(deleteIcon);
       step4PreviewEl.appendChild(previewImg);
     }
 
-   addActionButton({
+    addActionButton({
       rect: prevRect,
       label: "繼續製作",
       iconSrc: ASSETS.leftArrow,
@@ -1593,18 +2016,6 @@ deleteBtn.appendChild(deleteIcon);
         fontSize: "18px",
         color: "#666",
         marginTop: "8px",
-      });
-      wrap.appendChild(empty);
-      return wrap;
-    }
-
-    if (!items.length) {
-      const empty = document.createElement("div");
-      empty.textContent = "尚無內容";
-      Object.assign(empty.style, {
-        fontFamily: '"zpix", ui-sans-serif, system-ui',
-        fontSize: "18px",
-        color: "#666",
       });
       wrap.appendChild(empty);
       return wrap;
