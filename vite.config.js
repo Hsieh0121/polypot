@@ -10,7 +10,7 @@ export default defineConfig ({
     build: {
         rollupOptions: {
             input: {
-                white: resolve(__dirname, "while.html"),
+                white: resolve(__dirname, "white.html"),
                 hall: resolve(__dirname, "hall.html"),
             },
         },
