@@ -602,7 +602,7 @@ window.addEventListener("keyup", (e) => {
 
 const loader = new GLTFLoader();
 loader.load(
-  "/public/newenv.glb",
+  "/newenv.glb",
   (gltf) => {
     envRoot = gltf.scene;
     scene.add(envRoot);
