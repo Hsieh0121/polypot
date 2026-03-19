@@ -694,7 +694,7 @@ function clearPanel() {
         minWidth: "50px",
         borderRadius: "999px",
         border: "transparent",
-        background: "#fff",
+        background: "transparent",
         padding: "0",
         cursor: "pointer",
       });
@@ -742,7 +742,7 @@ function clearPanel() {
       overflow: "hidden",
       borderRadius: "12px",
       zIndex: "2",
-      background: "#fff",
+      background: "transparent",
     });
     panelEl.appendChild(fluidMountEl);
     mountFluidEditor();
@@ -866,8 +866,9 @@ function clearPanel() {
     });
     const sliderEl = document.createElement("input");
     sliderEl.type = "range";
-    sliderEl.min = "2";
+    sliderEl.min = "0.1";
     sliderEl.max = "80";
+    sliderEl.step = "0.1";
     sliderEl.value = String(fluidBrushRadius);
     Object.assign(sliderEl.style, { flex: "1", accentColor: "#FD6FFF", cursor: "pointer" });
     const brushValLabel = document.createElement("div");
@@ -1213,31 +1214,73 @@ function clearPanel() {
       border: "0", bg: "transparent", radius: 0,
     });
 
-    const BRUSH_SIZES = [8, 16, 28, 42];
-
-    const brushLabel = document.createElement("div");
-    brushLabel.textContent = `${ingredientBrushSize}px`;
-    Object.assign(brushLabel.style, {
+    const brushPopup = document.createElement("div");
+    Object.assign(brushPopup.style, {
       position: "absolute",
-      left: `${s.brushBtn.x + s.brushBtn.w / 2}px`,
-      top: `${s.brushBtn.y + s.brushBtn.h + 4}px`,
-      transform: "translateX(-50%)",
-      fontFamily: '"zpix", ui-sans-serif, system-ui',
-      fontSize: "16px",
-      color: "#FD6FFF",
-      zIndex: "4",
-      pointerEvents: "none",
-      whiteSpace: "nowrap",
+      left: `${s.brushBtn.x - 24}px`,
+      top: `${s.brushBtn.y + s.brushBtn.h + 8}px`,
+      width: "220px",
+      background: "#1a1a1a",
+      borderRadius: "999px",
+      padding: "10px 16px",
+      display: "none",
+      alignItems: "center",
+      gap: "10px",
+      zIndex: "10",
+      boxShadow: "0 4px 16px rgba(0,0,0,0.3)",
     });
-    panelEl.appendChild(brushLabel);
+
+    const brushSlider = document.createElement("input");
+    brushSlider.type = "range";
+    brushSlider.min = "1";
+    brushSlider.max = "60";
+    brushSlider.step = "1";
+    brushSlider.value = String(ingredientBrushSize);
+    Object.assign(brushSlider.style, {
+      flex: "1",
+      accentColor: "#FD6FFF",
+      cursor: "pointer",
+    });
+
+    const brushValLabel = document.createElement("div");
+    brushValLabel.textContent = `${ingredientBrushSize}`;
+    Object.assign(brushValLabel.style, {
+      color: "#fff",
+      fontFamily: '"zpix", ui-sans-serif, system-ui',
+      fontSize: "14px",
+      minWidth: "32px",
+      textAlign: "right",
+    });
+
+    brushSlider.addEventListener("input", (e) => {
+      ingredientBrushSize = Number(e.target.value);
+      brushValLabel.textContent = `${ingredientBrushSize}`;
+    });
+
+    brushPopup.appendChild(brushSlider);
+    brushPopup.appendChild(brushValLabel);
+    panelEl.appendChild(brushPopup);
+
+    let brushPopupOpen = false;
+    const closeBrushPopup = (e) => {
+      if (brushPopupOpen && !brushPopup.contains(e.target)) {
+        brushPopup.style.display = "none";
+        brushPopupOpen = false;
+        document.removeEventListener("pointerdown", closeBrushPopup);
+      }
+    };
 
     addImageButton(ASSETS.brushSize2, s.brushBtn, {
       onClick: () => {
-        const idx = BRUSH_SIZES.indexOf(ingredientBrushSize);
-        ingredientBrushSize = BRUSH_SIZES[(idx + 1) % BRUSH_SIZES.length];
-        brushLabel.textContent = `${ingredientBrushSize}px`;
+        brushPopupOpen = !brushPopupOpen;
+        brushPopup.style.display = brushPopupOpen ? "flex" : "none";
+        if (brushPopupOpen) {
+          setTimeout(() => document.addEventListener("pointerdown", closeBrushPopup), 0);
+        }
       },
-      border: "0", bg: "transparent", radius: 0,
+      border: "0",
+      bg: "transparent",
+      radius: 0,
     });
 
     addImageButton(ASSETS.eraser2, s.eraserBtn, {

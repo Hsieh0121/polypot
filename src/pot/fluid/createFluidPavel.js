@@ -905,13 +905,14 @@ const displayShaderSource = [
       gl.activeTexture(gl.TEXTURE0 + i);
       gl.bindTexture(gl.TEXTURE_2D, null);
     }
+
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     gl.viewport(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight);
 
+    // 先清成透明，不要鋪白底
     gl.disable(gl.BLEND);
-    colorP.bind();
-    gl.uniform4f(colorP.uniforms.color, 1.0, 1.0, 1.0, 1.0);
-    blit(null);
+    gl.clearColor(0, 0, 0, 0);
+    gl.clear(gl.COLOR_BUFFER_BIT);
 
     gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
     gl.enable(gl.BLEND);
@@ -934,9 +935,11 @@ const displayShaderSource = [
     offscreen.width = canvas.width;
     offscreen.height = canvas.height;
     const ctx = offscreen.getContext("2d", { willReadFrequently: true });
-    ctx.fillStyle = "#ffffff";
-    ctx.fillRect(0, 0, offscreen.width, offscreen.height);
+
+    // 不填白底，保留透明背景
+    ctx.clearRect(0, 0, offscreen.width, offscreen.height);
     ctx.drawImage(canvas, 0, 0);
+
     return offscreen;
   }
 
