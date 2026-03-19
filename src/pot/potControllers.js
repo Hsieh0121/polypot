@@ -75,6 +75,7 @@ export function createPotController({ appEl, onClose, onRequestClose, onFinalize
   let step5Model = null;
   let step5AnimFrame = 0;
   let chairCount = 1;
+  let chairColor = "#e8f25a";
   let finalPotTextureUrl = null;
 
   // ---------- ui spec ----------
@@ -1560,7 +1561,7 @@ function clearPanel() {
     potCtx.clearRect(0, 0, s, s);
 
     drawCircleMask(potCtx, s, () => {
-      potCtx.fillStyle = "rgba(255,92,255,0.10)";
+      potCtx.fillStyle = "#FFFFFF";
       potCtx.fillRect(0, 0, s, s);
 
       for (const p of composePlacements) {
@@ -1692,7 +1693,18 @@ function clearPanel() {
     redrawComposeCanvas();
   }
 
-  function renderVerticalList({ title, frame, items, activeId, getPreviewUrl, onSelect, sizeMap }) {
+function renderVerticalList({
+  title,
+  frame,
+  items,
+  activeId,
+  getPreviewUrl,
+  onSelect,
+  sizeMap,
+  sliderMin = 0.4,
+  sliderMax = 3.0,
+  sliderStep = 0.1,
+}) {
     addFrameBox({
       x: frame.x,
       y: frame.y,
@@ -1807,9 +1819,10 @@ function clearPanel() {
 
         const sizeSlider = document.createElement("input");
         sizeSlider.type = "range";
-        sizeSlider.min = "0.4";
-        sizeSlider.max = "3.0";
-        sizeSlider.step = "0.1";
+        sizeSlider.min = String(sliderMin);
+        sizeSlider.max = String(sliderMax);
+        sizeSlider.step = String(sliderStep);
+        sizeSlider.value = String(currentScale);
         sizeSlider.value = String(currentScale);
         Object.assign(sizeSlider.style, {
           flex: "1",
@@ -1869,6 +1882,9 @@ function clearPanel() {
       activeId: activeBallId,
       getPreviewUrl: (item) => item.previewUrl,
       sizeMap: ballNextScale,
+      sliderMin: 0.4,
+      sliderMax: 6.0,
+      sliderStep: 0.1,
       onSelect: (id) => {
         if (activeBallId === id) {
           activeBallId = null;
@@ -2104,7 +2120,19 @@ function clearPanel() {
 
   function exportFinalPotTexture() {
     if (!potCanvas) return null;
-    return potCanvas.toDataURL("image/png");
+
+    const out = document.createElement("canvas");
+    const outSize = 512;
+    out.width = outSize;
+    out.height = outSize;
+
+    const ctx = out.getContext("2d");
+    ctx.clearRect(0, 0, outSize, outSize);
+
+    // 直接鋪滿整張 texture，不要縮小置中
+    ctx.drawImage(potCanvas, 0, 0, outSize, outSize);
+
+    return out.toDataURL("image/png");
   }
 
   // ---------- step4 3d preview ----------
@@ -2194,7 +2222,6 @@ function clearPanel() {
         });
       }
 
-      // 底層 soup：直接貼 Step3 匯出的 2D texture
       if (soupBaseMesh) {
         if (!finalPotTextureUrl) {
           console.warn("[step4] finalPotTextureUrl is empty");
@@ -2220,18 +2247,28 @@ function clearPanel() {
 
           step4Texture.colorSpace = THREE.SRGBColorSpace;
           step4Texture.flipY = false;
+          step4Texture.wrapS = THREE.ClampToEdgeWrapping;
+          step4Texture.wrapT = THREE.ClampToEdgeWrapping;
+          step4Texture.center.set(0.5, 0.5);
+          step4Texture.rotation = 0;
+          step4Texture.repeat.set(1, 1);
+          step4Texture.offset.set(0, 0);
           step4Texture.needsUpdate = true;
 
+          soupBaseMesh.visible = true;
+          soupBaseMesh.renderOrder = 10;
           soupBaseMesh.material = new THREE.MeshBasicMaterial({
             map: step4Texture,
             transparent: true,
             side: THREE.DoubleSide,
+            toneMapped: false,
           });
-
           soupBaseMesh.material.needsUpdate = true;
-          soupBaseMesh.renderOrder = 1;
         }
+      } else {
+        console.warn("[step4] soupBaseMesh not found");
       }
+
 
       // 上層透明膜：先不要用 transmission，先用最穩定、最直觀的透明材質
       if (soupTransparentMesh) {
@@ -2524,7 +2561,19 @@ function clearPanel() {
     return wrap;
   }
 
+  function updateStep5ChairPreviewColor() {
+    if (!step5Model) return;
 
+    step5Model.traverse((obj) => {
+      if (!obj.isMesh) return;
+
+      obj.material = new THREE.MeshStandardMaterial({
+        color: chairColor,
+        roughness: 0.2,
+        metalness: 0.05,
+      });
+    });
+  }
 
   function unmountStep5Preview() {
     if (step5AnimFrame) {
@@ -2613,24 +2662,18 @@ function clearPanel() {
       let cameraZ = Math.abs(maxDim / Math.sin(fov / 2));
 
       cameraZ *= 1.4;
+      frameObjectToCamera(step5Camera, step5Model, step5Controls);
 
-      step5Camera.position.set(0, size.y * 0.4, cameraZ);
+      step5Camera.position.multiplyScalar(1.7);
+      step5Camera.updateProjectionMatrix();
       step5Camera.lookAt(0, 0, 0);
 
       step5Controls.target.set(0, 0, 0);
       step5Controls.update();
 
-      step5Model.traverse((obj) => {
-        if (obj.isMesh) {
-          obj.material = new THREE.MeshStandardMaterial({
-            color: 0xffc8ff,
-            roughness: 0.2,
-            metalness: 0.05,
-          });
-        }
-      });
+    updateStep5ChairPreviewColor();
 
-      frameObjectToCamera(step5Camera, step5Model, step5Controls);
+      
     },
     undefined,
     (err) => {
@@ -2688,6 +2731,61 @@ function clearPanel() {
       zIndex: "3",
     });
     panelEl.appendChild(selectWrap);
+
+    const colorWrap = document.createElement("div");
+    Object.assign(colorWrap.style, {
+      position: "absolute",
+      left: "860px",
+      top: "330px",
+      width: "180px",
+      height: "54px",
+      zIndex: "3",
+      display: "flex",
+      alignItems: "center",
+      gap: "12px",
+    });
+    panelEl.appendChild(colorWrap);
+
+    const colorLabel = document.createElement("div");
+    colorLabel.textContent = "椅子顏色";
+    Object.assign(colorLabel.style, {
+      fontFamily: '"zpix", ui-sans-serif, system-ui',
+      fontSize: "20px",
+      color: "#FD6FFF",
+      whiteSpace: "nowrap",
+    });
+    colorWrap.appendChild(colorLabel);
+
+    const colorBtn = document.createElement("button");
+    colorBtn.type = "button";
+    Object.assign(colorBtn.style, {
+      width: "54px",
+      height: "54px",
+      borderRadius: "999px",
+      border: "transparent",
+      background: chairColor,
+      cursor: "pointer",
+      padding: "0",
+      flexShrink: "0",
+    });
+    colorWrap.appendChild(colorBtn);
+
+    colorBtn.addEventListener("click", () => {
+      const colorInput = document.createElement("input");
+      colorInput.type = "color";
+      colorInput.value = chairColor;
+      colorInput.style.cssText = "position:absolute;opacity:0;pointer-events:none;";
+      panelEl.appendChild(colorInput);
+
+      colorInput.addEventListener("input", (e) => {
+        chairColor = e.target.value;
+        colorBtn.style.background = chairColor;
+        updateStep5ChairPreviewColor();
+      });
+
+      colorInput.addEventListener("change", () => colorInput.remove());
+      colorInput.click();
+    });
 
     const selectEl = document.createElement("select");
     Object.assign(selectEl.style, {
@@ -2767,6 +2865,7 @@ function clearPanel() {
           finalPotTextureUrl,
           placements: [...composePlacements],
           chairCount,
+          chairColor,
         });
       } else {
         requestClose();
@@ -2787,6 +2886,7 @@ function clearPanel() {
       composeMode,
       finalPotTextureUrl,
       chairCount,
+      chairColor,
     };
   }
 

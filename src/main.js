@@ -324,16 +324,24 @@ const pot = createPotController({
   onRequestClose: () => {
     pot.close();
   },
-  onFinalizePot: ({ tableId, finalPotTextureUrl, placements, chairCount }) => {
+  onFinalizePot: ({ tableId, finalPotTextureUrl, placements, chairCount, chairColor }) => {
     console.log("[pot finalized]", {
       tableId,
       finalPotTextureUrl,
       placements,
       chairCount,
+      chairColor,
     });
 
     if (tableId) {
-      applyChairCountToTable(tableId, chairCount);
+      applyChairCountToTable(tableId, chairCount, chairColor);
+
+      const info = tableRegistry.get(tableId);
+      const potRoot = info?.potRoot ?? null;
+
+      if (potRoot && finalPotTextureUrl) {
+        applyPotTextureToRoot(potRoot, finalPotTextureUrl);
+      }
     }
 
     pot.close();
@@ -467,6 +475,87 @@ function buildTableInfo(tableRoot){
     potRoot,
     chairTemplate,
   };
+}
+
+function applyPotTextureToRoot(potRoot, textureUrl) {
+  if (!potRoot || !textureUrl) {
+    console.warn("[applyPotTextureToRoot] missing potRoot or textureUrl", {
+      hasPotRoot: !!potRoot,
+      textureUrl,
+    });
+    return;
+  }
+
+  let soupBaseMesh = null;
+  let soupTransparentMesh = null;
+  let potBodyMesh = null;
+  let potHandleMesh = null;
+
+  potRoot.traverse((obj) => {
+    if (!obj.isMesh) return;
+
+    if (obj.name?.startsWith("soupBase_")) soupBaseMesh = obj;
+    if (obj.name?.startsWith("soupTransparent_")) soupTransparentMesh = obj;
+    if (obj.name?.startsWith("potbody_")) potBodyMesh = obj;
+    if (obj.name?.startsWith("pothandle_")) potHandleMesh = obj;
+  });
+
+  if (potBodyMesh) {
+    potBodyMesh.material = new THREE.MeshStandardMaterial({
+      color: 0xff7cf6,
+      roughness: 0.35,
+      metalness: 0.02,
+      transparent: false,
+      opacity: 1,
+      side: THREE.FrontSide,
+      depthWrite: true,
+    });
+  }
+
+  if (potHandleMesh) {
+    potHandleMesh.material = new THREE.MeshStandardMaterial({
+      color: 0xf0df2a,
+      roughness: 0.28,
+      metalness: 0.18,
+    });
+  }
+
+  const loader = new THREE.TextureLoader();
+  const tex = loader.load(textureUrl);
+
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.flipY = false;
+  tex.wrapS = THREE.ClampToEdgeWrapping;
+  tex.wrapT = THREE.ClampToEdgeWrapping;
+  tex.center.set(0.5, 0.5);
+  tex.rotation = 0;
+  tex.repeat.set(1, 1);
+  tex.offset.set(0, 0);
+  tex.needsUpdate = true;
+
+  // 不再使用 soupBase
+  if (soupBaseMesh) {
+    soupBaseMesh.visible = false;
+  }
+
+  // 直接把圖貼到 soupTransparent
+  if (soupTransparentMesh) {
+    const oldMat = soupTransparentMesh.material;
+    if (oldMat?.map) oldMat.map.dispose?.();
+    oldMat?.dispose?.();
+
+    soupTransparentMesh.visible = true;
+    soupTransparentMesh.renderOrder = 10;
+    soupTransparentMesh.material = new THREE.MeshBasicMaterial({
+      map: tex,
+      transparent: false,
+      side: THREE.DoubleSide,
+      toneMapped: false,
+    });
+    soupTransparentMesh.material.needsUpdate = true;
+  } else {
+    console.warn("[applyPotTextureToRoot] soupTransparentMesh not found");
+  }
 }
 
 tableRegistry.forEach((entry) => {
@@ -1253,7 +1342,7 @@ function clearDecorativeChairs(tableId) {
     });
   }
 }
-function applyDecorativeChairMaterial(root) {
+function applyDecorativeChairMaterial(root, color = 0xe8f25a) {
   root.traverse((obj) => {
     if (!obj.isMesh) return;
 
@@ -1261,7 +1350,7 @@ function applyDecorativeChairMaterial(root) {
     obj.receiveShadow = false;
 
     obj.material = new THREE.MeshBasicMaterial({
-      color: 0xe8f25a, // 你現在椅子的亮黃綠色，可再調
+      color,
       transparent: false,
       toneMapped: false,
     });
@@ -1306,7 +1395,7 @@ function getChairLayout(count, baseRadius = 2.2) {
   return out;
 }
 
-function applyChairCountToTable(tableId, chairCount) {
+function applyChairCountToTable(tableId, chairCount, chairColor = 0xe8f25a) {
   const info = tableRegistry.get(tableId);
   const group = decorativeChairGroupByTableId.get(tableId);
 
@@ -1330,7 +1419,7 @@ function applyChairCountToTable(tableId, chairCount) {
 
   // 保留原始 chair 在原位，這樣坐下去不會下方空掉
   template.visible = true;
-  applyDecorativeChairMaterial(template);
+  applyDecorativeChairMaterial(template, chairColor);
 
   // 原始 chair 的 local position / rotation 當作基準
   const baseY = template.position.y;
@@ -1340,7 +1429,7 @@ function applyChairCountToTable(tableId, chairCount) {
   for (let i = 0; i < layout.length; i++) {
     const item = layout[i];
     const chair = template.clone(true);
-    applyDecorativeChairMaterial(chair);
+    applyDecorativeChairMaterial(chair, chairColor);
 
     const x = Math.cos(item.angle) * item.radius;
     const z = Math.sin(item.angle) * item.radius;
