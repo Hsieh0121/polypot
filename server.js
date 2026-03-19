@@ -6,14 +6,27 @@ console.log("[server] boot", new Date().toISOString());
 
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server, { cors: { origin: true } });
+
+const PORT = process.env.PORT || 3001;
+const allowedOrigins = [
+  "http://localhost:5173",
+  "http://localhost:5174",
+  "http://localhost:5175",
+  process.env.CLIENT_ORIGIN,
+].filter(Boolean);
+
+const io = new Server(server, {
+  cors: {
+    origin: allowedOrigins,
+    methods: ["GET", "POST"],
+  },
+});
 
 app.get("/health", (_, res) => res.send("ok"));
 
-// --- 單房 lobby：之後要多房再擴 ---
 const room = {
-  players: new Map(),     // socket.id -> player
-  seats: new Map(),       // seatKey -> { seatKey, occupiedBy }
+  players: new Map(),
+  seats: new Map(),
 };
 
 function getSeat(seatKey) {
@@ -30,8 +43,8 @@ io.on("connection", (socket) => {
     console.log("[onAny]", event, "argsLen=", args.length);
   });
 
-  // ---- join：前端 emit("join", profile, ackCb) ----
   socket.on("join", (profile = {}, ack) => {
+    console.log("[join]", socket.id, profile?.name, profile?.serial);
     const player = {
       id: socket.id,
       name: profile?.name ?? "anon",
@@ -49,16 +62,13 @@ io.on("connection", (socket) => {
       });
     }
 
-    // 給自己 snapshot（你前端有 socket.on("snapshot")）
     socket.emit("snapshot", {
-    roomId: "lobby",                 
-    players: Array.from(room.players.values()),
-    seats: Array.from(room.seats.values()),
-    pots: {},                        
+      roomId: "lobby",
+      players: Array.from(room.players.values()),
+      seats: Array.from(room.seats.values()),
+      pots: {},
     });
 
-
-    // 通知其他人（你前端有 socket.on("player:join")）
     socket.broadcast.emit("player:join", {
       id: player.id,
       pos: player.pos,
@@ -66,14 +76,14 @@ io.on("connection", (socket) => {
     });
   });
 
-  // ---- 玩家移動：事件名要對齊前端 "player:move" ----
   socket.on("player:move", (payload) => {
     const p = room.players.get(socket.id);
     if (!p) return;
-    p.pos = payload.pos;
-    p.rotY = payload.rotY;
+    if (!payload?.pos) return;
 
-    // 注意：你的前端在 listen "player:move"（沒有空白）
+    p.pos = payload.pos;
+    p.rotY = payload.rotY ?? 0;
+
     socket.broadcast.emit("player:move", {
       id: socket.id,
       pos: p.pos,
@@ -81,15 +91,12 @@ io.on("connection", (socket) => {
     });
   });
 
-  // ---- 坐下：前端 emit("requestSitSeat", { seatKey }) ----
   socket.on("requestSitSeat", ({ seatKey }) => {
     const p = room.players.get(socket.id);
-    if (!p) return;
-    if (!seatKey) return;
+    if (!p || !seatKey) return;
 
     const seat = getSeat(seatKey);
 
-    // 被別人占了 → 拒絕（前端可選擇處理 sitDenied）
     if (seat.occupiedBy && seat.occupiedBy !== socket.id) {
       socket.emit("sitDenied", {
         seatKey,
@@ -106,11 +113,9 @@ io.on("connection", (socket) => {
     console.log("[seat] occupied", seatKey, "by", socket.id);
   });
 
-  // ---- 起身：前端 emit("requestUnseat", { seatKey }) ----
   socket.on("requestUnseat", ({ seatKey }) => {
     const p = room.players.get(socket.id);
-    if (!p) return;
-    if (!seatKey) return;
+    if (!p || !seatKey) return;
 
     const seat = room.seats.get(seatKey);
     if (!seat) return;
@@ -124,10 +129,8 @@ io.on("connection", (socket) => {
   });
 
   socket.on("disconnect", () => {
-    const p = room.players.get(socket.id);
     room.players.delete(socket.id);
 
-    // 釋放這個玩家占用的所有 seat
     for (const [k, seat] of room.seats.entries()) {
       if (seat.occupiedBy === socket.id) {
         seat.occupiedBy = null;
@@ -141,7 +144,6 @@ io.on("connection", (socket) => {
   });
 });
 
-server.listen(3001, () => {
-  console.log("Socket server on http://localhost:3001");
+server.listen(PORT, "0.0.0.0", () => {
+  console.log(`Socket server listening on port ${PORT}`);
 });
-

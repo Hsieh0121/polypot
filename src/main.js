@@ -30,8 +30,9 @@ function resize(){
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 };
 
-const socket = io("http://localhost:3001", { transports: ["websocket"] });
-const profile = JSON.parse(sessionStorage.getItem("polypot_profile") || "{}");
+const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || "http://localhost:3001";
+const socket = io(SOCKET_URL, { transports: ["websocket"] });
+const profile = JSON.parse(localStorage.getItem("polypot_profile") || "null") || {};
 const remotePlayers = new Map();
 let localPlayerId = null;
 
@@ -55,6 +56,15 @@ const ACTION = {
   JUMP: "JUMP",
 };
 const actionQueue = [];
+
+function enqueueAction(type, payload = null) {
+  actionQueue.push({
+    type,
+    payload,
+    t: performance.now(),
+  });
+}
+
 let state = FSM.FREE_ROAM;
 const seatsState = new Map();
 const groundRaycaster = new THREE.Raycaster();
@@ -84,7 +94,7 @@ let isSeated = false;
 let seated = null;
 let pendingActionE = false;
 
-
+const decorativeChairGroupByTableId = new Map();
 const seatAnchorByKey = new Map();
 const hudEl = document.getElementById("hud");
 const colliders = [];
@@ -120,9 +130,16 @@ socket.on("connect", () => {
   console.log("[net] connected");
   console.log("[local] localPlayerId =", localPlayerId);
 
-  socket.emit("join", profile, ({ self, other, snap } = {}) => {
+  socket.emit("join", profile, ({ self, other } = {}) => {
     if (self?.id) localPlayerId = self.id;
+
     console.log("[join ack]", { self, other });
+
+    for (const p of other || []) {
+      if (!remotePlayers.has(p.id)) {
+        spawnRemote(p);
+      }
+    }
   });
 });
 
@@ -133,12 +150,6 @@ socket.on("disconnect", (reason) => {
 });
 
 
-
-socket.on("disconnect", (reason) => {
-  net.connected = false;
-  console.log("[net] disconnected");
-  console.log("[socket] disconnected", reason);
-});
 
 
 socket.on("snapshot", (snap) => {
@@ -191,45 +202,51 @@ setInterval(() => {
   });
 }, 1000);
 
-function makeRemoteAvatar () {
-  const geo = new THREE.CapsuleGeometry(0.3, 1.0, 4, 8);
-  const mat = new THREE.MeshStandardMaterial();
-  const mesh = new THREE.Mesh(geo, mat);
-  mesh.castShadow = false;
-  mesh.receiveShadow = false;
-  return mesh;
-};
+function makeRemoteAvatar(player) {
+  const group = new THREE.Group();
 
-function spawnRemote(player) {
-  const avatar = makeRemoteAvatar();
-  avatar.position.set(player.pos.x, player.pos.y, player.pos.z);
-  avatar.rotation.y = player.rotY || 0;
-  scene.add(avatar);
-  remotePlayers.set(player.id, avatar);
-};
+  const bodyGeo = new THREE.CapsuleGeometry(0.3, 1.0, 4, 8);
+  const bodyMat = new THREE.MeshStandardMaterial();
+  const body = new THREE.Mesh(bodyGeo, bodyMat);
+  body.position.y = 0.8;
+  group.add(body);
 
-function enqueueAction (type, payload = null) {
-  actionQueue.push({ type, payload, t: performance.now() });
+  group.userData.body = body;
+  group.userData.profile = player.profile || {};
+
+  if (player.profile?.avatarPhoto) {
+    const texLoader = new THREE.TextureLoader();
+    const tex = texLoader.load(player.profile.avatarPhoto);
+
+    const faceGeo = new THREE.PlaneGeometry(0.7, 0.9);
+    const faceMat = new THREE.MeshBasicMaterial({
+      map: tex,
+      transparent: true,
+    });
+    const face = new THREE.Mesh(faceGeo, faceMat);
+    face.position.set(0, 1.6, 0.35);
+
+    group.add(face);
+    group.userData.face = face;
+  }
+
+  return group;
 }
 
-let joinAcked = false;
+function spawnRemote(player) {
+  if (!player?.id || player.id === localPlayerId) return;
+  if (remotePlayers.has(player.id)) return;
 
+  const avatar = makeRemoteAvatar(player);
+  avatar.position.set(player.pos.x, player.pos.y, player.pos.z);
+  avatar.rotation.y = player.rotY || 0;
 
-socket.emit ("join", profile, ({ self, other  }) => {
-  joinAcked = true;
-  if (!self?.id) {
-    console.warn("[join ack] missing self.id", self);
-    return;
-  }
-  localPlayerId = self.id;
-  console.log("[join ack] localPlayerId =", localPlayerId, "other =", other);
-});
+  scene.add(avatar);
+  remotePlayers.set(player.id, avatar);
 
-setTimeout(() => {
-  if (!joinAcked) { 
-    console.warn("[join] NO ACK from server (join callback not called)");
-  }
-}, 500);
+  console.log("[remote spawn]", player.id, player.profile);
+}
+
 
 socket.on("player:join", (p) => {
   spawnRemote(p);
@@ -305,10 +322,22 @@ const pot = createPotController({
     console.log("[FSM] UI_OPEN -> SEATED (pot closed)");
   },
   onRequestClose: () => {
-    // 給 UI 內按鈕用：等同 Esc
-  pot.close();
+    pot.close();
   },
+  onFinalizePot: ({ tableId, finalPotTextureUrl, placements, chairCount }) => {
+    console.log("[pot finalized]", {
+      tableId,
+      finalPotTextureUrl,
+      placements,
+      chairCount,
+    });
 
+    if (tableId) {
+      applyChairCountToTable(tableId, chairCount);
+    }
+
+    pot.close();
+  },
 });
 
 function safeLockPointer() {
@@ -368,34 +397,7 @@ function distanceToTable(entry, playerPos){
 
 
 const tableRegistry = new Map();
-function buildTableInfo(tableRoot){
-  const bbox = new THREE.Box3().setFromObject(tableRoot);
-  const center = new THREE.Vector3();
-  bbox.getCenter(center);
 
-  tableRegistry.forEach((entry) => {
-    const box = new THREE.Box3().setFromObject(entry.root);
-    entry.bbox = box;
-  });
-
-  const potMesh = findFirstMeshByNameIncludes(tableRoot, ["potbody", "soup", "pothandle", "potstand", "stovebody", "stovebutton", "stovecap", "fire"]) || null;
-  const seatPoints = [];
-
-  let potRoot = null;
-  if (potMesh) {
-    potRoot = potMesh.parent;
-  }
-
-  return {
-    id: tableRoot.name,
-    root: tableRoot,
-    bbox,
-    center,
-    seatPoints,
-    potRef: potMesh,
-    potRoot,
-  };
-}
 
 function findPotRef(tableRoot) {
   const cadidates = ["potbody_", "soupBase_", "soupTransparent_", "pothandle_", "potstand_", "stovebody_", "stovebutton_", "stovecap_", "fire_"];
@@ -411,6 +413,60 @@ function findPotRef(tableRoot) {
     }
   });
   return found;
+}
+function findChairTemplateInTable(tableRoot) {
+  let found = null;
+
+  tableRoot.traverse((o) => {
+    if (found) return;
+    if (!o.name) return;
+
+    const name = o.name.toLowerCase();
+    if (name.startsWith("chair_")) {
+      found = o;
+    }
+  });
+
+  return found;
+}
+
+function buildTableInfo(tableRoot){
+  const bbox = new THREE.Box3().setFromObject(tableRoot);
+  const center = new THREE.Vector3();
+  bbox.getCenter(center);
+
+  tableRegistry.forEach((entry) => {
+    const box = new THREE.Box3().setFromObject(entry.root);
+    entry.bbox = box;
+  });
+
+  const potMesh = findFirstMeshByNameIncludes(
+    tableRoot,
+    ["potbody", "soup", "pothandle", "potstand", "stovebody", "stovebutton", "stovecap", "fire"]
+  ) || null;
+
+  const seatPoints = [];
+  const chairTemplate = findChairTemplateInTable(tableRoot);
+
+  let potRoot = null;
+  if (potMesh) {
+    potRoot = potMesh.parent;
+  }
+
+  console.log("[buildTableInfo]", tableRoot.name, {
+    chairTemplate: chairTemplate?.name ?? null,
+  });
+
+  return {
+    id: tableRoot.name,
+    root: tableRoot,
+    bbox,
+    center,
+    seatPoints,
+    potRef: potMesh,
+    potRoot,
+    chairTemplate,
+  };
 }
 
 tableRegistry.forEach((entry) => {
@@ -600,6 +656,17 @@ loader.load(
     tables.forEach((t) => {
       tableRegistry.set(t.name, buildTableInfo(t));
     });
+    decorativeChairGroupByTableId.clear();
+    for (const [tableId, info] of tableRegistry.entries()) {
+      const g = new THREE.Group();
+      g.name = `decorativeChairs_${tableId}`;
+      info.root.add(g);
+      decorativeChairGroupByTableId.set(tableId, g);
+    }
+    for (const [tableId] of tableRegistry.entries()) {
+      applyChairCountToTable(tableId, 1);
+    }
+    console.log("[decorativeChairGroupByTableId]", Array.from(decorativeChairGroupByTableId.keys()));
     console.log("tableRegistry ready:", Array.from(tableRegistry.keys()));
     tables.forEach(makeMaterialsUnique);
     console.log("made table materials unique");
@@ -855,6 +922,7 @@ loader.load(
 // scene.add(cube);
 
 // camera.position.z = 5;
+
 
 function getLookAtTable(){
   if (!tables || tables.length === 0) return null;
@@ -1164,6 +1232,128 @@ function getFirstSeatForTable(tableId) {
     if (s.tableId === tableId) return s; 
   }
   return null;
+}
+function clearDecorativeChairs(tableId) {
+  const group = decorativeChairGroupByTableId.get(tableId);
+  if (!group) return;
+
+  while (group.children.length > 0) {
+    const child = group.children[0];
+    group.remove(child);
+
+    child.traverse?.((obj) => {
+      if (obj.isMesh) {
+        obj.geometry?.dispose?.();
+        if (Array.isArray(obj.material)) {
+          obj.material.forEach((m) => m?.dispose?.());
+        } else {
+          obj.material?.dispose?.();
+        }
+      }
+    });
+  }
+}
+function applyDecorativeChairMaterial(root) {
+  root.traverse((obj) => {
+    if (!obj.isMesh) return;
+
+    obj.castShadow = false;
+    obj.receiveShadow = false;
+
+    obj.material = new THREE.MeshBasicMaterial({
+      color: 0xe8f25a, // 你現在椅子的亮黃綠色，可再調
+      transparent: false,
+      toneMapped: false,
+    });
+  });
+}
+function getChairLayout(count, baseRadius = 2.2) {
+  const out = [];
+
+  if (count <= 1) return out;
+
+  // 第 1 張保留原始 chair，不進 layout
+  const extraCount = count - 1;
+
+  // 先定一個基礎槽位數
+  let baseSlots;
+  if (count <= 8) baseSlots = 8;
+  else if (count <= 12) baseSlots = 12;
+  else if (count <= 16) baseSlots = 16;
+  else baseSlots = 24;
+
+  // 每多一圈的相位偏移（弧度）
+  // 數字越大，擠壓感越強
+  const offsetStep = Math.PI / 36; // 5 度
+
+  for (let i = 0; i < extraCount; i++) {
+    const slot = i % baseSlots;
+    const lap = Math.floor(i / baseSlots);
+
+    const baseAngle = (slot / baseSlots) * Math.PI * 2;
+
+    // 關鍵：不是完全重疊，而是每一輪都稍微偏移
+    const angle = baseAngle + lap * offsetStep;
+
+    out.push({
+      angle,
+      radius: baseRadius,
+      slot,
+      lap,
+    });
+  }
+
+  return out;
+}
+
+function applyChairCountToTable(tableId, chairCount) {
+  const info = tableRegistry.get(tableId);
+  const group = decorativeChairGroupByTableId.get(tableId);
+
+  console.log("[applyChairCount] raw info", {
+    tableId,
+    requested: chairCount,
+    hasInfo: !!info,
+    chairTemplate: info?.chairTemplate?.name ?? null,
+    hasGroup: !!group,
+  });
+
+  if (!info || !info.chairTemplate || !group) {
+    console.warn("[applyChairCount] missing template/group", tableId, info, group);
+    return;
+  }
+
+  clearDecorativeChairs(tableId);
+
+  const template = info.chairTemplate;
+  const count = Math.max(1, Number(chairCount) || 1);
+
+  // 保留原始 chair 在原位，這樣坐下去不會下方空掉
+  template.visible = true;
+  applyDecorativeChairMaterial(template);
+
+  // 原始 chair 的 local position / rotation 當作基準
+  const baseY = template.position.y;
+
+  const layout = getChairLayout(count, 2.9);
+
+  for (let i = 0; i < layout.length; i++) {
+    const item = layout[i];
+    const chair = template.clone(true);
+    applyDecorativeChairMaterial(chair);
+
+    const x = Math.cos(item.angle) * item.radius;
+    const z = Math.sin(item.angle) * item.radius;
+
+    chair.position.set(x, baseY, z);
+    chair.lookAt(0, baseY, 0);
+    chair.rotateY(Math.PI);
+
+    chair.visible = true;
+    group.add(chair);
+  }
+
+  console.log("[applyChairCount] applied", tableId, count, "extra clones =", layout.length);
 }
 function canSitSeat(seat, myPlayerId = "local"){
   if (!seat) return false;
@@ -1500,6 +1690,18 @@ if (state === FSM.FREE_ROAM || state === FSM.SEAT_SELECTING) {
   // controls.update();
   
 };
+const now = performance.now();
+if (socket.connected && now - lastNetSend > 50) {
+  lastNetSend = now;
+  socket.emit("player:move", {
+    pos: {
+      x: player.position.x,
+      y: player.position.y,
+      z: player.position.z,
+    },
+    rotY: getYawFromCamera(),
+  });
+}
 
 while (actionQueue.length > 0) {
   const action = actionQueue.shift();

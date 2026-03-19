@@ -1,3 +1,6 @@
+import * as THREE from "three";
+import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
+import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { createPotData } from "./potData.js";
 import { createBallEditorFluid } from "./ballEditorFluid.js";
 import { createFluidPavel } from "./fluid/createFluidPavel.js";
@@ -7,7 +10,7 @@ import {
   revokePreviewUrl,
 } from "./ingredientInflate.js";
 
-export function createPotController({ appEl, onClose, onRequestClose } = {}) {
+export function createPotController({ appEl, onClose, onRequestClose, onFinalizePot } = {}) {
   if (!appEl) throw new Error("[pot] createPotController: appEl is required");
 
   // ---------- state ----------
@@ -42,7 +45,7 @@ export function createPotController({ appEl, onClose, onRequestClose } = {}) {
 
   let potCanvas = null;
   let potCtx = null;
-  let composeMode = "soup";
+  let composeMode = null;
   let cutDrawing = false;
   let cutPath = [];
   let cutLines = [];
@@ -57,7 +60,21 @@ export function createPotController({ appEl, onClose, onRequestClose } = {}) {
 
   let step4PreviewEl = null;
   let chairPreviewEl = null;
+  let step4Renderer = null;
+  let step4Scene = null;
+  let step4Camera = null;
+  let step4Controls = null;
+  let step4Model = null;
+  let step4AnimFrame = 0;
+  let step4Texture = null;
 
+  let step5Renderer = null;
+  let step5Scene = null;
+  let step5Camera = null;
+  let step5Controls = null;
+  let step5Model = null;
+  let step5AnimFrame = 0;
+  let chairCount = 1;
   let finalPotTextureUrl = null;
 
   // ---------- ui spec ----------
@@ -128,9 +145,9 @@ export function createPotController({ appEl, onClose, onRequestClose } = {}) {
       potFrame: { x: 414, y: 0, w: 480, h: 480 },
       potCanvas: { x: 499, y: 85, w: 310, h: 310 },
       soupList: { x: 62, y: 68, w: 272, h: 518 },
-      soupListTitle: { x: 83, y: 95 },
+      soupListTitle: { x: 83, y: 86 },
       ingList: { x: 971, y: 68, w: 272, h: 518 },
-      ingListTitle: { x: 992, y: 95 },
+      ingListTitle: { x: 992, y: 86 },
       controlsY: 475,
       labelsY: 586,
       controls: {
@@ -145,7 +162,7 @@ export function createPotController({ appEl, onClose, onRequestClose } = {}) {
     step4: {
       soupList: { x: 150, y: 140, w: 250, h: 345 },
       ingList: { x: 908, y: 140, w: 250, h: 345 },
-      preview: { x: 504, y: 140, w: 300, h: 345 },
+      preview: { x: 454, y: 140, w: 400, h: 345 },
       nextBtn: { x: 1158, y: 551, w: 199, h: 63 },
       nextIcon: { x: 1180, y: 562, w: 42, h: 42 },
       nextText: { x: 1225, y: 570 },
@@ -155,7 +172,7 @@ export function createPotController({ appEl, onClose, onRequestClose } = {}) {
     },
 
     step5: {
-      chairPreview: { x: 145, y: 95, w: 440, h: 360 },
+      chairPreview: { x: 145, y: 95, w: 440, h: 430 },
       title: { x: 708, y: 165 },
       nextBtn: { x: 1158, y: 551, w: 199, h: 63 },
       nextIcon: { x: 1180, y: 562, w: 42, h: 42 },
@@ -217,6 +234,8 @@ export function createPotController({ appEl, onClose, onRequestClose } = {}) {
     activeIngredientId = null;
 
     unmountFluidEditor();
+    unmountStep4Preview();
+    unmountStep5Preview();
 
     if (overlayEl?.parentNode) overlayEl.parentNode.removeChild(overlayEl);
     overlayEl = null;
@@ -282,19 +301,24 @@ export function createPotController({ appEl, onClose, onRequestClose } = {}) {
     }
   }
 
-  function clearPanel() {
-    if (!panelEl) return;
-    panelEl.innerHTML = "";
-    // reset canvas references so they get recreated fresh each time
-    ingredientCanvas = null;
-    ingredientCtx = null;
-    // reset step3 bind flag so events get re-attached when re-entering step3
-    step3Bound = false;
-  }
+function clearPanel() {
+  if (!panelEl) return;
+  panelEl.innerHTML = "";
+  // reset canvas references so they get recreated fresh each time
+  ingredientCanvas = null;
+  ingredientCtx = null;
+  // reset step3 bind flag so events get re-attached when re-entering step3
+  step3Bound = false;
+
+  // 清掉之前殘留在 overlayEl 的 cut color input
+  overlayEl?.querySelectorAll(".cut-color-input").forEach((el) => el.remove());
+}
 
   function renderStep() {
     if (!panelEl) return;
     if (step !== 1) unmountFluidEditor();
+    if (step !== 4) unmountStep4Preview();
+    if (step !== 5) unmountStep5Preview();
     clearPanel();
 
     if (step === 0) return renderStep0();
@@ -304,6 +328,7 @@ export function createPotController({ appEl, onClose, onRequestClose } = {}) {
     if (step === 4) return renderStep4();
     if (step === 5) return renderStep5();
   }
+
 
   // ---------- inflate ----------
   async function handleInflateIngredient(previewImgEl) {
@@ -673,8 +698,14 @@ export function createPotController({ appEl, onClose, onRequestClose } = {}) {
         cursor: "pointer",
       });
       item.addEventListener("click", () => {
-        activeBallId = ball.id;
-        composeMode = "soup";
+        if (activeBallId === ball.id) {
+          activeBallId = null;
+          composeMode = null;
+        } else {
+          activeBallId = ball.id;
+          activeIngredientId = null;
+          composeMode = "soup";
+        }
         renderStep();
       });
 
@@ -1114,8 +1145,14 @@ export function createPotController({ appEl, onClose, onRequestClose } = {}) {
         overflow: "hidden",
       });
       btn.addEventListener("click", () => {
-        activeIngredientId = item.id;
-        composeMode = "ingredient";
+        if (activeIngredientId === item.id) {
+          activeIngredientId = null;
+          composeMode = null;
+        } else {
+          activeIngredientId = item.id;
+          activeBallId = null;
+          composeMode = "ingredient";
+        }
         renderStep();
       });
       const img = document.createElement("img");
@@ -1420,6 +1457,25 @@ export function createPotController({ appEl, onClose, onRequestClose } = {}) {
   }
 
   // ---------- step3 compose pot ----------
+
+  // image cache: avoid recreating Image() on every redraw
+  const imageCache = new Map();
+
+  function getCachedImage(src) {
+    if (!src) return null;
+
+    let img = imageCache.get(src);
+    if (!img) {
+      img = new Image();
+      img.src = src;
+      img.onload = () => {
+        redrawComposeCanvas();
+      };
+      imageCache.set(src, img);
+    }
+    return img;
+  }
+
   function ensureStep3Canvas() {
     if (potCanvas) return;
     potCanvas = document.createElement("canvas");
@@ -1464,16 +1520,16 @@ export function createPotController({ appEl, onClose, onRequestClose } = {}) {
     ctx.restore();
   }
 
-  // ★ MODIFIED: use scale stored on the placement itself
   function drawSoupPlacement(ctx, placement) {
     const ball = balls.find((b) => b.id === placement.itemId);
     if (!ball) return;
-    const img = new Image();
-    img.src = ball.previewUrl;
-    img.onload = () => redrawComposeCanvas();
-    if (!img.complete) return;
+
+    const img = getCachedImage(ball.previewUrl);
+    if (!img || !img.complete) return;
+
     const scale = placement.scale ?? 1.0;
     const r = Math.round(26 * scale);
+
     ctx.save();
     ctx.beginPath();
     ctx.arc(placement.x, placement.y, r, 0, Math.PI * 2);
@@ -1482,14 +1538,13 @@ export function createPotController({ appEl, onClose, onRequestClose } = {}) {
     ctx.restore();
   }
 
-  // ★ MODIFIED: use scale stored on the placement itself
   function drawIngredientPlacement(ctx, placement) {
     const item = ingredients.find((it) => it.id === placement.itemId);
     if (!item) return;
-    const img = new Image();
-    img.src = item.previewUrl;
-    img.onload = () => redrawComposeCanvas();
-    if (!img.complete) return;
+
+    const img = getCachedImage(item.previewUrl);
+    if (!img || !img.complete) return;
+
     const scale = placement.scale ?? 1.0;
     const w = Math.round(72 * scale);
     const h = Math.round(36 * scale);
@@ -1520,7 +1575,6 @@ export function createPotController({ appEl, onClose, onRequestClose } = {}) {
     potCtx.lineWidth = 0;
     potCtx.stroke();
 
-    // ★ MODIFIED: draw each cut line with its own stored color
     potCtx.save();
     potCtx.beginPath();
     potCtx.arc(s / 2, s / 2, s / 2 - 6, 0, Math.PI * 2);
@@ -1534,7 +1588,6 @@ export function createPotController({ appEl, onClose, onRequestClose } = {}) {
       strokePath(potCtx, line, true);
     });
 
-    // in-progress cut line uses current cutColor
     if (cutPath.length >= 2) {
       potCtx.strokeStyle = cutColor;
       strokePath(potCtx, cutPath, true);
@@ -1575,10 +1628,20 @@ export function createPotController({ appEl, onClose, onRequestClose } = {}) {
     const { x, y } = composeCanvasXY(e);
     if (!isInsideComposeCircle(x, y)) return;
 
+    if (composeMode === "cut") return;
+    if (!composeMode) return;
+
     if (composeMode === "soup") {
       if (!activeBallId) return;
       const scale = ballNextScale.get(activeBallId) ?? 1.0;
-      composePlacements.push({ type: "soup", itemId: activeBallId, x, y, scale, createdAt: Date.now() });
+      composePlacements.push({
+        type: "soup",
+        itemId: activeBallId,
+        x,
+        y,
+        scale,
+        createdAt: Date.now(),
+      });
       redrawComposeCanvas();
       return;
     }
@@ -1586,7 +1649,14 @@ export function createPotController({ appEl, onClose, onRequestClose } = {}) {
     if (composeMode === "ingredient") {
       if (!activeIngredientId) return;
       const scale = ingredientNextScale.get(activeIngredientId) ?? 1.0;
-      composePlacements.push({ type: "ingredient", itemId: activeIngredientId, x, y, scale, createdAt: Date.now() });
+      composePlacements.push({
+        type: "ingredient",
+        itemId: activeIngredientId,
+        x,
+        y,
+        scale,
+        createdAt: Date.now(),
+      });
       redrawComposeCanvas();
       return;
     }
@@ -1611,7 +1681,6 @@ export function createPotController({ appEl, onClose, onRequestClose } = {}) {
     redrawComposeCanvas();
   }
 
-  // ★ MODIFIED: store cutColor alongside each cutLine
   function onCutPointerUp() {
     if (composeMode !== "cut" || !cutDrawing) return;
     cutDrawing = false;
@@ -1623,10 +1692,18 @@ export function createPotController({ appEl, onClose, onRequestClose } = {}) {
     redrawComposeCanvas();
   }
 
-  // ★ MODIFIED: renderVerticalList with transparent border by default,
-  //   #FD6FFF border when active, and a size slider shown for the active item
   function renderVerticalList({ title, frame, items, activeId, getPreviewUrl, onSelect, sizeMap }) {
-    addFrameBox({ x: frame.x, y: frame.y, w: frame.w, h: frame.h, bg: "#fff", border: "2px solid #FD6FFF", radius: 0, z: 1 });
+    addFrameBox({
+      x: frame.x,
+      y: frame.y,
+      w: frame.w,
+      h: frame.h,
+      bg: "#fff",
+      border: "2px solid #FD6FFF",
+      radius: 0,
+      z: 1,
+    });
+
     const titleX = title === "湯塊區" ? UI.step3.soupListTitle.x : UI.step3.ingListTitle.x;
     const titleY = title === "湯塊區" ? UI.step3.soupListTitle.y : UI.step3.ingListTitle.y;
     addText(title, { x: titleX, y: titleY, size: 20, color: "#1248FF", z: 3 });
@@ -1662,7 +1739,6 @@ export function createPotController({ appEl, onClose, onRequestClose } = {}) {
     items.forEach((item) => {
       const isActive = item.id === activeId;
 
-      // ★ container for button + slider
       const itemWrap = document.createElement("div");
       Object.assign(itemWrap.style, {
         display: "flex",
@@ -1677,7 +1753,6 @@ export function createPotController({ appEl, onClose, onRequestClose } = {}) {
         width: "100%",
         height: "78px",
         borderRadius: "14px",
-        // ★ transparent by default, #FD6FFF when active
         border: isActive ? "2px solid #FD6FFF" : "2px solid transparent",
         background: "#fff",
         cursor: "pointer",
@@ -1710,8 +1785,6 @@ export function createPotController({ appEl, onClose, onRequestClose } = {}) {
       btn.appendChild(label);
       itemWrap.appendChild(btn);
 
-      // ★ show size slider only for the active item
-      // slider controls the NEXT placement scale, not existing ones
       if (isActive && sizeMap) {
         const currentScale = sizeMap.get(item.id) ?? 1.0;
 
@@ -1754,12 +1827,10 @@ export function createPotController({ appEl, onClose, onRequestClose } = {}) {
           textAlign: "right",
         });
 
-        // ★ only update nextScale — does NOT touch existing placements
         sizeSlider.addEventListener("input", (e) => {
           const v = parseFloat(e.target.value);
           sizeMap.set(item.id, v);
           sizeVal.textContent = `${Math.round(v * 100)}%`;
-          // no redrawComposeCanvas() here — existing placements are untouched
         });
 
         sliderRow.appendChild(sizeLabel);
@@ -1799,8 +1870,14 @@ export function createPotController({ appEl, onClose, onRequestClose } = {}) {
       getPreviewUrl: (item) => item.previewUrl,
       sizeMap: ballNextScale,
       onSelect: (id) => {
-        activeBallId = id;
-        composeMode = "soup";
+        if (activeBallId === id) {
+          activeBallId = null;
+          composeMode = null;
+        } else {
+          activeBallId = id;
+          activeIngredientId = null;
+          composeMode = "soup";
+        }
         renderStep();
       },
     });
@@ -1813,97 +1890,216 @@ export function createPotController({ appEl, onClose, onRequestClose } = {}) {
       getPreviewUrl: (item) => item.previewUrl,
       sizeMap: ingredientNextScale,
       onSelect: (id) => {
-        activeIngredientId = id;
-        composeMode = "ingredient";
+        if (activeIngredientId === id) {
+          activeIngredientId = null;
+          composeMode = null;
+        } else {
+          activeIngredientId = id;
+          activeBallId = null;
+          composeMode = "ingredient";
+        }
         renderStep();
       },
     });
 
-    // continueMake button
-    addCapsuleButton({ x: s.controls.continueMake.x, y: s.controls.continueMake.y, w: 60, h: 60, bg: "#FFFFFF", border: "2px solid #FD6FFF", onClick: () => { step = 2; renderStep(); } });
-    addImg(ASSETS.leftArrow, { x: s.controls.continueMake.x + 9, y: s.controls.continueMake.y + 9, w: 42, h: 42, z: 4 });
-    addLabelChip("繼續製作", { x: s.controls.continueMake.x - 20, y: 551, w: 100, h: 33, color: "#1248FF" });
-
-    // ★ cut button — native color picker mounted on overlayEl (outside overflow:hidden panelEl)
-    // The input is absolutely positioned over the button so the user's real click hits it directly
-    const cutNativeInput = document.createElement("input");
-    cutNativeInput.type = "color";
-    cutNativeInput.value = cutColor;
-
-    // compute position relative to overlayEl
-    const panelOffsetX = (UI.overlayW - UI.overlayW) / 2; // panelEl is centered inside overlayEl
-    Object.assign(cutNativeInput.style, {
-      position: "absolute",
-      left: `${s.controls.cut.x + (overlayEl.offsetWidth - UI.overlayW) / 2}px`,
-      top: `${s.controls.cut.y + (overlayEl.offsetHeight - UI.overlayH) / 2}px`,
-      width: "60px",
-      height: "60px",
-      opacity: "0",
-      cursor: "pointer",
-      zIndex: "99999",
-      padding: "0",
-      border: "none",
+    addCapsuleButton({
+      x: s.controls.continueMake.x,
+      y: s.controls.continueMake.y,
+      w: 60,
+      h: 60,
+      bg: "#FFFFFF",
+      border: "2px solid #FD6FFF",
+      onClick: () => {
+        step = 2;
+        renderStep();
+      },
+    });
+    addImg(ASSETS.leftArrow, {
+      x: s.controls.continueMake.x + 9,
+      y: s.controls.continueMake.y + 9,
+      w: 42,
+      h: 42,
+      z: 4,
+    });
+    addLabelChip("繼續製作", {
+      x: s.controls.continueMake.x - 20,
+      y: 551,
+      w: 100,
+      h: 33,
+      color: "#1248FF",
     });
 
-    cutNativeInput.addEventListener("input", (e) => {
-      cutColor = e.target.value;
-    });
-    cutNativeInput.addEventListener("change", (e) => {
-      cutColor = e.target.value;
-      cutNativeInput.remove();
-      composeMode = "cut";
-      renderStep();
-    });
-
-    overlayEl.appendChild(cutNativeInput);
-
-    // visual button behind the input
     addCapsuleButton({
       x: s.controls.cut.x,
       y: s.controls.cut.y,
-      w: 60, h: 60,
+      w: 60,
+      h: 60,
       bg: composeMode === "cut" ? "#FD6FFF" : "#EAEAEA",
       border: "0",
-      onClick: () => {}
+      onClick: () => {
+        activeBallId = null;
+        activeIngredientId = null;
+        composeMode = "cut";
+
+        const cutColorInput = document.createElement("input");
+        cutColorInput.type = "color";
+        cutColorInput.value = cutColor;
+        cutColorInput.className = "cut-color-input";
+
+        Object.assign(cutColorInput.style, {
+          position: "absolute",
+          left: "-9999px",
+          top: "0",
+          opacity: "0",
+          pointerEvents: "none",
+        });
+
+        panelEl.appendChild(cutColorInput);
+
+        cutColorInput.addEventListener("input", (e) => {
+          cutColor = e.target.value;
+          redrawComposeCanvas();
+        });
+
+        cutColorInput.addEventListener(
+          "change",
+          (e) => {
+            cutColor = e.target.value;
+            if (cutColorInput.parentNode) cutColorInput.remove();
+            renderStep();
+          },
+          { once: true }
+        );
+
+        cutColorInput.addEventListener(
+          "blur",
+          () => {
+            setTimeout(() => {
+              if (cutColorInput.parentNode) cutColorInput.remove();
+              renderStep();
+            }, 0);
+          },
+          { once: true }
+        );
+
+        try {
+          if (typeof cutColorInput.showPicker === "function") {
+            cutColorInput.showPicker();
+          } else {
+            cutColorInput.click();
+          }
+        } catch (err) {
+          console.warn("[cutColorInput] showPicker failed:", err);
+          cutColorInput.click();
+        }
+      },
     });
-    addImg(ASSETS.cut, { x: s.controls.cut.x + 4, y: s.controls.cut.y + 4, w: 52, h: 52, z: 4, rotate: 30 });
-    addLabelChip("切割", { x: s.controls.cut.x - 1, y: 551, w: 62, h: 33, color: "#1248FF" });
 
-    // restart (undo last placement or last cut line)
-    addCapsuleButton({ x: s.controls.restart.x, y: s.controls.restart.y, w: 60, h: 60, bg: "#EAEAEA", border: "0", onClick: () => {
-      if (composePlacements.length) composePlacements.pop();
-      else if (cutLines.length) {
-        cutLines.pop();
-        cutLineColors.pop();
-      }
-      redrawComposeCanvas();
-    } });
-    addImg(ASSETS.restart, { x: s.controls.restart.x + 9, y: s.controls.restart.y + 10, w: 45, h: 40, z: 4 });
-    addLabelChip("上一步", { x: s.controls.restart.x - 10, y: 551, w: 82, h: 33, color: "#1248FF" });
+    addImg(ASSETS.cut, {
+      x: s.controls.cut.x + 4,
+      y: s.controls.cut.y + 4,
+      w: 52,
+      h: 52,
+      z: 4,
+      rotate: 30,
+    });
 
-    // ★ MODIFIED: delete button now clears entire canvas
+    addLabelChip("切割", {
+      x: s.controls.cut.x - 1,
+      y: 551,
+      w: 62,
+      h: 33,
+      color: "#1248FF",
+    });
+
     addCapsuleButton({
-      x: s.controls.delete.x, y: s.controls.delete.y, w: 60, h: 60,
-      bg: "#EAEAEA", border: "0",
+      x: s.controls.restart.x,
+      y: s.controls.restart.y,
+      w: 60,
+      h: 60,
+      bg: "#EAEAEA",
+      border: "0",
+      onClick: () => {
+        if (composePlacements.length) composePlacements.pop();
+        else if (cutLines.length) {
+          cutLines.pop();
+          cutLineColors.pop();
+        }
+        redrawComposeCanvas();
+      },
+    });
+    addImg(ASSETS.restart, {
+      x: s.controls.restart.x + 9,
+      y: s.controls.restart.y + 10,
+      w: 45,
+      h: 40,
+      z: 4,
+    });
+    addLabelChip("上一步", {
+      x: s.controls.restart.x - 10,
+      y: 551,
+      w: 82,
+      h: 33,
+      color: "#1248FF",
+    });
+
+    addCapsuleButton({
+      x: s.controls.delete.x,
+      y: s.controls.delete.y,
+      w: 60,
+      h: 60,
+      bg: "#EAEAEA",
+      border: "0",
       onClick: () => {
         composePlacements.length = 0;
         cutLines.length = 0;
         cutLineColors.length = 0;
         cutPath = [];
         redrawComposeCanvas();
-      }
+      },
     });
-    addImg(ASSETS.delete, { x: s.controls.delete.x + 14, y: s.controls.delete.y + 10, w: 32, h: 40, z: 4 });
-    addLabelChip("刪除", { x: s.controls.delete.x - 10, y: 551, w: 82, h: 33, color: "#1248FF" });
+    addImg(ASSETS.delete, {
+      x: s.controls.delete.x + 14,
+      y: s.controls.delete.y + 10,
+      w: 32,
+      h: 40,
+      z: 4,
+    });
+    addLabelChip("刪除", {
+      x: s.controls.delete.x - 10,
+      y: 551,
+      w: 82,
+      h: 33,
+      color: "#1248FF",
+    });
 
-    // finish
-    addCapsuleButton({ x: s.controls.finish.x, y: s.controls.finish.y, w: 60, h: 60, bg: "#FFFFFF", border: "2px solid #FD6FFF", onClick: () => {
-      finalPotTextureUrl = exportFinalPotTexture();
-      step = 4;
-      renderStep();
-    } });
-    addImg(ASSETS.rightArrow, { x: s.controls.finish.x + 9, y: s.controls.finish.y + 9, w: 42, h: 42, z: 4 });
-    addLabelChip("完成火鍋!", { x: s.controls.finish.x - 18, y: 551, w: 100, h: 33, color: "#1248FF" });
+    addCapsuleButton({
+      x: s.controls.finish.x,
+      y: s.controls.finish.y,
+      w: 60,
+      h: 60,
+      bg: "#FFFFFF",
+      border: "2px solid #FD6FFF",
+      onClick: () => {
+        finalPotTextureUrl = exportFinalPotTexture();
+        step = 4;
+        renderStep();
+      },
+    });
+    addImg(ASSETS.rightArrow, {
+      x: s.controls.finish.x + 9,
+      y: s.controls.finish.y + 9,
+      w: 42,
+      h: 42,
+      z: 4,
+    });
+    addLabelChip("完成火鍋!", {
+      x: s.controls.finish.x - 18,
+      y: 551,
+      w: 100,
+      h: 33,
+      color: "#1248FF",
+    });
   }
 
   function exportFinalPotTexture() {
@@ -1912,6 +2108,269 @@ export function createPotController({ appEl, onClose, onRequestClose } = {}) {
   }
 
   // ---------- step4 3d preview ----------
+  function unmountStep4Preview() {
+      if (step4AnimFrame) {
+        cancelAnimationFrame(step4AnimFrame);
+        step4AnimFrame = 0;
+      }
+
+      if (step4Controls) {
+        step4Controls.dispose();
+        step4Controls = null;
+      }
+
+      if (step4Scene) {
+        step4Scene.traverse((obj) => {
+          if (obj.isMesh) {
+            obj.geometry?.dispose?.();
+
+            if (Array.isArray(obj.material)) {
+              obj.material.forEach((m) => m?.dispose?.());
+            } else {
+              obj.material?.dispose?.();
+            }
+          }
+        });
+      }
+
+      if (step4Texture) {
+        step4Texture.dispose();
+        step4Texture = null;
+      }
+
+      if (step4Renderer) {
+        step4Renderer.dispose();
+        step4Renderer.forceContextLoss?.();
+        if (step4Renderer.domElement?.parentNode) {
+          step4Renderer.domElement.parentNode.removeChild(step4Renderer.domElement);
+        }
+      }
+
+      step4Renderer = null;
+      step4Scene = null;
+      step4Camera = null;
+      step4Controls = null;
+      step4Model = null;
+    }
+
+    function applyStep4PotMaterials(root) {
+      if (!root) return;
+
+      let soupBaseMesh = null;
+      let soupTransparentMesh = null;
+      let potBodyMesh = null;
+      let potHandleMesh = null;
+
+      root.traverse((obj) => {
+        if (!obj.isMesh) return;
+
+        console.log("[step4 mesh]", obj.name, {
+          hasUV: !!obj.geometry?.attributes?.uv,
+          material: obj.material,
+        });
+      if (obj.name === "soupBase_1") soupBaseMesh = obj;
+      if (obj.name === "soupTransparent_1") soupTransparentMesh = obj;
+      if (obj.name === "potbody_1") potBodyMesh = obj;
+      if (obj.name === "pothandle_1") potHandleMesh = obj;
+      });
+
+      // 鍋身
+      potBodyMesh.material = new THREE.MeshStandardMaterial({
+        color: 0xff7cf6,
+        roughness: 0.35,
+        metalness: 0.02,
+        transparent: false,
+        opacity: 1,
+        side: THREE.FrontSide,
+        depthWrite: true,
+      });
+
+      // 把手
+      if (potHandleMesh) {
+        potHandleMesh.material = new THREE.MeshStandardMaterial({
+          color: 0xf0df2a,
+          roughness: 0.28,
+          metalness: 0.18,
+        });
+      }
+
+      // 底層 soup：直接貼 Step3 匯出的 2D texture
+      if (soupBaseMesh) {
+        if (!finalPotTextureUrl) {
+          console.warn("[step4] finalPotTextureUrl is empty");
+        } else {
+          const loader = new THREE.TextureLoader();
+
+          if (step4Texture) {
+            step4Texture.dispose();
+            step4Texture = null;
+          }
+
+          step4Texture = loader.load(
+            finalPotTextureUrl,
+            () => {
+              console.log("[step4] soup texture loaded");
+              step4Renderer?.render(step4Scene, step4Camera);
+            },
+            undefined,
+            (err) => {
+              console.error("[step4] failed to load finalPotTextureUrl", err);
+            }
+          );
+
+          step4Texture.colorSpace = THREE.SRGBColorSpace;
+          step4Texture.flipY = false;
+          step4Texture.needsUpdate = true;
+
+          soupBaseMesh.material = new THREE.MeshBasicMaterial({
+            map: step4Texture,
+            transparent: true,
+            side: THREE.DoubleSide,
+          });
+
+          soupBaseMesh.material.needsUpdate = true;
+          soupBaseMesh.renderOrder = 1;
+        }
+      }
+
+      // 上層透明膜：先不要用 transmission，先用最穩定、最直觀的透明材質
+      if (soupTransparentMesh) {
+        soupTransparentMesh.material = new THREE.MeshStandardMaterial({
+          color: 0xffd6ff,
+          transparent: true,
+          opacity: 0.28,
+          roughness: 0.08,
+          metalness: 0.0,
+          side: THREE.DoubleSide,
+          depthWrite: false,
+        });
+
+        soupTransparentMesh.material.needsUpdate = true;
+        soupTransparentMesh.renderOrder = 2;
+      }
+
+      console.log("[step4] material target", {
+        potBodyMesh: !!potBodyMesh,
+        potHandleMesh: !!potHandleMesh,
+        soupBaseMesh: !!soupBaseMesh,
+        soupTransparentMesh: !!soupTransparentMesh,
+        finalPotTextureUrl,
+      });
+    }
+
+    function frameObjectToCamera(camera, object, controls) {
+      const box = new THREE.Box3().setFromObject(object);
+      const size = box.getSize(new THREE.Vector3());
+      const center = box.getCenter(new THREE.Vector3());
+
+      const maxSize = Math.max(size.x, size.y, size.z);
+      const fov = camera.fov * (Math.PI / 180);
+      let cameraZ = Math.abs(maxSize / 2 / Math.tan(fov / 2));
+      cameraZ *= 1;
+
+      camera.position.set(center.x, center.y + maxSize * 0.2, center.z + cameraZ);
+      camera.near = Math.max(0.01, cameraZ / 100);
+      camera.far = cameraZ * 100;
+      camera.updateProjectionMatrix();
+
+      if (controls) {
+        controls.target.copy(center);
+        controls.update();
+      }
+    }
+
+    function mountStep4Preview() {
+      if (!step4PreviewEl) return;
+
+      unmountStep4Preview();
+
+      const w = step4PreviewEl.clientWidth || UI.step4.preview.w;
+      const h = step4PreviewEl.clientHeight || UI.step4.preview.h;
+
+      step4Scene = new THREE.Scene();
+      step4Scene.background = new THREE.Color(0xffffff);
+
+      step4Camera = new THREE.PerspectiveCamera(45, w / h, 0.1, 100);
+      step4Camera.position.set(0, 0.8, 2.5);
+
+      step4Renderer = new THREE.WebGLRenderer({
+        antialias: true,
+        alpha: true,
+      });
+      step4Renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      step4Renderer.setSize(w, h);
+      step4Renderer.outputColorSpace = THREE.SRGBColorSpace;
+      step4PreviewEl.appendChild(step4Renderer.domElement);
+
+      step4Controls = new OrbitControls(step4Camera, step4Renderer.domElement);
+      step4Controls.enableDamping = true;
+      step4Controls.enablePan = false;
+      step4Controls.minDistance = 1.2;
+      step4Controls.maxDistance = 6;
+      step4Controls.target.set(0, 0.3, 0);
+
+      const ambient = new THREE.AmbientLight(0xffffff, 2.2);
+      step4Scene.add(ambient);
+
+      const dir1 = new THREE.DirectionalLight(0xffffff, 1.8);
+      dir1.position.set(2, 3, 4);
+      step4Scene.add(dir1);
+
+      const dir2 = new THREE.DirectionalLight(0xffffff, 1.2);
+      dir2.position.set(-2, 2, -3);
+      step4Scene.add(dir2);
+
+      const loader = new GLTFLoader();
+      loader.load(
+        "/pott.glb",
+        (gltf) => {
+          console.log("[step4] gltf loaded", gltf);
+
+          step4Model = gltf.scene;
+          step4Scene.add(step4Model);
+
+          step4Model.traverse((obj) => {
+            console.log("[step4 node]", {
+              name: obj.name,
+              type: obj.type,
+              isMesh: obj.isMesh,
+            });
+          });
+
+          applyStep4PotMaterials(step4Model);
+          frameObjectToCamera(step4Camera, step4Model, step4Controls);
+
+          step4Renderer?.render(step4Scene, step4Camera);
+        },
+        undefined,
+        (err) => {
+          console.error("[step4] failed to load /pott.glb", err);
+
+          const fallback = document.createElement("div");
+          fallback.textContent = "pott.glb 載入失敗";
+          Object.assign(fallback.style, {
+            position: "absolute",
+            inset: "0",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            fontFamily: '"zpix", ui-sans-serif, system-ui',
+            fontSize: "18px",
+            color: "#666",
+            background: "rgba(255,255,255,0.9)",
+          });
+          step4PreviewEl.appendChild(fallback);
+        }
+      );
+
+      const tick = () => {
+        step4AnimFrame = requestAnimationFrame(tick);
+        step4Controls?.update();
+        step4Renderer?.render(step4Scene, step4Camera);
+      };
+      tick();
+    }
+
   function renderStep4() {
     const s = UI.step4;
     const prevRect = { x: 35, y: 551, w: 199, h: 63 };
@@ -1919,11 +2378,41 @@ export function createPotController({ appEl, onClose, onRequestClose } = {}) {
     const nextRect = { x: 1074, y: 551, w: 199, h: 63 };
     const nextIconRect = { x: 1095, y: 562, w: 42, h: 42 };
 
-    addFrameBox({ x: s.soupList.x, y: s.soupList.y, w: s.soupList.w, h: s.soupList.h, bg: "#EAEAEA", border: "0", radius: 0, z: 1 });
-    addFrameBox({ x: s.ingList.x, y: s.ingList.y, w: s.ingList.w, h: s.ingList.h, bg: "#EAEAEA", border: "0", radius: 0, z: 1 });
+    addFrameBox({
+      x: s.soupList.x,
+      y: s.soupList.y,
+      w: s.soupList.w,
+      h: s.soupList.h,
+      bg: "#FFFFFF",
+      border: "0",
+      radius: 0,
+      z: 1
+    });
 
-    renderPreviewListInBox({ box: s.soupList, items: balls, activeId: activeBallId, getPreviewUrl: (x) => x.previewUrl });
-    renderPreviewListInBox({ box: s.ingList, items: ingredients, activeId: activeIngredientId, getPreviewUrl: (x) => x.previewUrl });
+    addFrameBox({
+      x: s.ingList.x,
+      y: s.ingList.y,
+      w: s.ingList.w,
+      h: s.ingList.h,
+      bg: "#FFFFFF",
+      border: "0",
+      radius: 0,
+      z: 1
+    });
+
+    renderPreviewListInBox({
+      box: s.soupList,
+      items: balls,
+      activeId: activeBallId,
+      getPreviewUrl: (x) => x.previewUrl
+    });
+
+    renderPreviewListInBox({
+      box: s.ingList,
+      items: ingredients,
+      activeId: activeIngredientId,
+      getPreviewUrl: (x) => x.previewUrl
+    });
 
     step4PreviewEl = document.createElement("div");
     Object.assign(step4PreviewEl.style, {
@@ -1933,37 +2422,13 @@ export function createPotController({ appEl, onClose, onRequestClose } = {}) {
       width: `${s.preview.w}px`,
       height: `${s.preview.h}px`,
       zIndex: "2",
-      display: "flex",
-      flexDirection: "column",
-      alignItems: "center",
-      justifyContent: "center",
       borderRadius: "18px",
-      border: "2px dashed rgba(0,0,0,0.15)",
       overflow: "hidden",
       background: "#fff",
     });
     panelEl.appendChild(step4PreviewEl);
 
-    const title = document.createElement("div");
-    title.textContent = "pott.glb preview mount";
-    Object.assign(title.style, {
-      fontFamily: '"zpix", ui-sans-serif, system-ui',
-      fontSize: "20px",
-      color: "#666",
-      marginBottom: "12px",
-    });
-    step4PreviewEl.appendChild(title);
-
-    if (finalPotTextureUrl) {
-      const previewImg = document.createElement("img");
-      previewImg.src = finalPotTextureUrl;
-      Object.assign(previewImg.style, {
-        width: "220px",
-        height: "220px",
-        objectFit: "contain",
-      });
-      step4PreviewEl.appendChild(previewImg);
-    }
+    mountStep4Preview();
 
     addActionButton({
       rect: prevRect,
@@ -2059,13 +2524,134 @@ export function createPotController({ appEl, onClose, onRequestClose } = {}) {
     return wrap;
   }
 
-  // ---------- step5 chair ----------
+
+
+  function unmountStep5Preview() {
+    if (step5AnimFrame) {
+      cancelAnimationFrame(step5AnimFrame);
+      step5AnimFrame = 0;
+    }
+
+    if (step5Controls) {
+      step5Controls.dispose();
+      step5Controls = null;
+    }
+
+    if (step5Scene) {
+      step5Scene.traverse((obj) => {
+        if (obj.isMesh) {
+          obj.geometry?.dispose?.();
+          if (Array.isArray(obj.material)) obj.material.forEach((m) => m?.dispose?.());
+          else obj.material?.dispose?.();
+        }
+      });
+    }
+
+    if (step5Renderer) {
+      step5Renderer.dispose();
+      step5Renderer.forceContextLoss?.();
+      if (step5Renderer.domElement?.parentNode) {
+        step5Renderer.domElement.parentNode.removeChild(step5Renderer.domElement);
+      }
+    }
+
+    step5Renderer = null;
+    step5Scene = null;
+    step5Camera = null;
+    step5Controls = null;
+    step5Model = null;
+  }
+
+  function mountStep5Preview() {
+  if (!chairPreviewEl) return;
+
+  unmountStep5Preview();
+
+  const w = chairPreviewEl.clientWidth || UI.step5.chairPreview.w;
+  const h = chairPreviewEl.clientHeight || UI.step5.chairPreview.h;
+
+  step5Scene = new THREE.Scene();
+  step5Scene.background = new THREE.Color(0xffffff);
+
+  step5Camera = new THREE.PerspectiveCamera(45, w / h, 0.1, 100);
+  step5Camera.position.set(0, 1.2, 4);
+
+  step5Renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+  step5Renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  step5Renderer.setSize(w, h);
+  step5Renderer.outputColorSpace = THREE.SRGBColorSpace;
+  chairPreviewEl.appendChild(step5Renderer.domElement);
+
+  step5Controls = new OrbitControls(step5Camera, step5Renderer.domElement);
+  step5Controls.enableDamping = true;
+  step5Controls.enablePan = false;
+  step5Controls.minDistance = 1.2;
+  step5Controls.maxDistance = 5;
+
+  const ambient = new THREE.AmbientLight(0xffffff, 2.0);
+  step5Scene.add(ambient);
+
+  const dir = new THREE.DirectionalLight(0xffffff, 1.6);
+  dir.position.set(2, 3, 4);
+  step5Scene.add(dir);
+
+  const loader = new GLTFLoader();
+  loader.load(
+    "/addChair.glb",
+    (gltf) => {
+      step5Model = gltf.scene;
+      step5Scene.add(step5Model);
+
+      const box = new THREE.Box3().setFromObject(step5Model);
+      const size = box.getSize(new THREE.Vector3());
+      const center = box.getCenter(new THREE.Vector3());
+
+      step5Model.position.sub(center);
+
+      const maxDim = Math.max(size.x, size.y, size.z);
+      const fov = step5Camera.fov * (Math.PI / 180);
+      let cameraZ = Math.abs(maxDim / Math.sin(fov / 2));
+
+      cameraZ *= 1.4;
+
+      step5Camera.position.set(0, size.y * 0.4, cameraZ);
+      step5Camera.lookAt(0, 0, 0);
+
+      step5Controls.target.set(0, 0, 0);
+      step5Controls.update();
+
+      step5Model.traverse((obj) => {
+        if (obj.isMesh) {
+          obj.material = new THREE.MeshStandardMaterial({
+            color: 0xffc8ff,
+            roughness: 0.2,
+            metalness: 0.05,
+          });
+        }
+      });
+
+      frameObjectToCamera(step5Camera, step5Model, step5Controls);
+    },
+    undefined,
+    (err) => {
+      console.error("[step5] failed to load /addChair.glb", err);
+    }
+  );
+
+  const tick = () => {
+    step5AnimFrame = requestAnimationFrame(tick);
+    step5Controls?.update();
+    step5Renderer?.render(step5Scene, step5Camera);
+  };
+  tick();
+}
   function renderStep5() {
     const s = UI.step5;
     const prevRect = { x: 35, y: 551, w: 199, h: 63 };
     const prevIconRect = { x: 173, y: 562, w: 42, h: 42 };
     const nextRect = { x: 1074, y: 551, w: 199, h: 63 };
     const nextIconRect = { x: 1095, y: 562, w: 42, h: 42 };
+
 
     chairPreviewEl = document.createElement("div");
     Object.assign(chairPreviewEl.style, {
@@ -2075,18 +2661,14 @@ export function createPotController({ appEl, onClose, onRequestClose } = {}) {
       width: `${s.chairPreview.w}px`,
       height: `${s.chairPreview.h}px`,
       zIndex: "2",
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
-      border: "2px dashed rgba(0,0,0,0.15)",
+      border: "0",
       background: "#fff",
       borderRadius: "18px",
-      fontFamily: '"zpix", ui-sans-serif, system-ui',
-      fontSize: "22px",
-      color: "#666",
+      overflow: "hidden",
     });
-    chairPreviewEl.textContent = "addChair.glb preview mount";
     panelEl.appendChild(chairPreviewEl);
+
+    mountStep5Preview();
 
     addText("您希望和多少人分享您的火鍋呢?", {
       x: s.title.x,
@@ -2095,6 +2677,62 @@ export function createPotController({ appEl, onClose, onRequestClose } = {}) {
       color: "#FD6FFF",
       z: 3,
     });
+
+    const selectWrap = document.createElement("div");
+    Object.assign(selectWrap.style, {
+      position: "absolute",
+      left: "860px",
+      top: "250px",
+      width: "180px",
+      height: "54px",
+      zIndex: "3",
+    });
+    panelEl.appendChild(selectWrap);
+
+    const selectEl = document.createElement("select");
+    Object.assign(selectEl.style, {
+      width: "100%",
+      height: "100%",
+      border: "2px solid #FD6FFF",
+      borderRadius: "0px",
+      background: "#fff",
+      color: "#FD6FFF",
+      fontFamily: '"zpix", ui-sans-serif, system-ui',
+      fontSize: "24px",
+      padding: "0 14px",
+      outline: "none",
+      appearance: "none",
+      WebkitAppearance: "none",
+      cursor: "pointer",
+    });
+
+    for (let i = 1; i <= 100; i++) {
+      const opt = document.createElement("option");
+      opt.value = String(i);
+      opt.textContent = String(i);
+      if (i === chairCount) opt.selected = true;
+      selectEl.appendChild(opt);
+    }
+
+    selectEl.addEventListener("change", (e) => {
+      chairCount = Number(e.target.value);
+    });
+
+    selectWrap.appendChild(selectEl);
+
+    const arrow = document.createElement("div");
+    arrow.textContent = "▼";
+    Object.assign(arrow.style, {
+      position: "absolute",
+      right: "16px",
+      top: "50%",
+      transform: "translateY(-50%)",
+      color: "#FD6FFF",
+      fontFamily: '"zpix", ui-sans-serif, system-ui',
+      fontSize: "28px",
+      pointerEvents: "none",
+    });
+    selectWrap.appendChild(arrow);
 
     addActionButton({
       rect: prevRect,
@@ -2115,7 +2753,24 @@ export function createPotController({ appEl, onClose, onRequestClose } = {}) {
       iconRect: nextIconRect,
       textOffsetX: 12,
       onClick: () => {
+      console.log("[step5 click] finalize", {
+        tableId: activeTableId,
+        chairCount,
+        finalPotTextureUrl,
+        placements: [...composePlacements],
+        hasOnFinalizePot: typeof onFinalizePot === "function",
+      });
+
+      if (typeof onFinalizePot === "function") {
+        onFinalizePot({
+          tableId: activeTableId,
+          finalPotTextureUrl,
+          placements: [...composePlacements],
+          chairCount,
+        });
+      } else {
         requestClose();
+      }
       },
     });
   }
@@ -2131,6 +2786,7 @@ export function createPotController({ appEl, onClose, onRequestClose } = {}) {
       activeIngredientId,
       composeMode,
       finalPotTextureUrl,
+      chairCount,
     };
   }
 
