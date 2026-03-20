@@ -109,6 +109,15 @@ export function createPotController({ appEl, onClose, onRequestClose, onFinalize
       brushBtn: { x: 1037, y: 53, w: 176, h: 177 },
       eraserBtn: { x: 986, y: 145, w: 164, h: 164 },
       fingerBtn: { x: 1011, y: 300, w: 181, h: 181 },
+
+      colorLabel:    { x: 108, y: 149, w: 180, h: 33 },
+      materialLabel: { x: 106, y: 403, w: 180, h: 33 },
+      brushLabel:    { x: 1050, y: 34,  w: 220, h: 33 },
+      eraserLabel:   { x: 1070, y: 233, w: 150, h: 33 },
+      fingerLabel:   { x: 1014, y: 442, w: 180, h: 33 },
+      confirmLabel:  { x: 805, y: 240,  w: 70,  h: 33 },
+      deleteLabel:   { x: 883, y: 240,  w: 70,  h: 33 },
+
       nextBtn: { x: 1074, y: 551, w: 199, h: 63 },
       nextIcon: { x: 1095, y: 562, w: 42, h: 42 },
       nextText: { x: 1174, y: 570 },
@@ -134,6 +143,13 @@ export function createPotController({ appEl, onClose, onRequestClose, onFinalize
       colorBtn: { x: 107, y: 53, w: 174, h: 174 },
       brushBtn: { x: 106, y: 212, w: 144, h: 144 },
       eraserBtn: { x: 120, y: 328, w: 168, h: 168 },
+
+      colorLabel:   { x: 100, y: 155, w: 220, h: 33 },
+      brushLabel:   { x: 110, y: 318, w: 220, h: 33 },
+      eraserLabel:  { x: 168, y: 442, w: 110, h: 33 },
+      confirmLabel: { x: 1087, y: 220, w: 70,  h: 33 },
+      deleteLabel:  { x: 1165, y: 220, w: 70,  h: 33 },
+
       nextBtn: { x: 1124, y: 551, w: 149, h: 63 },
       nextIcon: { x: 1148, y: 562, w: 42, h: 42 },
       nextText: { x: 1199, y: 570 },
@@ -513,7 +529,7 @@ function clearPanel() {
     return btn;
   }
 
-  function addLabelChip(text, { x, y, w = 90, h = 33, bg = "#EAEAEA", color = "#000" }) {
+  function addLabelChip(text, { x, y, w = 90, h = 33, bg = "#EAEAEA", color = "#1248FF", z = 10 }) {
     const chip = document.createElement("div");
     Object.assign(chip.style, {
       position: "absolute",
@@ -525,9 +541,11 @@ function clearPanel() {
       display: "flex",
       alignItems: "center",
       justifyContent: "center",
-      zIndex: "3",
+      zIndex: String(z),
+      pointerEvents: "none",
     });
     panelEl.appendChild(chip);
+
     const t = document.createElement("div");
     t.textContent = text;
     Object.assign(t.style, {
@@ -536,8 +554,35 @@ function clearPanel() {
       color,
       lineHeight: "1",
       pointerEvents: "none",
+      whiteSpace: "nowrap",
     });
     chip.appendChild(t);
+    return chip;
+  }
+
+  function attachHoverLabel(targetEl, text, rect) {
+    if (!targetEl || !rect) return null;
+
+    const chip = addLabelChip(text, {
+      x: rect.x,
+      y: rect.y,
+      w: rect.w,
+      h: rect.h,
+      bg: "#EAEAEA",
+      color: "#1248FF",
+      z: 12,
+    });
+
+    chip.style.display = "none";
+
+    targetEl.addEventListener("mouseenter", () => {
+      chip.style.display = "flex";
+    });
+
+    targetEl.addEventListener("mouseleave", () => {
+      chip.style.display = "none";
+    });
+
     return chip;
   }
 
@@ -726,7 +771,7 @@ function clearPanel() {
     return wrap;
   }
 
-  function renderStep1() {
+    function renderStep1() {
     const s = UI.step1;
     addImg(ASSETS.step1Worktop, { ...s.worktop, z: 1 });
     addText("湯塊區", { x: s.listFrame.x, y: s.listFrame.y, size: 20, z: 3 });
@@ -747,7 +792,7 @@ function clearPanel() {
     panelEl.appendChild(fluidMountEl);
     mountFluidEditor();
 
-    addImageButton(ASSETS.colorPicker, s.colorBtn, {
+    const colorBtn = addImageButton(ASSETS.colorPicker, s.colorBtn, {
       onClick: () => {
         const colorInput = document.createElement("input");
         colorInput.type = "color";
@@ -763,6 +808,7 @@ function clearPanel() {
       },
       border: "0", bg: "transparent", radius: 0,
     });
+    attachHoverLabel(colorBtn, "湯頭：選擇顏色", s.colorLabel);
 
     let matPopupOpen = false;
 
@@ -833,7 +879,7 @@ function clearPanel() {
       }
     };
 
-    addImageButton(ASSETS.material, s.materialBtn, {
+    const materialBtn = addImageButton(ASSETS.material, s.materialBtn, {
       onClick: () => {
         matPopupOpen = !matPopupOpen;
         if (matPopupOpen) {
@@ -846,6 +892,7 @@ function clearPanel() {
       },
       border: "0", bg: "transparent", radius: 0,
     });
+    attachHoverLabel(materialBtn, "口感：選擇質地", s.materialLabel);
 
     let fluidBrushRadius = 20;
 
@@ -897,7 +944,8 @@ function clearPanel() {
         document.removeEventListener("pointerdown", closeBrushPopup);
       }
     };
-    addImageButton(ASSETS.brushSize, s.brushBtn, {
+
+    const brushBtn = addImageButton(ASSETS.brushSize, s.brushBtn, {
       onClick: () => {
         brushPopupOpen = !brushPopupOpen;
         brushPopup.style.display = brushPopupOpen ? "flex" : "none";
@@ -905,6 +953,7 @@ function clearPanel() {
       },
       border: "0", bg: "transparent", radius: 0,
     });
+    attachHoverLabel(brushBtn, "湯勺：調整筆刷大小", s.brushLabel);
 
     let fluidEraserOn = false;
     let fluidFingerOn = false;
@@ -924,6 +973,7 @@ function clearPanel() {
       },
       border: "0", bg: "transparent", radius: 0,
     });
+    attachHoverLabel(eraserBtn, "衛生紙：擦除", s.eraserLabel);
 
     const fingerBtn = addImageButton(ASSETS.finger, s.fingerBtn, {
       onClick: () => {
@@ -938,6 +988,7 @@ function clearPanel() {
       },
       border: "0", bg: "transparent", radius: 0,
     });
+    attachHoverLabel(fingerBtn, "湯壺：攪拌暈染", s.fingerLabel);
 
     const nameWrap = document.createElement("div");
     Object.assign(nameWrap.style, {
@@ -999,7 +1050,7 @@ function clearPanel() {
     nameInput.addEventListener("input", updateNameLabel);
     updateNameLabel();
 
-    addCapsuleButton({
+    const confirmBtn = addCapsuleButton({
       x: s.confirmBtn.x, y: s.confirmBtn.y, w: s.confirmBtn.w, h: s.confirmBtn.h,
       bg: "#EAEAEA", border: "2px solid #EAEAEA",
       onClick: () => {
@@ -1017,13 +1068,15 @@ function clearPanel() {
       }
     });
     addImg(ASSETS.confirm, { ...s.confirmIcon, z: 4 });
+    attachHoverLabel(confirmBtn, "儲存", s.confirmLabel);
 
-    addCapsuleButton({
+    const deleteBtn = addCapsuleButton({
       x: s.deleteBtn.x, y: s.deleteBtn.y, w: s.deleteBtn.w, h: s.deleteBtn.h,
       bg: "#EAEAEA", border: "2px solid #EAEAEA",
       onClick: () => { fluidCtrl?.clearCanvas(); }
     });
     addImg(ASSETS.delete, { ...s.deleteIcon, z: 4 });
+    attachHoverLabel(deleteBtn, "清空", s.deleteLabel);
 
     const hiddenBallList = document.createElement("div");
     const hiddenEmpty = document.createElement("div");
@@ -1172,7 +1225,7 @@ function clearPanel() {
     return wrap;
   }
 
-  function renderStep2() {
+    function renderStep2() {
     const s = UI.step2;
     addImg(ASSETS.step2Worktop, { ...s.worktop, z: 1 });
     addText("製作配料", { x: s.title.x, y: s.title.y, size: 25, color: "#FD6FFF", z: 3 });
@@ -1198,7 +1251,7 @@ function clearPanel() {
     panelEl.appendChild(ingredientCanvas);
     bindIngredientCanvasEvents();
 
-    addImageButton(ASSETS.colorPicker, s.colorBtn, {
+    const colorBtn = addImageButton(ASSETS.colorPicker, s.colorBtn, {
       onClick: () => {
         const colorInput = document.createElement("input");
         colorInput.type = "color";
@@ -1213,6 +1266,7 @@ function clearPanel() {
       },
       border: "0", bg: "transparent", radius: 0,
     });
+    attachHoverLabel(colorBtn, "食用色素：選擇顏色", s.colorLabel);
 
     const brushPopup = document.createElement("div");
     Object.assign(brushPopup.style, {
@@ -1270,7 +1324,7 @@ function clearPanel() {
       }
     };
 
-    addImageButton(ASSETS.brushSize2, s.brushBtn, {
+    const brushBtn = addImageButton(ASSETS.brushSize2, s.brushBtn, {
       onClick: () => {
         brushPopupOpen = !brushPopupOpen;
         brushPopup.style.display = brushPopupOpen ? "flex" : "none";
@@ -1282,40 +1336,15 @@ function clearPanel() {
       bg: "transparent",
       radius: 0,
     });
+    attachHoverLabel(brushBtn, "漏斗：調整筆刷大小", s.brushLabel);
 
-    addImageButton(ASSETS.eraser2, s.eraserBtn, {
+    const eraserBtn = addImageButton(ASSETS.eraser2, s.eraserBtn, {
       onClick: () => {
         ingredientToolMode = ingredientToolMode === "erase" ? "draw" : "erase";
       },
       border: "0", bg: "transparent", radius: 0,
     });
-
-    addImageButton(ASSETS.inflate, s.inflateBtn, {
-      onClick: () => {
-        handleInflateIngredient(previewImgEl);
-      },
-      border: "0",
-      bg: "transparent",
-      radius: 0,
-    });
-    addLabelChip("充氣", {
-      x: s.inflateLabel.x,
-      y: s.inflateLabel.y,
-      w: s.inflateLabel.w,
-      h: s.inflateLabel.h,
-      color: "#1248FF",
-    });
-
-    addFrameBox({
-      x: s.resultFrame.x,
-      y: s.resultFrame.y,
-      w: s.resultFrame.w,
-      h: s.resultFrame.h,
-      bg: "transparent",
-      border: "2px solid #FD6FFF",
-      radius: 28,
-      z: 1,
-    });
+    attachHoverLabel(eraserBtn, "刀子：擦除", s.eraserLabel);
 
     const oldPreview = panelEl.querySelector(".ingredient-preview-img");
     if (oldPreview) oldPreview.remove();
@@ -1335,6 +1364,35 @@ function clearPanel() {
     });
     if (ingredientPreviewImgUrl) previewImgEl.src = ingredientPreviewImgUrl;
     panelEl.appendChild(previewImgEl);
+
+    const inflateBtn = addImageButton(ASSETS.inflate, s.inflateBtn, {
+      onClick: () => {
+        handleInflateIngredient(previewImgEl);
+      },
+      border: "0",
+      bg: "transparent",
+      radius: 0,
+    });
+
+    addLabelChip("充氣", {
+      x: s.inflateLabel.x,
+      y: s.inflateLabel.y,
+      w: s.inflateLabel.w,
+      h: s.inflateLabel.h,
+      color: "#1248FF",
+      z: 12,
+    });
+
+    addFrameBox({
+      x: s.resultFrame.x,
+      y: s.resultFrame.y,
+      w: s.resultFrame.w,
+      h: s.resultFrame.h,
+      bg: "transparent",
+      border: "2px solid #FD6FFF",
+      radius: 28,
+      z: 1,
+    });
 
     const nameWrap = document.createElement("div");
     Object.assign(nameWrap.style, {
@@ -1435,6 +1493,7 @@ function clearPanel() {
       pointerEvents: "none",
     });
     confirmBtn.appendChild(confirmIcon);
+    attachHoverLabel(confirmBtn, "儲存", s.confirmLabel);
 
     const deleteBtn = document.createElement("button");
     deleteBtn.type = "button";
@@ -1451,12 +1510,7 @@ function clearPanel() {
       padding: "0",
     });
     deleteBtn.addEventListener("click", () => {
-      if (!ingredients.length) return;
-      const idx = activeIngredientId ? ingredients.findIndex((it) => it.id === activeIngredientId) : 0;
-      const removeAt = idx >= 0 ? idx : 0;
-      const [removed] = ingredients.splice(removeAt, 1);
-      if (removed?.id === activeIngredientId) activeIngredientId = ingredients[0]?.id ?? null;
-      renderStep();
+      handleClearIngredientDrawing(previewImgEl);
     });
     nameWrap.appendChild(deleteBtn);
 
@@ -1471,6 +1525,7 @@ function clearPanel() {
       pointerEvents: "none",
     });
     deleteBtn.appendChild(deleteIcon);
+    attachHoverLabel(deleteBtn, "清空", s.deleteLabel);
 
     renderHorizontalIngredientList(s.listFrame);
 
