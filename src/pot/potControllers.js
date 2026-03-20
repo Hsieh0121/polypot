@@ -77,6 +77,7 @@ export function createPotController({ appEl, onClose, onRequestClose, onFinalize
   let chairCount = 1;
   let chairColor = "#e8f25a";
   let finalPotTextureUrl = null;
+  let currentTableState = null;
 
   // ---------- ui spec ----------
   const UI = {
@@ -228,21 +229,25 @@ export function createPotController({ appEl, onClose, onRequestClose, onFinalize
     return openFlag;
   }
 
-  function open({ tableId } = {}) {
+  function open({ tableId, tableState } = {}) {
     if (openFlag) return;
     openFlag = true;
     activeTableId = tableId ?? null;
-    step = 0;
+
+    loadStateFromTableState(tableState);
+
+    step = currentTableState?.initialized ? 4 : 0;
+
     mount();
     renderStep();
   }
 
   function requestClose() {
     if (typeof onRequestClose === "function") onRequestClose();
-    else close();
+    else close({ reason: "normal" });
   }
 
-  function close() {
+  function close({ reason = "normal" } = {}) {
     if (!openFlag) return;
     openFlag = false;
     activeTableId = null;
@@ -264,9 +269,28 @@ export function createPotController({ appEl, onClose, onRequestClose, onFinalize
     ingredientCtx = null;
     step4PreviewEl = null;
     chairPreviewEl = null;
+    currentTableState = null;
+    composeMode = null;
+
+    ingredientPreviewImgUrl = null;
+    ingredientToolMode = "draw";
+    ingredientDrawing = false;
+    ingredientLastPoint = null;
+
+    cutDrawing = false;
+    cutPath = [];
+    cutLines = [];
+    cutLineColors = [];
+    cutColor = "#000000";
+
+    ballNextScale.clear();
+    ingredientNextScale.clear();
 
     window.removeEventListener("keydown", onKeyDownWhileOpen, true);
-    if (typeof onClose === "function") onClose();
+
+    if (typeof onClose === "function") {
+      onClose({ reason });
+    }
   }
 
   function mount() {
@@ -644,6 +668,71 @@ function clearPanel() {
     });
     panelEl.appendChild(img);
     return img;
+  }
+    function createEmptyTableState(tableId = null) {
+    return {
+      tableId,
+      initialized: false,
+      balls: [],
+      ingredients: [],
+      composePlacements: [],
+      activeBallId: null,
+      activeIngredientId: null,
+      chairCount: 1,
+      chairColor: "#e8f25a",
+      finalPotTextureUrl: null,
+    };
+  }
+  function loadStateFromTableState(src) {
+    const state = src ?? createEmptyTableState(activeTableId);
+
+    currentTableState = state;
+
+    balls.length = 0;
+    ingredients.length = 0;
+    composePlacements.length = 0;
+
+    balls.push(...(state.balls || []).map((x) => ({ ...x })));
+    ingredients.push(...(state.ingredients || []).map((x) => ({ ...x })));
+    composePlacements.push(...(state.composePlacements || []).map((x) => ({ ...x })));
+
+    activeBallId = state.activeBallId ?? null;
+    activeIngredientId = state.activeIngredientId ?? null;
+
+    chairCount = state.chairCount ?? 1;
+    chairColor = state.chairColor ?? "#e8f25a";
+    finalPotTextureUrl = state.finalPotTextureUrl ?? null;
+
+    // reset transient ui/editor state
+    composeMode = null;
+
+    ingredientPreviewImgUrl = null;
+    ingredientToolMode = "draw";
+    ingredientDrawing = false;
+    ingredientLastPoint = null;
+
+    cutDrawing = false;
+    cutPath = [];
+    cutLines = [];
+    cutLineColors = [];
+    cutColor = "#000000";
+
+    ballNextScale.clear();
+    ingredientNextScale.clear();
+  }
+    function buildOutputTableState() {
+    return {
+      tableId: activeTableId,
+      initialized: true,
+      balls: balls.map((x) => ({ ...x })),
+      ingredients: ingredients.map((x) => ({ ...x })),
+      composePlacements: composePlacements.map((x) => ({ ...x })),
+      activeBallId,
+      activeIngredientId,
+      chairCount,
+      chairColor,
+      finalPotTextureUrl,
+    };
   }
 
   // ---------- step0 ----------
@@ -2957,9 +3046,13 @@ function renderVerticalList({
         hasOnFinalizePot: typeof onFinalizePot === "function",
       });
 
+
+      const outputTableState = buildOutputTableState();
+
       if (typeof onFinalizePot === "function") {
         onFinalizePot({
           tableId: activeTableId,
+          tableState: outputTableState,
           finalPotTextureUrl,
           placements: [...composePlacements],
           chairCount,
@@ -2985,6 +3078,7 @@ function renderVerticalList({
       finalPotTextureUrl,
       chairCount,
       chairColor,
+      initialized: currentTableState?.initialized ?? false,
     };
   }
 

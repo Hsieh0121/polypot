@@ -122,6 +122,21 @@ const tables = [];
 const tableBoxes = new Map();
 let envRoot = null;
 let worldBounds = null;  
+const tablePotStateMap = new Map();
+function createEmptyTablePotState(tableId) {
+  return {
+    tableId,
+    initialized: false,
+    balls: [],
+    ingredients: [],
+    composePlacements: [],
+    activeBallId: null,
+    activeIngredientId: null,
+    chairCount: 1,
+    chairColor: "#e8f25a",
+    finalPotTextureUrl: null,
+  };
+}
 
 socket.on("connect", () => {
   net.connected = true;
@@ -316,22 +331,36 @@ app.appendChild(renderer.domElement);
 
 const pot = createPotController({
   appEl: document.querySelector("#app"),
-  onClose: () => {
+
+  onClose: ({ reason = "normal" } = {}) => {
     clearMoveKeys();
+
+    if (reason === "finalize") {
+      console.log("[FSM] UI_OPEN -> finalize flow");
+      return;
+    }
+
     state = FSM.SEATED;
     console.log("[FSM] UI_OPEN -> SEATED (pot closed)");
   },
+
   onRequestClose: () => {
-    pot.close();
+    pot.close({ reason: "normal" });
   },
-  onFinalizePot: ({ tableId, finalPotTextureUrl, placements, chairCount, chairColor }) => {
+
+  onFinalizePot: ({ tableId, tableState, finalPotTextureUrl, placements, chairCount, chairColor }) => {
     console.log("[pot finalized]", {
       tableId,
+      tableState,
       finalPotTextureUrl,
       placements,
       chairCount,
       chairColor,
     });
+
+    if (tableId && tableState) {
+      tablePotStateMap.set(tableId, tableState);
+    }
 
     if (tableId) {
       applyChairCountToTable(tableId, chairCount, chairColor);
@@ -344,7 +373,8 @@ const pot = createPotController({
       }
     }
 
-    pot.close();
+    pot.close({ reason: "finalize" });
+    unseatSeat();
   },
 });
 
@@ -745,6 +775,11 @@ loader.load(
     tables.forEach((t) => {
       tableRegistry.set(t.name, buildTableInfo(t));
     });
+    tablePotStateMap.clear();
+    for (const [tableId] of tableRegistry.entries()) {
+      tablePotStateMap.set(tableId, createEmptyTablePotState(tableId));
+    }
+    console.log("[tablePotStateMap] init:", Array.from(tablePotStateMap.keys()));
     decorativeChairGroupByTableId.clear();
     for (const [tableId, info] of tableRegistry.entries()) {
       const g = new THREE.Group();
@@ -1236,28 +1271,37 @@ function dispatchAction(action) {
 
 
     case FSM.SEATED: {
-  if (type === ACTION.SELECT) {
-    const potHit = getLookAtPotHitForActiveTable();
-    if (!potHit) {
-      console.log("[SEATED] SELECT but not looking at pot");
+      if (type === ACTION.SELECT) {
+        const potHit = getLookAtPotHitForActiveTable();
+        if (!potHit) {
+          console.log("[SEATED] SELECT but not looking at pot");
+          return;
+        }
+
+        activeTableId = seated.tableId;
+        const tableState = tablePotStateMap.get(activeTableId) ?? createEmptyTablePotState(activeTableId);
+
+        controls.unlock();
+        pot.open({
+          tableId: activeTableId,
+          tableState,
+        });
+        clearMoveKeys();
+        controls.unlock();
+        state = FSM.UI_OPEN;
+
+        console.log(
+          "[FSM] SEATED -> UI_OPEN table=",
+          activeTableId,
+          "initialized=",
+          tableState?.initialized,
+          "hit=",
+          potHit.object?.name
+        );
+        return;
+      }
       return;
     }
-
-    activeTableId = seated.tableId;
-    controls.unlock();
-    pot.open({
-      tableId: activeTableId,
-      getWorldPotRoot: () => tableRegistry.get(activeTableId)?.potRoot ?? null,
-    });
-    clearMoveKeys();
-    controls.unlock();
-    state = FSM.UI_OPEN;
-
-    console.log("[FSM] SEATED -> UI_OPEN table=", activeTableId, "hit=", potHit.object?.name);
-    return;
-  }
-  return;
-}
 
     case FSM.UI_OPEN: {
       if (type === ACTION.CONFIRM) {
