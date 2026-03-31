@@ -36,6 +36,19 @@ const profile = JSON.parse(localStorage.getItem("polypot_profile") || "null") ||
 const remotePlayers = new Map();
 let localPlayerId = null;
 
+function mapSerialToTable(serial, tableCount = 8) {
+  const num = parseInt(String(serial || "").replace(/^P/i, ""), 10);
+  if (!Number.isFinite(num) || num <= 0) return null;
+  return `table${((num - 1) % tableCount) + 1}`;
+}
+
+const assignedTableId =
+  profile?.assignedTableId ??
+  mapSerialToTable(profile?.serial);
+
+console.log("[hall] profile =", profile);
+console.log("[hall] assignedTableId =", assignedTableId);
+
 let net = {
   connected: false,
   ping: null,
@@ -123,6 +136,13 @@ const tableBoxes = new Map();
 let envRoot = null;
 let worldBounds = null;  
 const tablePotStateMap = new Map();
+let hallIntroStarted = false;
+let hallAssignmentRevealed = false;
+let hallPostPotShown = false;
+let hallIntroTimers = [];
+let assignedMarker = null;
+let assignedMarkerBobBaseY = 0;
+let assignedMarkerTarget = null;
 function createEmptyTablePotState(tableId) {
   return {
     tableId,
@@ -197,10 +217,18 @@ socket.on("seatUpdated", (s) => {
     s.seatKey === `${seated.tableId}_${seated.seatId}` &&
     localseat.occupiedBy === null
   ){
+    const prevTableId = seated.tableId;
+
     seated = null;
     state = FSM.FREE_ROAM;
     camera.position.y = EYE_HEIGHT_STAND;
     console.log("[unseat local snap]");
+
+    if (hallPostPotShown && prevTableId === assignedTableId) {
+      hallPostPotShown = false;
+      showPostPotAnnouncement();
+      if (assignedTableId) showAssignedMarkerAtTable(assignedTableId);
+    }
   }
 });
 
@@ -260,6 +288,31 @@ function spawnRemote(player) {
   remotePlayers.set(player.id, avatar);
 
   console.log("[remote spawn]", player.id, player.profile);
+}
+function despawnRemote(id) {
+  const avatar = remotePlayers.get(id);
+  if (!avatar) return;
+
+  scene.remove(avatar);
+
+  avatar.traverse?.((obj) => {
+    if (!obj.isMesh) return;
+
+    obj.geometry?.dispose?.();
+
+    if (Array.isArray(obj.material)) {
+      obj.material.forEach((m) => {
+        if (m?.map) m.map.dispose?.();
+        m?.dispose?.();
+      });
+    } else {
+      if (obj.material?.map) obj.material.map.dispose?.();
+      obj.material?.dispose?.();
+    }
+  });
+
+  remotePlayers.delete(id);
+  console.log("[remote despawn]", id);
 }
 
 
@@ -328,6 +381,120 @@ resize();
 const app = document.querySelector("#app");
 app.appendChild(renderer.domElement);
 
+const hallUi = document.createElement("div");
+hallUi.style.position = "fixed";
+hallUi.style.inset = "0";
+hallUi.style.pointerEvents = "none";
+hallUi.style.zIndex = "10000";
+document.body.appendChild(hallUi);
+
+// left announcement
+const announcementWrap = document.createElement("div");
+announcementWrap.style.position = "fixed";
+announcementWrap.style.left = "75px";
+announcementWrap.style.bottom = "48px";
+announcementWrap.style.display = "none";
+announcementWrap.style.alignItems = "center";
+announcementWrap.style.gap = "17px";
+hallUi.appendChild(announcementWrap);
+
+const announcementBubble = document.createElement("div");
+announcementBubble.style.width = "85px";
+announcementBubble.style.height = "85px";
+announcementBubble.style.borderRadius = "999px";
+announcementBubble.style.background = "#FFFFFF";
+announcementBubble.style.display = "flex";
+announcementBubble.style.alignItems = "center";
+announcementBubble.style.justifyContent = "center";
+announcementBubble.style.boxShadow = "0 8px 30px rgba(0,0,0,0.14)";
+announcementWrap.appendChild(announcementBubble);
+
+const announcementIcon = document.createElement("img");
+announcementIcon.src = "/announcement.png";
+announcementIcon.alt = "announcement";
+announcementIcon.style.width = "45px";
+announcementIcon.style.height = "52px";
+announcementIcon.style.objectFit = "contain";
+announcementBubble.appendChild(announcementIcon);
+
+const textBubble = document.createElement("div");
+textBubble.style.minHeight = "85px";
+textBubble.style.padding = "0 28px";
+textBubble.style.borderRadius = "999px";
+textBubble.style.background = "#FFFFFF";
+textBubble.style.display = "flex";
+textBubble.style.alignItems = "center";
+textBubble.style.justifyContent = "center";
+textBubble.style.boxShadow = "0 8px 30px rgba(0,0,0,0.14)";
+textBubble.style.fontFamily = "zpix, sans-serif";
+textBubble.style.fontSize = "20px";
+textBubble.style.color = "#FD6FFF";
+textBubble.style.whiteSpace = "nowrap";
+announcementWrap.appendChild(textBubble);
+
+// center CTA
+const enterPotBubble = document.createElement("div");
+enterPotBubble.style.position = "fixed";
+enterPotBubble.style.left = "50%";
+enterPotBubble.style.bottom = "68px";
+enterPotBubble.style.transform = "translateX(-50%)";
+enterPotBubble.style.minHeight = "85px";
+enterPotBubble.style.padding = "0 34px";
+enterPotBubble.style.borderRadius = "999px";
+enterPotBubble.style.background = "#FFFFFF";
+enterPotBubble.style.display = "none";
+enterPotBubble.style.alignItems = "center";
+enterPotBubble.style.justifyContent = "center";
+enterPotBubble.style.boxShadow = "0 8px 30px rgba(0,0,0,0.14)";
+enterPotBubble.style.fontFamily = "zpix, sans-serif";
+enterPotBubble.style.fontSize = "20px";
+enterPotBubble.style.color = "#FD6FFF";
+enterPotBubble.style.whiteSpace = "nowrap";
+hallUi.appendChild(enterPotBubble);
+
+function showAnnouncementBubble(text) {
+  textBubble.textContent = text;
+  announcementWrap.style.display = "flex";
+}
+
+function hideAnnouncementBubble() {
+  announcementWrap.style.display = "none";
+}
+
+function showCenterBubble(text) {
+  enterPotBubble.textContent = text;
+  enterPotBubble.style.display = "flex";
+}
+
+function hideCenterBubble() {
+  enterPotBubble.style.display = "none";
+}
+
+function clearHallIntroTimers() {
+  for (const t of hallIntroTimers) clearTimeout(t);
+  hallIntroTimers = [];
+}
+
+function showAnnouncementSequence(items = []) {
+  clearHallIntroTimers();
+  let acc = 0;
+
+  items.forEach((item, idx) => {
+    const timer = setTimeout(() => {
+      showAnnouncementBubble(item.text);
+    }, acc);
+    hallIntroTimers.push(timer);
+    acc += item.ms ?? 2000;
+
+    if (idx === items.length - 1) {
+      const endTimer = setTimeout(() => {
+        hideAnnouncementBubble();
+      }, acc);
+      hallIntroTimers.push(endTimer);
+    }
+  });
+}
+
 
 const pot = createPotController({
   appEl: document.querySelector("#app"),
@@ -374,6 +541,7 @@ const pot = createPotController({
     }
 
     pot.close({ reason: "finalize" });
+    hallPostPotShown = true;
     unseatSeat();
   },
 });
@@ -588,6 +756,52 @@ function applyPotTextureToRoot(potRoot, textureUrl) {
   }
 }
 
+function createAssignedMarker() {
+  const group = new THREE.Group();
+  group.visible = false;
+
+  const geom = new THREE.ConeGeometry(0.35, 1.1, 4);
+  const mat = new THREE.MeshBasicMaterial({
+    color: 0x1248ff,
+    toneMapped: false,
+  });
+
+  const cone = new THREE.Mesh(geom, mat);
+  cone.rotation.x = Math.PI;
+  group.add(cone);
+
+  scene.add(group);
+  return group;
+}
+
+function showAssignedMarkerAtTable(tableId) {
+  if (!assignedMarker) assignedMarker = createAssignedMarker();
+
+  const info = tableRegistry.get(tableId);
+  if (!info) {
+    console.warn("[hall] assigned table not found:", tableId);
+    assignedMarker.visible = false;
+    assignedMarkerTarget = null;
+    return;
+  }
+
+  const target = info.center.clone();
+  target.y = info.bbox.max.y + 2.3;
+
+  assignedMarker.position.copy(target);
+  assignedMarkerBobBaseY = target.y;
+  assignedMarker.visible = true;
+  assignedMarkerTarget = tableId;
+
+  console.log("[hall] marker ->", tableId);
+}
+
+function hideAssignedMarker() {
+  if (!assignedMarker) return;
+  assignedMarker.visible = false;
+  assignedMarkerTarget = null;
+}
+
 tableRegistry.forEach((entry) => {
   entry.potRef = findPotRef(entry.root);
   console.log(entry.id, "potRef =", entry.potRef?.name ?? "NOT FOUND");
@@ -642,7 +856,57 @@ function trySelectHoverTable(){
 }
 
 
+function startHallIntroIfNeeded() {
+  if (hallIntroStarted) return;
+  hallIntroStarted = true;
 
+  showAnnouncementSequence([
+    { text: "宴席已開放", ms: 2200 },
+    { text: "您的位置將在一分鐘後安排完畢", ms: 2600 },
+    { text: "您可以先在會場內自由探索", ms: 2400 },
+  ]);
+
+  const revealTimer = setTimeout(() => {
+    revealAssignedSeat();
+  }, 60000);
+
+  hallIntroTimers.push(revealTimer);
+}
+
+function revealAssignedSeat() {
+  if (hallAssignmentRevealed) return;
+  hallAssignmentRevealed = true;
+
+  showAnnouncementBubble("您的位置已安排好");
+
+  const t1 = setTimeout(() => {
+    showAnnouncementBubble("請依據指示入座");
+  }, 1800);
+
+  const t2 = setTimeout(() => {
+    hideAnnouncementBubble();
+  }, 4200);
+
+  hallIntroTimers.push(t1, t2);
+
+  if (assignedTableId) {
+    showAssignedMarkerAtTable(assignedTableId);
+  }
+}
+
+function showPostPotAnnouncement() {
+  showAnnouncementBubble("宴席持續進行中");
+
+  const t1 = setTimeout(() => {
+    showAnnouncementBubble("歡迎自由探索會場");
+  }, 1800);
+
+  const t2 = setTimeout(() => {
+    hideAnnouncementBubble();
+  }, 4200);
+
+  hallIntroTimers.push(t1, t2);
+}
 
 
 
@@ -1030,7 +1294,14 @@ loader.load(
     } else {
     console.warn("floorObj not found");
     }
+    startHallIntroIfNeeded();
+
+    if (hallAssignmentRevealed && assignedTableId) {
+      showAssignedMarkerAtTable(assignedTableId);
+    }
     },
+
+    
     undefined,
     (error) => console.error(error),
     
@@ -1059,6 +1330,18 @@ function getLookAtTable(){
   let obj = hits[0].object;
   while (obj && !tables.includes(obj)) obj = obj.parent;
   return obj || null;
+}
+function isLookingAtAssignedTable() {
+  if (!assignedTableId) return false;
+  const hitTable = getLookAtTable();
+  if (!hitTable) return false;
+  if (hitTable.name !== assignedTableId) return false;
+
+  const info = tableRegistry.get(assignedTableId);
+  if (!info) return false;
+
+  const dist = distanceToTable(info, player.position);
+  return dist <= INTERACT_DISTANCE;
 }
 
 function applyDim(tableRoot, dimHex = 0x33333) {
@@ -1280,11 +1563,14 @@ function dispatchAction(action) {
 
         activeTableId = seated.tableId;
         const tableState = tablePotStateMap.get(activeTableId) ?? createEmptyTablePotState(activeTableId);
+        const isOwnerTable = activeTableId === assignedTableId;
 
         controls.unlock();
         pot.open({
           tableId: activeTableId,
           tableState,
+          viewOnly: !isOwnerTable,
+          ownerTableId: assignedTableId,
         });
         clearMoveKeys();
         controls.unlock();
@@ -1296,7 +1582,9 @@ function dispatchAction(action) {
           "initialized=",
           tableState?.initialized,
           "hit=",
-          potHit.object?.name
+          potHit.object?.name,
+          "isOwnerTable=",
+          isOwnerTable
         );
         return;
       }
@@ -1539,6 +1827,9 @@ function sitSeatLocalSnap(seat){
   velY = 0;
   isGrounded = true;
   camera.position.y = EYE_HEIGHT_SEATED;
+  if (seat.tableId === assignedTableId) {
+    hideAssignedMarker();
+  }
 
   console.log("[sit local snap]", seat.tableId, sid);
 }
@@ -1857,7 +2148,27 @@ if (potRoot !== activePotRoot) {
 }
 if (activePotRoot) setPotHighlight(activePotRoot, shouldPotGlow);
 
+// ---------- hall CTA bubble ----------
+hideCenterBubble();
 
+if (state === FSM.FREE_ROAM && hallAssignmentRevealed) {
+  if (isLookingAtAssignedTable()) {
+    showCenterBubble("按E入座");
+  }
+}
+
+if (state === FSM.SEATED) {
+  const potHit = getLookAtPotHitForActiveTable();
+  if (potHit) {
+    const isOwnerTable = seated?.tableId === assignedTableId;
+    showCenterBubble(isOwnerTable ? "按E開始製作火鍋" : "按E查看火鍋");
+  }
+}
+if (assignedMarker?.visible) {
+  const t = performance.now() * 0.002;
+  assignedMarker.position.y = assignedMarkerBobBaseY + Math.sin(t) * 0.18;
+  assignedMarker.rotation.y += 0.01;
+}
 
 updateHUD();
 renderer.render(scene, camera);

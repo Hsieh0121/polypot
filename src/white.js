@@ -3,6 +3,7 @@ import { GLTFLoader, OrbitControls } from "three/examples/jsm/Addons.js";
 import { PointerLockControls } from "three/addons/controls/PointerLockControls.js";
 import "./style.css";
 import { depth } from "three/tsl";
+import { io } from "socket.io-client";
 
 
 const scene = new THREE.Scene();
@@ -74,6 +75,21 @@ controls.getObject().position.set(
 
 const player = new THREE.Object3D();
 let idVerified = false;
+
+const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || "http://localhost:3001";
+const socket = io(SOCKET_URL, { transports: ["websocket"] });
+
+socket.on("connect", () => {
+  console.log("[white socket] connected", socket.id);
+});
+
+socket.on("disconnect", (reason) => {
+  console.log("[white socket] disconnected", reason);
+});
+
+socket.on("connect_error", (err) => {
+  console.error("[white socket] connect_error", err.message);
+});
 
 // =========================
 // System announcement UI
@@ -622,10 +638,10 @@ infoBox.addEventListener("focus", () => {
 
 // Persist info to profile.message (keep your existing schema)
 infoBox.addEventListener("input", () => {
-  const profile = JSON.parse(localStorage.getItem("polypot_profile") || "null");
+  const profile = loadProfileLocal();
   if (!profile) return;
   profile.message = infoBox.value;
-  localStorage.setItem("polypot_profile", JSON.stringify(profile));
+  saveProfileLocal(profile);
 });
 
 // --- Signature label + clear X ---
@@ -684,7 +700,7 @@ function sigClearCanvas() {
 }
 
 function sigSaveToProfile() {
-  const profile = JSON.parse(localStorage.getItem("polypot_profile") || "null");
+  const profile = loadProfileLocal();
   if (!profile) return;
 
   // empty check (cheap): read a few pixels
@@ -695,7 +711,7 @@ function sigSaveToProfile() {
   }
 
   profile.signature = hasInk ? signatureCanvas.toDataURL("image/png") : null;
-  localStorage.setItem("polypot_profile", JSON.stringify(profile));
+  saveProfileLocal(profile);
 }
 
 function sigLoadFromProfile(profile) {
@@ -772,11 +788,10 @@ sigClearBtn.addEventListener("click", (e) => {
   e.preventDefault();
   e.stopPropagation();
   if (idCardState !== "EDIT") return;
-  sigClearCanvas();
-  const profile = JSON.parse(localStorage.getItem("polypot_profile") || "null");
+  const profile = loadProfileLocal();
   if (profile) {
     profile.signature = null;
-    localStorage.setItem("polypot_profile", JSON.stringify(profile));
+    saveProfileLocal(profile);
   }
 });
 
@@ -1048,28 +1063,57 @@ function doorTipOnce(text, ms = 1500) {
 // Profile / Serial helpers (localStorage MVP)
 // =========================
 
-const LS_NEXT_ID = "polypot_nextId";
 const LS_PROFILE = "polypot_profile";
 
-function pad (num, len) {
-    return String(num).padStart(len, "0");
-}
-function formatSerial(id) {
-    return `P${pad(id, 6)}`;
-}
-function allocateSerialLocal() {
-    const cur = parseInt (localStorage.getItem(LS_NEXT_ID) || "1", 10);
-    const id = Number.isFinite(cur) && cur > 0 ? cur : 1;
-    localStorage.setItem(LS_NEXT_ID, String(id + 1));
-    return { id, serial: formatSerial(id) };
-}
 function saveProfileLocal(profile) {
-    localStorage.setItem(LS_PROFILE, JSON.stringify(profile));
+  localStorage.setItem(LS_PROFILE, JSON.stringify(profile));
 }
+
+function loadProfileLocal() {
+  try {
+    return JSON.parse(localStorage.getItem(LS_PROFILE) || "null");
+  } catch {
+    return null;
+  }
+}
+
 function clearProfileLocal() {
-    localStorage.removeItem("polypot_name");
-    localStorage.removeItem(LS_PROFILE);
-    localStorage.removeItem(LS_NEXT_ID);
+  localStorage.removeItem("polypot_name");
+  localStorage.removeItem(LS_PROFILE);
+}
+function registerProfileOnServer(profileInput) {
+  return new Promise((resolve, reject) => {
+    console.log("[registerProfileOnServer] start", {
+      connected: socket.connected,
+      profileInput,
+    });
+
+    if (!socket.connected) {
+      return reject(new Error("socket not connected"));
+    }
+
+    let settled = false;
+
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      reject(new Error("registerProfile ack timeout"));
+    }, 5000);
+
+    socket.emit("registerProfile", profileInput, (res) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+
+      console.log("[registerProfileOnServer] ack", res);
+
+      if (!res?.ok || !res?.profile) {
+        return reject(new Error("registerProfile failed"));
+      }
+
+      resolve(res.profile);
+    });
+  });
 }
 
 
@@ -1188,28 +1232,32 @@ function npcCheckId() {
     nameRow.style.pointerEvents = "none";
     pencilBtn.style.pointerEvents = "none";
 }
-function submitName() {
-    const raw = nameInput.value ?? "";
-    const name = raw.trim();
-    if (!name) {
-        nameInput.focus();
-        return;
-    }
-     console.log("[name submit]", name);
-    npcHideAll();
+async function submitName() {
+    console.log("[submitName] fired");
+  const raw = nameInput.value ?? "";
+  const name = raw.trim();
 
-    const { id, serial } = allocateSerialLocal();
-    const profile = {
-        id,
-        serial,
-        name,
-        message: "",
-        avatarPhoto: null,
-        createAt: Date.now()
-    };
-    saveProfileLocal(profile);
-    localStorage.setItem("polypot_name", name);
-    console.log("[profile created]", profile);
+  if (!name) {
+    nameInput.focus();
+    return;
+  }
+
+  console.log("[name submit]", name);
+
+  try {
+    const registeredProfile = await registerProfileOnServer({
+      name,
+      message: "",
+      avatarPhoto: null,
+      signature: null,
+    });
+
+    saveProfileLocal(registeredProfile);
+    localStorage.setItem("polypot_name", registeredProfile.name);
+
+    console.log("[profile created on server]", registeredProfile);
+
+    npcHideAll();
 
     nameBubble.style.display = "none";
     nameBubble.style.opacity = "0";
@@ -1218,7 +1266,10 @@ function submitName() {
     pencilBtn.style.pointerEvents = "none";
 
     npcCheckId();
-
+    } catch (err) {
+    console.error("[submitName] register failed", err);
+    npcShowBubble(`身份登記失敗：${err.message}`);
+    }
 }
 
 function npcOpenNameInput() {
@@ -1257,13 +1308,13 @@ btnYes.addEventListener("pointerdown", (e) => {
   if (npcState === NPC_STATE.Q1) npcAskName();
   if (npcState === NPC_STATE.CHECK_ID) {
     npcState = NPC_STATE.SHOW_ID_CARD;
-    const profile = JSON.parse(localStorage.getItem(LS_PROFILE) || "null")
-    console.log ("[show id card] profile =", profile);
+    const profile = loadProfileLocal();
+    console.log("[show id card] profile =", profile);
     npcShowBubble("為您確認證件中......");
     optionRow.style.opacity = "0";
     optionRow.style.pointerEvents = "none";
     showIdCard(profile);
-  }
+}
 });
 
 pencilBtn.addEventListener("pointerdown", (e) => {
@@ -1662,10 +1713,10 @@ confirmBtn.addEventListener("click", () => {
 
     photoImg.src = pendingAvatarPhoto;
 
-    const profile = JSON.parse(localStorage.getItem("polypot_profile") || "null");
+    const profile = loadProfileLocal();
     if (profile) {
-        profile.avatarPhoto = pendingAvatarPhoto;
-        localStorage.setItem("polypot_profile", JSON.stringify(profile));
+    profile.avatarPhoto = pendingAvatarPhoto;
+    saveProfileLocal(profile);
     }
     closeAvatarEditor();
 });
@@ -1763,7 +1814,7 @@ function openAvatarEditor () {
     avatarOverlay.style.display = "block";
     initAvatarPreview();
 
-    const profile = JSON.parse(localStorage.getItem("polypot_profile") || "null");
+    const profile = loadProfileLocal();
     if (profile?.avatarPhoto){
         photoImg.src = profile.avatarPhoto;
         photoImg.style.display = "block";

@@ -78,6 +78,8 @@ export function createPotController({ appEl, onClose, onRequestClose, onFinalize
   let chairColor = "#e8f25a";
   let finalPotTextureUrl = null;
   let currentTableState = null;
+  let viewOnly = false;
+  let ownerTableId = null;
 
   // ---------- ui spec ----------
   const UI = {
@@ -223,20 +225,27 @@ export function createPotController({ appEl, onClose, onRequestClose, onFinalize
     eraser2: "/eraser2.png",
     finger: "/finger.png",
     inflate: "/inflate.png",
+    toClose: "/toClose.png",
   };
 
   function isOpen() {
     return openFlag;
   }
 
-  function open({ tableId, tableState } = {}) {
+  function open({ tableId, tableState, viewOnly: nextViewOnly = false, ownerTableId: nextOwnerTableId = null } = {}) {
     if (openFlag) return;
     openFlag = true;
     activeTableId = tableId ?? null;
+    viewOnly = !!nextViewOnly;
+    ownerTableId = nextOwnerTableId ?? null;
 
     loadStateFromTableState(tableState);
 
-    step = currentTableState?.initialized ? 4 : 0;
+    if (viewOnly) {
+      step = 4;
+    } else {
+      step = currentTableState?.initialized ? 4 : 0;
+    }
 
     mount();
     renderStep();
@@ -734,6 +743,47 @@ function clearPanel() {
       finalPotTextureUrl,
     };
   }
+  function addTopRightCloseButton({ x, y, w = 50, h = 50, onClick }) {
+  const btn = document.createElement("button");
+  btn.type = "button";
+  Object.assign(btn.style, {
+    position: "absolute",
+    left: `${x}px`,
+    top: `${y}px`,
+    width: `${w}px`,
+    height: `${h}px`,
+    border: "0",
+    background: "transparent",
+    padding: "0",
+    cursor: "pointer",
+    zIndex: "20",
+  });
+
+  if (onClick) btn.addEventListener("click", onClick);
+
+  const img = document.createElement("img");
+  img.src = ASSETS.toClose;
+  Object.assign(img.style, {
+    width: "100%",
+    height: "100%",
+    objectFit: "contain",
+    pointerEvents: "none",
+    transition: "transform 180ms ease",
+    transformOrigin: "center center",
+  });
+
+  btn.addEventListener("mouseenter", () => {
+    img.style.transform = "rotate(90deg)";
+  });
+
+  btn.addEventListener("mouseleave", () => {
+    img.style.transform = "rotate(0deg)";
+  });
+
+  btn.appendChild(img);
+  panelEl.appendChild(btn);
+  return btn;
+}
 
   // ---------- step0 ----------
   function renderStep0() {
@@ -2654,6 +2704,7 @@ function renderVerticalList({
 
     mountStep4Preview();
 
+  if (!viewOnly) {
     addActionButton({
       rect: prevRect,
       label: "繼續製作",
@@ -2677,6 +2728,16 @@ function renderVerticalList({
         renderStep();
       },
     });
+  }
+  if (viewOnly) {
+  addTopRightCloseButton({
+    x: UI.overlayW - 90,
+    y: 24,
+    w: 50,
+    h: 50,
+    onClick: () => requestClose(),
+  });
+}
   }
 
   function renderPreviewListInBox({ box, items, activeId, getPreviewUrl }) {
@@ -2876,6 +2937,11 @@ function renderVerticalList({
   tick();
 }
   function renderStep5() {
+        if (viewOnly) {
+      step = 4;
+      renderStep();
+      return;
+    }
     const s = UI.step5;
     const prevRect = { x: 35, y: 551, w: 199, h: 63 };
     const prevIconRect = { x: 173, y: 562, w: 42, h: 42 };
@@ -3079,6 +3145,8 @@ function renderVerticalList({
       chairCount,
       chairColor,
       initialized: currentTableState?.initialized ?? false,
+      viewOnly,
+      ownerTableId,
     };
   }
 
