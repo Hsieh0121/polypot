@@ -248,30 +248,28 @@ setInterval(() => {
 function makeRemoteAvatar(player) {
   const group = new THREE.Group();
 
-  const bodyGeo = new THREE.CapsuleGeometry(0.3, 1.0, 4, 8);
-  const bodyMat = new THREE.MeshStandardMaterial();
-  const body = new THREE.Mesh(bodyGeo, bodyMat);
-  body.position.y = 0.8;
-  group.add(body);
+  loader.load("/avatar.glb", (gltf) => {
+    const root = gltf.scene;
+    group.add(root);
 
-  group.userData.body = body;
-  group.userData.profile = player.profile || {};
-
-  if (player.profile?.avatarPhoto) {
-    const texLoader = new THREE.TextureLoader();
-    const tex = texLoader.load(player.profile.avatarPhoto);
-
-    const faceGeo = new THREE.PlaneGeometry(0.7, 0.9);
-    const faceMat = new THREE.MeshBasicMaterial({
-      map: tex,
-      transparent: true,
+    // 找 mesh（跟 white 一樣）
+    let targetMesh = null;
+    root.traverse((o) => {
+      if (o.isMesh && o.name === "userModel002") {
+        targetMesh = o;
+      }
     });
-    const face = new THREE.Mesh(faceGeo, faceMat);
-    face.position.set(0, 1.6, 0.35);
 
-    group.add(face);
-    group.userData.face = face;
-  }
+    if (player.profile?.avatarPhoto && targetMesh) {
+      const tex = new THREE.TextureLoader().load(player.profile.avatarPhoto);
+      tex.colorSpace = THREE.SRGBColorSpace;
+      tex.flipY = false;
+
+      const mat = targetMesh.material.clone();
+      mat.map = tex;
+      targetMesh.material = mat;
+    }
+  });
 
   return group;
 }
@@ -353,13 +351,16 @@ controls.lock = () => {
 };
 
 
-
+const AVATAR_OFFSET = 3.0;
 const now = performance.now();
 if (now - lastNetSend > 50) {
   lastNetSend = now;
   socket.emit("player:move", {
-    pos: { x: player.position.x, y: player.position.y, z: player.position.z },
-    rotY: getYawFromCamera(),
+    pos: {
+      x: player.position.x,
+      y: player.position.y - AVATAR_OFFSET, // ✅ 修正
+      z: player.position.z,
+    }
   });
 }
 
