@@ -1524,9 +1524,6 @@ if (window.matchMedia("(pointer: coarse)").matches) {
       applyTouchLook();
     }
   });
-    if (IS_MOBILE && mobileInput?.root) {
-    shiftUpOnMobile(mobileInput.root, 40);
-  }
 }
 
 window.addEventListener("keydown", (e) => {
