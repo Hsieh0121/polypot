@@ -1111,7 +1111,7 @@ doorBtns.appendChild(btnWander);
 doorBtns.appendChild(btnEnterHall);
 
 function doorEnterPrompt() {
-    if (!controls?.isLocked) return;
+    if (!IS_MOBILE && !controls?.isLocked) return;
     doorUiActive = true;
     uiActive = true;
 
@@ -1501,8 +1501,12 @@ if (window.matchMedia("(pointer: coarse)").matches) {
     onLook: (nx, ny) => {
       if (!touchLook) return;
 
-      touchLook.yaw -= nx * 0.06;
-      touchLook.pitch -= ny * 0.06;
+      const dt = clock.getDelta(); // 你 main.js 已經有 clock
+
+      const SPEED = 2.2; // 可調（1.5~3）
+
+      touchLook.yaw -= nx * SPEED * dt;
+      touchLook.pitch -= ny * SPEED * dt;
 
       touchLook.pitch = THREE.MathUtils.clamp(
         touchLook.pitch,
@@ -1511,7 +1515,7 @@ if (window.matchMedia("(pointer: coarse)").matches) {
       );
 
       applyTouchLook();
-    },
+    }
   });
 }
 
@@ -1529,10 +1533,10 @@ window.addEventListener("keydown", (e) => {
 });
 
 window.addEventListener("keyup", (e) => {
-  if (e.code === "KeyW") keys.w = false;
-  if (e.code === "KeyA") keys.a = false;
-  if (e.code === "KeyS") keys.s = false;
-  if (e.code === "KeyD") keys.d = false;
+  if (e.code === "KeyW") keys.forward = false;
+  if (e.code === "KeyA") keys.left = false;
+  if (e.code === "KeyS") keys.back = false;
+  if (e.code === "KeyD") keys.right = false;
 });
 
 
@@ -2088,13 +2092,12 @@ function animate() {
     const dt = clock.getDelta();
     const velocity = moveSpeed * dt;
 
-    const mobileMode = window.matchMedia("(pointer: coarse)").matches;
 
     if (controls.isLocked || IS_MOBILE) {
-        if (keys.w) controls.moveForward(velocity);
-        if (keys.s) controls.moveForward(-velocity);
-        if (keys.a) controls.moveRight(-velocity);
-        if (keys.d) controls.moveRight(velocity);
+        if (keys.forward) controls.moveForward(velocity);
+        if (keys.back) controls.moveForward(-velocity);
+        if (keys.left) controls.moveRight(-velocity);
+        if (keys.right) controls.moveRight(velocity);
     }
 
     const obj = controls.getObject();

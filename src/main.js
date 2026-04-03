@@ -1184,8 +1184,12 @@ if (window.matchMedia("(pointer: coarse)").matches) {
     onLook: (nx, ny) => {
       if (!touchLook) return;
 
-      touchLook.yaw -= nx * 0.06;
-      touchLook.pitch -= ny * 0.06;
+      const dt = clock.getDelta(); // 你 main.js 已經有 clock
+
+      const SPEED = 2.2; // 可調（1.5~3）
+
+      touchLook.yaw -= nx * SPEED * dt;
+      touchLook.pitch -= ny * SPEED * dt;
 
       touchLook.pitch = THREE.MathUtils.clamp(
         touchLook.pitch,
@@ -1194,7 +1198,7 @@ if (window.matchMedia("(pointer: coarse)").matches) {
       );
 
       applyTouchLook();
-    },
+    }
   });
 }
 
