@@ -43,6 +43,12 @@ const controls = new PointerLockControls(camera, renderer.domElement);
 let uiActive = false; 
 
 const IS_MOBILE = window.matchMedia("(pointer: coarse)").matches;
+function shiftUpOnMobile(el, px = 40) {
+  if (!el) return;
+  if (!IS_MOBILE) return;
+  el.style.transform = `translateY(-${px}px)`;
+  el.style.transformOrigin = "center bottom";
+}
 
 const touchLook = {
   active: false,
@@ -193,6 +199,7 @@ ui.style.inset = "0";
 ui.style.zIndex = "9999";
 ui.style.pointerEvents = "none";
 document.body.appendChild(ui);
+shiftUpOnMobile(ui, 40);
 
 const announceWrap = document.createElement("div");
 announceWrap.style.position = "absolute";
@@ -288,7 +295,7 @@ uiRoot.style.inset = "0";
 uiRoot.style.zIndex = "9999";
 uiRoot.style.pointerEvents = "none";
 document.body.appendChild(uiRoot);
-
+shiftUpOnMobile(uiRoot, 40);
 
 function makePillButton(label){
     const btn = document.createElement("button");
@@ -1517,6 +1524,9 @@ if (window.matchMedia("(pointer: coarse)").matches) {
       applyTouchLook();
     }
   });
+    if (IS_MOBILE && mobileInput?.root) {
+    shiftUpOnMobile(mobileInput.root, 40);
+  }
 }
 
 window.addEventListener("keydown", (e) => {
