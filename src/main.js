@@ -634,24 +634,54 @@ textBubble.style.whiteSpace = "nowrap";
 announcementWrap.appendChild(textBubble);
 
 // center CTA
-const enterPotBubble = document.createElement("div");
-enterPotBubble.style.position = "fixed";
-enterPotBubble.style.left = "50%";
-enterPotBubble.style.bottom = "68px";
-enterPotBubble.style.transform = "translateX(-50%)";
-enterPotBubble.style.minHeight = "85px";
-enterPotBubble.style.padding = "0 34px";
-enterPotBubble.style.borderRadius = "999px";
-enterPotBubble.style.background = "#FFFFFF";
-enterPotBubble.style.display = "none";
-enterPotBubble.style.alignItems = "center";
-enterPotBubble.style.justifyContent = "center";
-enterPotBubble.style.boxShadow = "0 8px 30px rgba(0,0,0,0.14)";
-enterPotBubble.style.fontFamily = "zpix, sans-serif";
-enterPotBubble.style.fontSize = "20px";
-enterPotBubble.style.color = "#FD6FFF";
-enterPotBubble.style.whiteSpace = "nowrap";
-hallUi.appendChild(enterPotBubble);
+const ctaWrap = document.createElement("div");
+ctaWrap.style.position = "fixed";
+ctaWrap.style.left = "50%";
+ctaWrap.style.bottom = "68px";
+ctaWrap.style.transform = "translateX(-50%)";
+ctaWrap.style.display = "none";
+ctaWrap.style.alignItems = "center";
+ctaWrap.style.justifyContent = "center";
+ctaWrap.style.pointerEvents = "none";
+ctaWrap.style.zIndex = "10001";
+hallUi.appendChild(ctaWrap);
+
+const ctaBtn = document.createElement("button");
+ctaBtn.type = "button";
+ctaBtn.style.pointerEvents = "auto";
+ctaBtn.style.border = "0";
+ctaBtn.style.cursor = "pointer";
+ctaBtn.style.minHeight = "74px";
+ctaBtn.style.padding = "0 28px";
+ctaBtn.style.borderRadius = "999px";
+ctaBtn.style.background = "#FD6FFF";
+ctaBtn.style.color = "#FFFFFF";
+ctaBtn.style.boxShadow = "0 8px 30px rgba(0,0,0,0.14)";
+ctaBtn.style.fontFamily = "zpix, sans-serif";
+ctaBtn.style.fontSize = "20px";
+ctaBtn.style.whiteSpace = "nowrap";
+ctaBtn.style.display = "inline-flex";
+ctaBtn.style.alignItems = "center";
+ctaBtn.style.justifyContent = "center";
+ctaBtn.style.userSelect = "none";
+
+ctaBtn.addEventListener("pointerdown", () => {
+  ctaBtn.style.transform = "scale(0.96)";
+});
+const resetCtaBtn = () => {
+  ctaBtn.style.transform = "scale(1)";
+};
+ctaBtn.addEventListener("pointerup", resetCtaBtn);
+ctaBtn.addEventListener("pointercancel", resetCtaBtn);
+ctaBtn.addEventListener("pointerleave", resetCtaBtn);
+
+ctaBtn.addEventListener("click", (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  enqueueAction(ACTION.SELECT);
+});
+
+ctaWrap.appendChild(ctaBtn);
 
 function showAnnouncementBubble(text) {
   textBubble.textContent = text;
@@ -662,9 +692,13 @@ function hideAnnouncementBubble() {
   announcementWrap.style.display = "none";
 }
 
-function showCenterBubble(text) {
-  enterPotBubble.textContent = text;
-  enterPotBubble.style.display = "flex";
+function showCenterAction(label) {
+  ctaBtn.textContent = label;
+  ctaWrap.style.display = "flex";
+}
+
+function hideCenterAction() {
+  ctaWrap.style.display = "none";
 }
 
 function hideCenterBubble() {
@@ -2436,12 +2470,13 @@ if (potRoot !== activePotRoot) {
 }
 if (activePotRoot) setPotHighlight(activePotRoot, shouldPotGlow);
 
-// ---------- hall CTA bubble ----------
-hideCenterBubble();
+
+// ---------- hall CTA button ----------
+hideCenterAction();
 
 if (state === FSM.FREE_ROAM && hallAssignmentRevealed) {
   if (isLookingAtAssignedTable()) {
-    showCenterBubble("按E入座");
+    showCenterAction("入座");
   }
 }
 
@@ -2449,7 +2484,7 @@ if (state === FSM.SEATED) {
   const potHit = getLookAtPotHitForActiveTable();
   if (potHit) {
     const isOwnerTable = seated?.tableId === assignedTableId;
-    showCenterBubble(isOwnerTable ? "按E開始製作火鍋" : "按E查看火鍋");
+    showCenterAction(isOwnerTable ? "開始製作火鍋" : "查看火鍋");
   }
 }
 if (assignedMarker?.visible) {
