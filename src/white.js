@@ -50,6 +50,41 @@ function shiftUpOnMobile(el, px = 40) {
   el.style.transformOrigin = "center bottom";
 }
 
+function isSmallMobile() {
+  return IS_MOBILE && Math.min(window.innerWidth, window.innerHeight) <= 500;
+}
+
+function fitCenteredPanel(el, baseW, baseH) {
+  if (!el) return;
+
+  if (!isSmallMobile()) {
+    return;
+  }
+
+  const pad = 24;
+  const availW = window.innerWidth - pad * 2;
+  const availH = window.innerHeight - pad * 2;
+
+  const scale = Math.min(1, availW / baseW, availH / baseH);
+
+  el.style.transform = `translate(-50%, -50%) scale(${scale})`;
+  el.style.transformOrigin = "center center";
+}
+
+function fitTopRightPanel(el, scale = 1) {
+  if (!el) return;
+  if (!isSmallMobile()) return;
+
+  el.style.transform = `scale(${scale})`;
+  el.style.transformOrigin = "top right";
+}
+
+function fitAnnouncement(scale = 1) {
+  if (!isSmallMobile()) return;
+  announceWrap.style.transform = `scale(${scale})`;
+  announceWrap.style.transformOrigin = "left bottom";
+}
+
 const touchLook = {
   active: false,
   pointerId: null,
@@ -133,6 +168,7 @@ renderer.domElement.addEventListener("click", (e) => {
   if (e.target.closest && e.target.closest("#ui-root")) return;
   if (uiActive) return;
   if (!controls.isLocked) controls.lock();
+  if (!IS_MOBILE && !controls.isLocked) controls.lock();
 });
 
 document.addEventListener("pointerlockchange", () => {
@@ -328,6 +364,10 @@ npcLayer.style.top = "28%";
 npcLayer.style.width = "420px";
 npcLayer.style.pointerEvents = "auto";
 uiRoot.appendChild(npcLayer);
+
+if (isSmallMobile()) {
+  fitTopRightPanel(npcLayer, 0.82);
+}
 
 const npcBubble = document.createElement("div");
 npcBubble.style.background = "white";
@@ -573,6 +613,7 @@ idCard.style.borderRadius = "28px";
 idCard.style.boxShadow = "0 18px 60px rgba(0,0,0,0.20)";
 idCard.style.fontFamily = `"Pixelify Sans", system-ui, -apple-system, Segoe UI, Roboto, sans-serif`;
 idOverlay.appendChild(idCard);
+fitCenteredPanel(idCard, 700, 455);
 
 // --- constants: relative to idCard (your numbers converted) ---
 const POS = {
@@ -1008,6 +1049,7 @@ avatarPanel.style.gap = "22px";
 avatarPanel.style.padding = "28px";
 avatarPanel.style.fontFamily = "system-ui, -apple-system, Segoe UI, Roboto, sans-serif";
 avatarOverlay.appendChild(avatarPanel);
+fitAnnouncement(0.82);
 
 const previewWrap = document.createElement("div");
 previewWrap.style.position = "relative";
@@ -1082,6 +1124,11 @@ doorLayer.style.transform = "translate(-50%, -50%)";
 doorLayer.style.width = "520px";
 doorLayer.style.pointerEvents = "none";
 uiRoot.appendChild(doorLayer);
+
+if (isSmallMobile()) {
+  doorLayer.style.transform = "translate(-50%, -50%) scale(0.82)";
+  doorLayer.style.transformOrigin = "center center";
+}
 
 const doorBubble = document.createElement("div");
 doorBubble.style.background = "white";
@@ -1582,7 +1629,7 @@ function refreshDoorBox() {
 }
 function updateDoorProximity() {
     
-    if (!controls?.isLocked) return;
+    if (!IS_MOBILE && !controls?.isLocked) return;
     if (!idVerified) return;
     if (performance.now() - sceneReadyAt < DOOR_ACTIVE_DELAY) return;
     if (!doorMesh) return;
