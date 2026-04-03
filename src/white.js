@@ -4,6 +4,7 @@ import { PointerLockControls } from "three/addons/controls/PointerLockControls.j
 import "./style.css";
 import { depth } from "three/tsl";
 import { io } from "socket.io-client";
+import { initMobileInput } from "./Input/mobileInput.js";
 
 // 全域字體改成 zpix
 const zpixStyle = document.createElement("style");
@@ -1375,7 +1376,46 @@ btnWander.addEventListener("click", () => {
     doorTipOnce("可隨時進入宴席會場", 1500);
 });
 
-const keys = { w: false, a: false, s: false, d: false };
+const keys = {
+  forward: false,
+  back: false,
+  left: false,
+  right: false,
+};
+
+let mobileInput = null;
+
+const ACTION = {
+  SELECT: "SELECT",
+  CANCEL: "CANCEL",
+  CONFIRM: "CONFIRM",
+  JUMP: "JUMP",
+};
+
+function enqueueAction(type) {
+  console.log("[white mobile action]", type);
+
+  // white 目前沒有正式 FSM，先只做測試用
+  if (type === ACTION.CANCEL) {
+    npcHideAll?.();
+    doorHidePrompt?.();
+    hideIdCard?.();
+    closeAvatarEditor?.();
+  }
+}
+
+if (window.matchMedia("(pointer: coarse)").matches) {
+  mobileInput = initMobileInput({
+    keys,
+    enqueueAction,
+    ACTION,
+    getState: () => "WHITE",
+    isUiOpen: () =>
+      uiActive ||
+      idOverlay.style.display !== "none" ||
+      avatarOverlay.style.display !== "none",
+  });
+}
 
 window.addEventListener("keydown", (e) => {
   console.log("[keydown]", e.code, "uiActive=", uiActive, "locked=", controls?.isLocked);
@@ -1384,10 +1424,10 @@ window.addEventListener("keydown", (e) => {
 
   if (uiActive) return;
 
-  if (e.code === "KeyW") keys.w = true;
-  if (e.code === "KeyA") keys.a = true;
-  if (e.code === "KeyS") keys.s = true;
-  if (e.code === "KeyD") keys.d = true;
+  if (e.code === "KeyW") keys.forward = true;
+  if (e.code === "KeyA") keys.left = true;
+  if (e.code === "KeyS") keys.back = true;
+  if (e.code === "KeyD") keys.right = true;
 });
 
 window.addEventListener("keyup", (e) => {
@@ -1949,11 +1989,13 @@ function animate() {
     const dt = clock.getDelta();
     const velocity = moveSpeed * dt;
 
-    if (controls.isLocked) {
-        if (keys.w) controls.moveForward(velocity);
-        if (keys.s) controls.moveForward(-velocity);
-        if (keys.a) controls.moveRight(-velocity);
-        if (keys.d) controls.moveRight(velocity);
+    const mobileMode = window.matchMedia("(pointer: coarse)").matches;
+
+    if (controls.isLocked || mobileMode) {
+      if (keys.forward) controls.moveForward(velocity);
+      if (keys.back) controls.moveForward(-velocity);
+      if (keys.left) controls.moveRight(-velocity);
+      if (keys.right) controls.moveRight(velocity);
     }
 
     const obj = controls.getObject();

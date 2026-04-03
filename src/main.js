@@ -683,17 +683,7 @@ function safeLockPointer() {
     console.warn("[pointerlock] lock failed", err);
   }
 }
-let mobileInput = null;
 
-if (window.matchMedia("(pointer: coarse)").matches) {
-  mobileInput = initMobileInput({
-    keys,
-    enqueueAction,
-    ACTION,
-    getState: () => state,
-    isUiOpen: () => (state === FSM.UI_OPEN) || pot.isOpen?.(),
-  });
-}
 
 
 const hub = document.createElement("div");
@@ -1100,6 +1090,18 @@ const keys = {
   right: false,
   boost: false,
 };
+
+let mobileInput = null;
+
+if (window.matchMedia("(pointer: coarse)").matches) {
+  mobileInput = initMobileInput({
+    keys,
+    enqueueAction,
+    ACTION,
+    getState: () => state,
+    isUiOpen: () => (state === FSM.UI_OPEN) || pot.isOpen?.(),
+  });
+}
 
 function clearMoveKeys() {
   keys.forward = false;
