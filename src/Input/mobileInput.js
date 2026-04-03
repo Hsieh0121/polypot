@@ -38,10 +38,10 @@ export function initMobileInput({
   // =========================
   function makeStick({
     side = "left",
-    size = 120,
-    knobSize = 50,
-    bottom = 24,
-    sideOffset = 24,
+    size = 104,
+    knobSize = 44,
+    bottom = 22,
+    sideOffset = 22,
   }) {
     const wrap = document.createElement("div");
     Object.assign(wrap.style, {
@@ -52,7 +52,7 @@ export function initMobileInput({
       borderRadius: "999px",
       background: "rgba(255,255,255,0.10)",
       border: "2px solid rgba(255,255,255,0.18)",
-      boxShadow: "0 8px 30px rgba(0,0,0,0.16)",
+      boxShadow: "0 8px 24px rgba(0,0,0,0.14)",
       pointerEvents: "auto",
       touchAction: "none",
       [side]: `${sideOffset}px`,
@@ -68,7 +68,7 @@ export function initMobileInput({
       borderRadius: "999px",
       transform: "translate(-50%, -50%)",
       background: "rgba(255,255,255,0.82)",
-      boxShadow: "0 6px 18px rgba(0,0,0,0.16)",
+      boxShadow: "0 6px 16px rgba(0,0,0,0.14)",
       pointerEvents: "none",
     });
 
@@ -176,10 +176,10 @@ export function initMobileInput({
   // =========================
   const moveStick = makeStick({
     side: "left",
-    size: 120,
-    knobSize: 50,
-    bottom: 24,
-    sideOffset: 24,
+    size: 104,
+    knobSize: 44,
+    bottom: 22,
+    sideOffset: 22,
   });
 
   function resetMoveKeys() {
@@ -229,7 +229,6 @@ export function initMobileInput({
     resetMoveStickAndKeys();
   });
 
-  // optional: double tap left stick to jump
   moveStick.wrap.addEventListener("dblclick", (e) => {
     e.preventDefault();
     e.stopPropagation();
@@ -241,13 +240,11 @@ export function initMobileInput({
   // =========================
   const lookStick = makeStick({
     side: "right",
-    size: 120,
-    knobSize: 50,
-    bottom: 24,
-    sideOffset: 24,
+    size: 104,
+    knobSize: 44,
+    bottom: 22,
+    sideOffset: 22,
   });
-
-  lookStick.wrap.style.bottom = "24px";
 
   function emitLook(nx, ny) {
     if (typeof onLook !== "function") return;
@@ -257,7 +254,6 @@ export function initMobileInput({
     const y = Math.abs(ny) < DEAD ? 0 : ny;
 
     if (x === 0 && y === 0) return;
-
     onLook(x, y);
   }
 
@@ -291,38 +287,14 @@ export function initMobileInput({
   });
 
   // =========================
-  // center / mid-right buttons
+  // contextual buttons
   // =========================
-  const btnWrap = document.createElement("div");
-  Object.assign(btnWrap.style, {
-    position: "absolute",
-    right: "164px",
-    bottom: "28px",
-    display: "flex",
-    alignItems: "flex-end",
-    gap: "10px",
-    pointerEvents: "none",
-  });
-  root.appendChild(btnWrap);
-
-  const topBtnWrap = document.createElement("div");
-  Object.assign(topBtnWrap.style, {
-    position: "absolute",
-    right: "182px",
-    bottom: "98px",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    pointerEvents: "none",
-  });
-  root.appendChild(topBtnWrap);
-
   function makeBtn(label, {
-    width = 58,
-    height = 58,
+    width = 56,
+    height = 56,
     bg = "#ffffff",
     color = "#1248FF",
-    fontSize = 16,
+    fontSize = 15,
     fontWeight = "700",
   } = {}) {
     const btn = document.createElement("button");
@@ -338,13 +310,13 @@ export function initMobileInput({
       color,
       fontSize: `${fontSize}px`,
       fontWeight,
-      boxShadow: "0 10px 24px rgba(0,0,0,0.16)",
+      boxShadow: "0 10px 22px rgba(0,0,0,0.14)",
       pointerEvents: "auto",
       touchAction: "manipulation",
       userSelect: "none",
       WebkitUserSelect: "none",
       cursor: "pointer",
-      display: "inline-flex",
+      display: "none",
       alignItems: "center",
       justifyContent: "center",
       padding: "0",
@@ -365,33 +337,54 @@ export function initMobileInput({
     return btn;
   }
 
+  const interactBtn = makeBtn("互動", {
+    width: 66,
+    height: 66,
+    bg: "#FD6FFF",
+    color: "#ffffff",
+    fontSize: 17,
+  });
+
   const cancelBtn = makeBtn("返回", {
-    width: 56,
-    height: 56,
+    width: 54,
+    height: 54,
     bg: "#ffffff",
     color: "#1248FF",
     fontSize: 15,
-  });
-
-  const interactBtn = makeBtn("互動", {
-    width: 72,
-    height: 72,
-    bg: "#FD6FFF",
-    color: "#ffffff",
-    fontSize: 18,
   });
 
   const confirmBtn = makeBtn("確認", {
-    width: 56,
-    height: 56,
+    width: 54,
+    height: 54,
     bg: "#ffffff",
     color: "#1248FF",
     fontSize: 15,
   });
 
-  btnWrap.appendChild(cancelBtn);
-  btnWrap.appendChild(interactBtn);
-  topBtnWrap.appendChild(confirmBtn);
+  Object.assign(interactBtn.style, {
+    position: "absolute",
+    left: "50%",
+    bottom: "34px",
+    transform: "translateX(-50%)",
+  });
+
+  Object.assign(cancelBtn.style, {
+    position: "absolute",
+    left: "50%",
+    bottom: "34px",
+    transform: "translateX(calc(-50% - 78px))",
+  });
+
+  Object.assign(confirmBtn.style, {
+    position: "absolute",
+    left: "50%",
+    bottom: "34px",
+    transform: "translateX(calc(-50% + 78px))",
+  });
+
+  root.appendChild(interactBtn);
+  root.appendChild(cancelBtn);
+  root.appendChild(confirmBtn);
 
   function safeEnqueue(type) {
     enqueueAction(type);
@@ -423,7 +416,17 @@ export function initMobileInput({
     root.style.display = shouldShow() ? "block" : "none";
 
     const uiOpen = !!isUiOpen();
-    confirmBtn.style.display = uiOpen ? "inline-flex" : "none";
+
+    // 預設不常駐
+    interactBtn.style.display = "none";
+    cancelBtn.style.display = "none";
+    confirmBtn.style.display = "none";
+
+    // 只有 UI 開啟時才顯示返回 / 確認
+    if (uiOpen) {
+      cancelBtn.style.display = "inline-flex";
+      confirmBtn.style.display = "inline-flex";
+    }
   }
 
   function onResize() {
@@ -453,6 +456,12 @@ export function initMobileInput({
   return {
     root,
     update: updateVisibility,
+
+    // 之後 hall 若要情境式顯示互動鍵，可以直接 call 這個
+    setInteractVisible(visible) {
+      interactBtn.style.display = visible && shouldShow() ? "inline-flex" : "none";
+    },
+
     destroy() {
       resetMoveStickAndKeys();
       resetLookStick();
