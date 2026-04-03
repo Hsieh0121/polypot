@@ -41,7 +41,89 @@ window.addEventListener("resize", () => {
 
 const controls = new PointerLockControls(camera, renderer.domElement);
 let uiActive = false; 
+
+const IS_MOBILE = window.matchMedia("(pointer: coarse)").matches;
+
+const touchLook = {
+  active: false,
+  pointerId: null,
+  lastX: 0,
+  lastY: 0,
+  yaw: 0,
+  pitch: 0,
+  sensitivity: 0.0032,
+  maxPitch: Math.PI / 2 - 0.12,
+};
+
+function syncTouchLookFromCamera() {
+  const e = new THREE.Euler().setFromQuaternion(camera.quaternion, "YXZ");
+  touchLook.yaw = e.y;
+  touchLook.pitch = e.x;
+}
+
+function applyTouchLook() {
+  controls.getObject().rotation.y = touchLook.yaw;
+  camera.rotation.x = touchLook.pitch;
+  camera.rotation.z = 0;
+}
+
+function isTouchLookBlocked() {
+  return !IS_MOBILE || uiActive;
+}
+
+syncTouchLookFromCamera();
+
+renderer.domElement.addEventListener("pointerdown", (e) => {
+  if (isTouchLookBlocked()) return;
+
+  if (e.clientX < window.innerWidth * 0.45) return;
+
+  touchLook.active = true;
+  touchLook.pointerId = e.pointerId;
+  touchLook.lastX = e.clientX;
+  touchLook.lastY = e.clientY;
+
+  renderer.domElement.setPointerCapture?.(e.pointerId);
+  e.preventDefault();
+}, { passive: false });
+
+renderer.domElement.addEventListener("pointermove", (e) => {
+  if (!touchLook.active) return;
+  if (e.pointerId !== touchLook.pointerId) return;
+
+  const dx = e.clientX - touchLook.lastX;
+  const dy = e.clientY - touchLook.lastY;
+
+  touchLook.lastX = e.clientX;
+  touchLook.lastY = e.clientY;
+
+  touchLook.yaw -= dx * touchLook.sensitivity;
+  touchLook.pitch -= dy * touchLook.sensitivity;
+  touchLook.pitch = THREE.MathUtils.clamp(
+    touchLook.pitch,
+    -touchLook.maxPitch,
+    touchLook.maxPitch
+  );
+
+  applyTouchLook();
+  e.preventDefault();
+}, { passive: false });
+
+function endTouchLook(e) {
+  if (e.pointerId !== touchLook.pointerId) return;
+  touchLook.active = false;
+  touchLook.pointerId = null;
+}
+
+renderer.domElement.addEventListener("pointerup", endTouchLook);
+renderer.domElement.addEventListener("pointercancel", endTouchLook);
+renderer.domElement.addEventListener("lostpointercapture", () => {
+  touchLook.active = false;
+  touchLook.pointerId = null;
+});
+
 renderer.domElement.addEventListener("click", (e) => {
+  if (IS_MOBILE) return;
   if (e.target.closest && e.target.closest("#ui-root")) return;
   if (uiActive) return;
   if (!controls.isLocked) controls.lock();
@@ -1941,6 +2023,7 @@ loader.load("/white.glb", (gltf) => {
     );
     const target = new THREE.Vector3(center.x, obj.position.y, center.z + 10);
     obj.lookAt(target);
+    syncTouchLookFromCamera();
 
 
     // const spawnLight = new THREE.PointLight(0xffffff, 80, 100);
@@ -1991,11 +2074,11 @@ function animate() {
 
     const mobileMode = window.matchMedia("(pointer: coarse)").matches;
 
-    if (controls.isLocked || mobileMode) {
-      if (keys.forward) controls.moveForward(velocity);
-      if (keys.back) controls.moveForward(-velocity);
-      if (keys.left) controls.moveRight(-velocity);
-      if (keys.right) controls.moveRight(velocity);
+    if (controls.isLocked || IS_MOBILE) {
+        if (keys.w) controls.moveForward(velocity);
+        if (keys.s) controls.moveForward(-velocity);
+        if (keys.a) controls.moveRight(-velocity);
+        if (keys.d) controls.moveRight(velocity);
     }
 
     const obj = controls.getObject();

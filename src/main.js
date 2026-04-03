@@ -474,6 +474,86 @@ const player = controls.object;
 camera.position.set(0,EYE_HEIGHT , 0);
 const playerPos = player.position;
 
+const IS_MOBILE = window.matchMedia("(pointer: coarse)").matches;
+
+const touchLook = {
+  active: false,
+  pointerId: null,
+  lastX: 0,
+  lastY: 0,
+  yaw: 0,
+  pitch: 0,
+  sensitivity: 0.0032,
+  maxPitch: Math.PI / 2 - 0.12,
+};
+
+function syncTouchLookFromCamera() {
+  const e = new THREE.Euler().setFromQuaternion(camera.quaternion, "YXZ");
+  touchLook.yaw = e.y;
+  touchLook.pitch = e.x;
+}
+
+function applyTouchLook() {
+  player.rotation.y = touchLook.yaw;
+  camera.rotation.x = touchLook.pitch;
+  camera.rotation.z = 0;
+}
+
+function isTouchLookBlocked() {
+  return !IS_MOBILE || state === FSM.UI_OPEN || pot.isOpen?.();
+}
+
+syncTouchLookFromCamera();
+
+renderer.domElement.addEventListener("pointerdown", (e) => {
+  if (isTouchLookBlocked()) return;
+
+  // 左半邊保留給搖桿，右半邊才控制視角
+  if (e.clientX < window.innerWidth * 0.45) return;
+
+  touchLook.active = true;
+  touchLook.pointerId = e.pointerId;
+  touchLook.lastX = e.clientX;
+  touchLook.lastY = e.clientY;
+
+  renderer.domElement.setPointerCapture?.(e.pointerId);
+  e.preventDefault();
+}, { passive: false });
+
+renderer.domElement.addEventListener("pointermove", (e) => {
+  if (!touchLook.active) return;
+  if (e.pointerId !== touchLook.pointerId) return;
+
+  const dx = e.clientX - touchLook.lastX;
+  const dy = e.clientY - touchLook.lastY;
+
+  touchLook.lastX = e.clientX;
+  touchLook.lastY = e.clientY;
+
+  touchLook.yaw -= dx * touchLook.sensitivity;
+  touchLook.pitch -= dy * touchLook.sensitivity;
+  touchLook.pitch = THREE.MathUtils.clamp(
+    touchLook.pitch,
+    -touchLook.maxPitch,
+    touchLook.maxPitch
+  );
+
+  applyTouchLook();
+  e.preventDefault();
+}, { passive: false });
+
+function endTouchLook(e) {
+  if (e.pointerId !== touchLook.pointerId) return;
+  touchLook.active = false;
+  touchLook.pointerId = null;
+}
+
+renderer.domElement.addEventListener("pointerup", endTouchLook);
+renderer.domElement.addEventListener("pointercancel", endTouchLook);
+renderer.domElement.addEventListener("lostpointercapture", () => {
+  touchLook.active = false;
+  touchLook.pointerId = null;
+});
 
 const __lock = controls.lock.bind(controls);
 controls.lock = () => {
@@ -2005,6 +2085,7 @@ function sitSeatLocalSnap(seat){
   player.quaternion.copy(seat.quat);
 
   player.position.y = seat.pos.y + EYE_HEIGHT_SEATED;
+  syncTouchLookFromCamera();
   velY = 0;
   isGrounded = true;
 
