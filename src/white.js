@@ -1486,6 +1486,7 @@ function enqueueAction(type) {
   }
 }
 
+
 if (window.matchMedia("(pointer: coarse)").matches) {
   mobileInput = initMobileInput({
     keys,
@@ -1496,6 +1497,21 @@ if (window.matchMedia("(pointer: coarse)").matches) {
       uiActive ||
       idOverlay.style.display !== "none" ||
       avatarOverlay.style.display !== "none",
+
+    onLook: (nx, ny) => {
+      if (!touchLook) return;
+
+      touchLook.yaw -= nx * 0.06;
+      touchLook.pitch -= ny * 0.06;
+
+      touchLook.pitch = THREE.MathUtils.clamp(
+        touchLook.pitch,
+        -touchLook.maxPitch,
+        touchLook.maxPitch
+      );
+
+      applyTouchLook();
+    },
   });
 }
 

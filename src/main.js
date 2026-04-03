@@ -1180,6 +1180,21 @@ if (window.matchMedia("(pointer: coarse)").matches) {
     ACTION,
     getState: () => state,
     isUiOpen: () => (state === FSM.UI_OPEN) || pot.isOpen?.(),
+
+    onLook: (nx, ny) => {
+      if (!touchLook) return;
+
+      touchLook.yaw -= nx * 0.06;
+      touchLook.pitch -= ny * 0.06;
+
+      touchLook.pitch = THREE.MathUtils.clamp(
+        touchLook.pitch,
+        -touchLook.maxPitch,
+        touchLook.maxPitch
+      );
+
+      applyTouchLook();
+    },
   });
 }
 

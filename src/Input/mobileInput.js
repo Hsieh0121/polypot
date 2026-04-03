@@ -6,6 +6,7 @@ export function initMobileInput({
   ACTION,
   getState,
   isUiOpen = () => false,
+  onLook = null,
   mount = document.body,
 }) {
   if (!keys) throw new Error("[mobileInput] keys is required");
@@ -22,81 +23,312 @@ export function initMobileInput({
     touchAction: "none",
   });
 
-  // ---------- left joystick ----------
-  const stickWrap = document.createElement("div");
-  Object.assign(stickWrap.style, {
-    position: "absolute",
-    left: "24px",
-    bottom: "24px",
-    width: "150px",
-    height: "150px",
-    borderRadius: "999px",
-    background: "rgba(255,255,255,0.12)",
-    border: "2px solid rgba(255,255,255,0.22)",
-    boxShadow: "0 8px 30px rgba(0,0,0,0.18)",
-    pointerEvents: "auto",
-    touchAction: "none",
-  });
-  root.appendChild(stickWrap);
+  const IS_MOBILE_QUERY = "(pointer: coarse)";
 
-  const stickKnob = document.createElement("div");
-  Object.assign(stickKnob.style, {
-    position: "absolute",
-    left: "50%",
-    top: "50%",
-    width: "64px",
-    height: "64px",
-    borderRadius: "999px",
-    transform: "translate(-50%, -50%)",
-    background: "rgba(255,255,255,0.82)",
-    boxShadow: "0 6px 18px rgba(0,0,0,0.18)",
-    pointerEvents: "none",
-  });
-  stickWrap.appendChild(stickKnob);
+  function isActuallyMobile() {
+    return window.matchMedia(IS_MOBILE_QUERY).matches;
+  }
 
-  // ---------- right buttons ----------
-  const rightWrap = document.createElement("div");
-  Object.assign(rightWrap.style, {
+  function shouldShow() {
+    return isActuallyMobile();
+  }
+
+  // =========================
+  // shared stick builder
+  // =========================
+  function makeStick({
+    side = "left",
+    size = 120,
+    knobSize = 50,
+    bottom = 24,
+    sideOffset = 24,
+  }) {
+    const wrap = document.createElement("div");
+    Object.assign(wrap.style, {
+      position: "absolute",
+      width: `${size}px`,
+      height: `${size}px`,
+      bottom: `${bottom}px`,
+      borderRadius: "999px",
+      background: "rgba(255,255,255,0.10)",
+      border: "2px solid rgba(255,255,255,0.18)",
+      boxShadow: "0 8px 30px rgba(0,0,0,0.16)",
+      pointerEvents: "auto",
+      touchAction: "none",
+      [side]: `${sideOffset}px`,
+    });
+
+    const knob = document.createElement("div");
+    Object.assign(knob.style, {
+      position: "absolute",
+      left: "50%",
+      top: "50%",
+      width: `${knobSize}px`,
+      height: `${knobSize}px`,
+      borderRadius: "999px",
+      transform: "translate(-50%, -50%)",
+      background: "rgba(255,255,255,0.82)",
+      boxShadow: "0 6px 18px rgba(0,0,0,0.16)",
+      pointerEvents: "none",
+    });
+
+    wrap.appendChild(knob);
+    root.appendChild(wrap);
+
+    const state = {
+      pointerId: null,
+      active: false,
+      centerX: 0,
+      centerY: 0,
+      radius: Math.round((size - knobSize) * 0.5),
+      x: 0,
+      y: 0,
+    };
+
+    function refreshGeometry() {
+      const rect = wrap.getBoundingClientRect();
+      state.centerX = rect.left + rect.width / 2;
+      state.centerY = rect.top + rect.height / 2;
+    }
+
+    function applyVisual(nx, ny) {
+      const px = nx * state.radius;
+      const py = ny * state.radius;
+      knob.style.transform = `translate(calc(-50% + ${px}px), calc(-50% + ${py}px))`;
+    }
+
+    function updateFromPointer(clientX, clientY) {
+      const dx = clientX - state.centerX;
+      const dy = clientY - state.centerY;
+
+      const dist = Math.hypot(dx, dy) || 1;
+      const max = state.radius;
+      const clamped = Math.min(dist, max);
+
+      const nx = (dx / dist) * (clamped / max);
+      const ny = (dy / dist) * (clamped / max);
+
+      state.x = nx;
+      state.y = ny;
+
+      applyVisual(nx, ny);
+      return { nx, ny };
+    }
+
+    function reset() {
+      state.pointerId = null;
+      state.active = false;
+      state.x = 0;
+      state.y = 0;
+      applyVisual(0, 0);
+    }
+
+    wrap.addEventListener("pointerdown", (e) => {
+      if (!shouldShow()) return;
+      if (state.pointerId !== null) return;
+
+      refreshGeometry();
+      state.pointerId = e.pointerId;
+      state.active = true;
+      wrap.setPointerCapture?.(e.pointerId);
+      updateFromPointer(e.clientX, e.clientY);
+
+      e.preventDefault();
+      e.stopPropagation();
+    });
+
+    wrap.addEventListener("pointermove", (e) => {
+      if (!state.active) return;
+      if (e.pointerId !== state.pointerId) return;
+
+      updateFromPointer(e.clientX, e.clientY);
+
+      e.preventDefault();
+      e.stopPropagation();
+    });
+
+    function end(e) {
+      if (e.pointerId !== state.pointerId) return;
+      reset();
+
+      e.preventDefault();
+      e.stopPropagation();
+    }
+
+    wrap.addEventListener("pointerup", end);
+    wrap.addEventListener("pointercancel", end);
+    wrap.addEventListener("lostpointercapture", () => {
+      reset();
+    });
+
+    return {
+      wrap,
+      knob,
+      state,
+      refreshGeometry,
+      updateFromPointer,
+      reset,
+    };
+  }
+
+  // =========================
+  // left move stick
+  // =========================
+  const moveStick = makeStick({
+    side: "left",
+    size: 120,
+    knobSize: 50,
+    bottom: 24,
+    sideOffset: 24,
+  });
+
+  function resetMoveKeys() {
+    keys.forward = false;
+    keys.back = false;
+    keys.left = false;
+    keys.right = false;
+    if ("boost" in keys) keys.boost = false;
+  }
+
+  function applyMoveToKeys(nx, ny) {
+    const DEAD = 0.22;
+
+    keys.left = nx < -DEAD;
+    keys.right = nx > DEAD;
+    keys.forward = ny < -DEAD;
+    keys.back = ny > DEAD;
+  }
+
+  moveStick.wrap.addEventListener("pointerdown", (e) => {
+    const { nx, ny } = moveStick.updateFromPointer(e.clientX, e.clientY);
+    applyMoveToKeys(nx, ny);
+  });
+
+  moveStick.wrap.addEventListener("pointermove", (e) => {
+    if (e.pointerId !== moveStick.state.pointerId) return;
+    const { nx, ny } = moveStick.updateFromPointer(e.clientX, e.clientY);
+    applyMoveToKeys(nx, ny);
+  });
+
+  function resetMoveStickAndKeys() {
+    moveStick.reset();
+    resetMoveKeys();
+  }
+
+  moveStick.wrap.addEventListener("pointerup", (e) => {
+    if (e.pointerId !== moveStick.state.pointerId) return;
+    resetMoveStickAndKeys();
+  });
+
+  moveStick.wrap.addEventListener("pointercancel", (e) => {
+    if (e.pointerId !== moveStick.state.pointerId) return;
+    resetMoveStickAndKeys();
+  });
+
+  moveStick.wrap.addEventListener("lostpointercapture", () => {
+    resetMoveStickAndKeys();
+  });
+
+  // optional: double tap left stick to jump
+  moveStick.wrap.addEventListener("dblclick", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    enqueueAction(ACTION.JUMP);
+  });
+
+  // =========================
+  // right look stick
+  // =========================
+  const lookStick = makeStick({
+    side: "right",
+    size: 120,
+    knobSize: 50,
+    bottom: 24,
+    sideOffset: 24,
+  });
+
+  lookStick.wrap.style.bottom = "24px";
+
+  function emitLook(nx, ny) {
+    if (typeof onLook !== "function") return;
+
+    const DEAD = 0.10;
+    const x = Math.abs(nx) < DEAD ? 0 : nx;
+    const y = Math.abs(ny) < DEAD ? 0 : ny;
+
+    if (x === 0 && y === 0) return;
+
+    onLook(x, y);
+  }
+
+  lookStick.wrap.addEventListener("pointerdown", (e) => {
+    const { nx, ny } = lookStick.updateFromPointer(e.clientX, e.clientY);
+    emitLook(nx, ny);
+  });
+
+  lookStick.wrap.addEventListener("pointermove", (e) => {
+    if (e.pointerId !== lookStick.state.pointerId) return;
+    const { nx, ny } = lookStick.updateFromPointer(e.clientX, e.clientY);
+    emitLook(nx, ny);
+  });
+
+  function resetLookStick() {
+    lookStick.reset();
+  }
+
+  lookStick.wrap.addEventListener("pointerup", (e) => {
+    if (e.pointerId !== lookStick.state.pointerId) return;
+    resetLookStick();
+  });
+
+  lookStick.wrap.addEventListener("pointercancel", (e) => {
+    if (e.pointerId !== lookStick.state.pointerId) return;
+    resetLookStick();
+  });
+
+  lookStick.wrap.addEventListener("lostpointercapture", () => {
+    resetLookStick();
+  });
+
+  // =========================
+  // center / mid-right buttons
+  // =========================
+  const btnWrap = document.createElement("div");
+  Object.assign(btnWrap.style, {
     position: "absolute",
-    right: "24px",
-    bottom: "24px",
+    right: "164px",
+    bottom: "28px",
     display: "flex",
-    flexDirection: "column",
     alignItems: "flex-end",
-    gap: "12px",
+    gap: "10px",
     pointerEvents: "none",
   });
-  root.appendChild(rightWrap);
+  root.appendChild(btnWrap);
 
-  const rowBottom = document.createElement("div");
-  Object.assign(rowBottom.style, {
+  const topBtnWrap = document.createElement("div");
+  Object.assign(topBtnWrap.style, {
+    position: "absolute",
+    right: "182px",
+    bottom: "98px",
     display: "flex",
     alignItems: "center",
-    gap: "12px",
+    justifyContent: "center",
     pointerEvents: "none",
   });
-  rightWrap.appendChild(rowBottom);
-
-  const rowTop = document.createElement("div");
-  Object.assign(rowTop.style, {
-    display: "flex",
-    alignItems: "center",
-    gap: "12px",
-    pointerEvents: "none",
-  });
-  rightWrap.appendChild(rowTop);
+  root.appendChild(topBtnWrap);
 
   function makeBtn(label, {
-    width = 84,
-    height = 84,
+    width = 58,
+    height = 58,
     bg = "#ffffff",
     color = "#1248FF",
-    fontSize = 22,
+    fontSize = 16,
     fontWeight = "700",
   } = {}) {
     const btn = document.createElement("button");
     btn.type = "button";
     btn.textContent = label;
+
     Object.assign(btn.style, {
       width: `${width}px`,
       height: `${height}px`,
@@ -106,20 +338,26 @@ export function initMobileInput({
       color,
       fontSize: `${fontSize}px`,
       fontWeight,
-      boxShadow: "0 10px 28px rgba(0,0,0,0.18)",
+      boxShadow: "0 10px 24px rgba(0,0,0,0.16)",
       pointerEvents: "auto",
       touchAction: "manipulation",
       userSelect: "none",
       WebkitUserSelect: "none",
       cursor: "pointer",
+      display: "inline-flex",
+      alignItems: "center",
+      justifyContent: "center",
+      padding: "0",
     });
 
     btn.addEventListener("pointerdown", () => {
       btn.style.transform = "scale(0.96)";
     });
+
     const reset = () => {
       btn.style.transform = "scale(1)";
     };
+
     btn.addEventListener("pointerup", reset);
     btn.addEventListener("pointercancel", reset);
     btn.addEventListener("pointerleave", reset);
@@ -127,152 +365,34 @@ export function initMobileInput({
     return btn;
   }
 
-  const interactBtn = makeBtn("互動", {
-    width: 94,
-    height: 94,
-    bg: "#FD6FFF",
-    color: "#ffffff",
-    fontSize: 20,
-  });
-
   const cancelBtn = makeBtn("返回", {
-    width: 78,
-    height: 78,
+    width: 56,
+    height: 56,
     bg: "#ffffff",
     color: "#1248FF",
+    fontSize: 15,
+  });
+
+  const interactBtn = makeBtn("互動", {
+    width: 72,
+    height: 72,
+    bg: "#FD6FFF",
+    color: "#ffffff",
     fontSize: 18,
   });
 
   const confirmBtn = makeBtn("確認", {
-    width: 78,
-    height: 78,
+    width: 56,
+    height: 56,
     bg: "#ffffff",
     color: "#1248FF",
-    fontSize: 18,
+    fontSize: 15,
   });
 
-  rowBottom.appendChild(cancelBtn);
-  rowBottom.appendChild(interactBtn);
-  rowTop.appendChild(confirmBtn);
+  btnWrap.appendChild(cancelBtn);
+  btnWrap.appendChild(interactBtn);
+  topBtnWrap.appendChild(confirmBtn);
 
-  // ---------- helpers ----------
-  function resetMoveKeys() {
-    keys.forward = false;
-    keys.back = false;
-    keys.left = false;
-    keys.right = false;
-    if ("boost" in keys) keys.boost = false;
-  }
-
-  function isActuallyMobile() {
-    return window.matchMedia("(pointer: coarse)").matches;
-  }
-
-  function shouldShow() {
-    return isActuallyMobile();
-  }
-
-  function updateVisibility() {
-    root.style.display = shouldShow() ? "block" : "none";
-
-    const uiOpen = !!isUiOpen();
-    confirmBtn.style.display = uiOpen ? "inline-flex" : "none";
-  }
-
-  // ---------- joystick logic ----------
-  let stickPointerId = null;
-  let stickActive = false;
-  const stickState = {
-    centerX: 0,
-    centerY: 0,
-    radius: 54,
-    x: 0,
-    y: 0,
-  };
-
-  function refreshStickGeometry() {
-    const rect = stickWrap.getBoundingClientRect();
-    stickState.centerX = rect.left + rect.width / 2;
-    stickState.centerY = rect.top + rect.height / 2;
-  }
-
-  function applyStickVisual(nx, ny) {
-    const px = nx * stickState.radius;
-    const py = ny * stickState.radius;
-    stickKnob.style.transform = `translate(calc(-50% + ${px}px), calc(-50% + ${py}px))`;
-  }
-
-  function applyStickToKeys(nx, ny) {
-    const DEAD = 0.22;
-
-    keys.left = nx < -DEAD;
-    keys.right = nx > DEAD;
-    keys.forward = ny < -DEAD;
-    keys.back = ny > DEAD;
-  }
-
-  function updateStickFromPointer(clientX, clientY) {
-    const dx = clientX - stickState.centerX;
-    const dy = clientY - stickState.centerY;
-
-    const dist = Math.hypot(dx, dy) || 1;
-    const max = stickState.radius;
-    const clamped = Math.min(dist, max);
-
-    const nx = (dx / dist) * (clamped / max);
-    const ny = (dy / dist) * (clamped / max);
-
-    stickState.x = nx;
-    stickState.y = ny;
-
-    applyStickVisual(nx, ny);
-    applyStickToKeys(nx, ny);
-  }
-
-  function resetStick() {
-    stickPointerId = null;
-    stickActive = false;
-    stickState.x = 0;
-    stickState.y = 0;
-    applyStickVisual(0, 0);
-    resetMoveKeys();
-  }
-
-  stickWrap.addEventListener("pointerdown", (e) => {
-    if (!shouldShow()) return;
-    if (stickPointerId !== null) return;
-
-    refreshStickGeometry();
-    stickPointerId = e.pointerId;
-    stickActive = true;
-    stickWrap.setPointerCapture?.(e.pointerId);
-    updateStickFromPointer(e.clientX, e.clientY);
-    e.preventDefault();
-    e.stopPropagation();
-  });
-
-  stickWrap.addEventListener("pointermove", (e) => {
-    if (!stickActive) return;
-    if (e.pointerId !== stickPointerId) return;
-    updateStickFromPointer(e.clientX, e.clientY);
-    e.preventDefault();
-    e.stopPropagation();
-  });
-
-  function endStick(e) {
-    if (e.pointerId !== stickPointerId) return;
-    resetStick();
-    e.preventDefault();
-    e.stopPropagation();
-  }
-
-  stickWrap.addEventListener("pointerup", endStick);
-  stickWrap.addEventListener("pointercancel", endStick);
-  stickWrap.addEventListener("lostpointercapture", () => {
-    resetStick();
-  });
-
-  // ---------- buttons ----------
   function safeEnqueue(type) {
     enqueueAction(type);
     updateVisibility();
@@ -296,45 +416,49 @@ export function initMobileInput({
     safeEnqueue(ACTION.CONFIRM);
   });
 
-  // optional: double tap joystick area to jump
-  stickWrap.addEventListener("dblclick", (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    safeEnqueue(ACTION.JUMP);
-  });
+  // =========================
+  // visibility / lifecycle
+  // =========================
+  function updateVisibility() {
+    root.style.display = shouldShow() ? "block" : "none";
 
-  // ---------- prevent accidental page gestures ----------
-  root.addEventListener("touchmove", (e) => {
-    if (shouldShow()) e.preventDefault();
-  }, { passive: false });
+    const uiOpen = !!isUiOpen();
+    confirmBtn.style.display = uiOpen ? "inline-flex" : "none";
+  }
+
+  function onResize() {
+    moveStick.refreshGeometry();
+    lookStick.refreshGeometry();
+    updateVisibility();
+  }
+
+  root.addEventListener(
+    "touchmove",
+    (e) => {
+      if (shouldShow()) e.preventDefault();
+    },
+    { passive: false }
+  );
 
   root.addEventListener("contextmenu", (e) => {
     e.preventDefault();
   });
 
-  // ---------- lifecycle ----------
-  function onResize() {
-    refreshStickGeometry();
-    updateVisibility();
-  }
-
   window.addEventListener("resize", onResize);
   window.addEventListener("orientationchange", onResize);
 
   mount.appendChild(root);
-  refreshStickGeometry();
-  updateVisibility();
+  onResize();
 
-  const api = {
+  return {
     root,
     update: updateVisibility,
     destroy() {
-      resetStick();
+      resetMoveStickAndKeys();
+      resetLookStick();
       window.removeEventListener("resize", onResize);
       window.removeEventListener("orientationchange", onResize);
       root.remove();
     },
   };
-
-  return api;
 }
