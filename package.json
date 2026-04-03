@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "dev:client": "vite --port 5175 --strictPort",
-    "dev:server":"node server.js",
+    "dev:server": "node server.js",
     "server": "node server.js",
     "kill:ports": "kill -9 $(lsof -ti:5175) 2>/dev/null; kill -9 $(lsof -ti:3001) 2>/dev/null; true",
     "build": "vite build",
@@ -16,6 +16,7 @@
     "vite": "^7.2.4"
   },
   "dependencies": {
+    "better-sqlite3": "^12.8.0",
     "express": "^5.2.1",
     "socket.io": "^4.8.3",
     "socket.io-client": "^4.8.3",

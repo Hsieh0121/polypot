@@ -35,3 +35,7 @@ canvas {
   pointer-events: none;
   white-space: pre;
 }
+@font-face {
+  font-family: "zpix";
+  src: url("/zpix.ttf") format("truetype");
+}

@@ -1,6 +1,13 @@
 import express from "express";
 import http from "http";
 import { Server } from "socket.io";
+import {
+  getProfileBySerial,
+  saveProfile,
+  listAllPots,
+  saveTablePot,
+  getNextSerialNumberFallback,
+} from "./db.js";
 
 console.log("[server] boot", new Date().toISOString());
 
@@ -25,13 +32,27 @@ const io = new Server(server, {
 app.get("/health", (_, res) => res.send("ok"));
 
 const room = {
-  players: new Map(),            // socket.id -> player
-  seats: new Map(),              // seatKey -> { seatKey, occupiedBy }
-  profilesBySerial: new Map(),   // serial -> profile
-  serialBySocketId: new Map(),   // socket.id -> serial
+  players: new Map(),          // socket.id -> player
+  seats: new Map(),            // seatKey -> { seatKey, occupiedBy }
+  serialBySocketId: new Map(), // socket.id -> serial
+  tablePots: new Map(),        // tableId -> saved pot state (memory cache)
   nextSerialId: 1,
 };
 
+// -------------------------
+// bootstrap DB cache
+// -------------------------
+for (const pot of listAllPots()) {
+  room.tablePots.set(pot.tableId, pot);
+}
+room.nextSerialId = getNextSerialNumberFallback();
+
+console.log("[server] loaded pots from DB:", room.tablePots.size);
+console.log("[server] nextSerialId:", room.nextSerialId);
+
+// -------------------------
+// helpers
+// -------------------------
 function pad(num, len) {
   return String(num).padStart(len, "0");
 }
@@ -64,59 +85,89 @@ function getSeat(seatKey) {
 
 function sanitizeProfileInput(input = {}) {
   return {
+    serial: typeof input.serial === "string" ? input.serial.trim() : "",
     name: typeof input.name === "string" ? input.name.trim().slice(0, 40) : "",
     message: typeof input.message === "string" ? input.message.slice(0, 300) : "",
     avatarPhoto: typeof input.avatarPhoto === "string" ? input.avatarPhoto : null,
     signature: typeof input.signature === "string" ? input.signature : null,
+    assignedTableId:
+      typeof input.assignedTableId === "string" ? input.assignedTableId : null,
   };
 }
 
-function buildRegisteredProfile(input = {}) {
+function buildNewProfile(input = {}) {
   const clean = sanitizeProfileInput(input);
-  const { id, serial } = allocateSerial();
+  const { serial } = allocateSerial();
   const assignedTableId = mapSerialToTable(serial);
 
   return {
-    id,
     serial,
     assignedTableId,
     name: clean.name || "anon",
     message: clean.message || "",
     avatarPhoto: clean.avatarPhoto || null,
     signature: clean.signature || null,
-    createdAt: Date.now(),
   };
 }
 
-function getRegisteredProfileForSocket(socketId, fallbackProfile = {}) {
+function mergeProfile(existing, input = {}) {
+  const clean = sanitizeProfileInput(input);
+
+  return {
+    serial: existing.serial,
+    assignedTableId:
+      clean.assignedTableId ?? existing.assignedTableId ?? mapSerialToTable(existing.serial),
+    name: clean.name || existing.name || "anon",
+    message: clean.message ?? existing.message ?? "",
+    avatarPhoto: clean.avatarPhoto ?? existing.avatarPhoto ?? null,
+    signature: clean.signature ?? existing.signature ?? null,
+  };
+}
+
+function getSocketProfile(socketId) {
   const serial = room.serialBySocketId.get(socketId);
   if (!serial) return null;
+  return getProfileBySerial(serial);
+}
 
-  const registered = room.profilesBySerial.get(serial);
-  if (!registered) return null;
-
-  // 允許前端傳一些非關鍵欄位，但關鍵身份欄位一律以 server 為準
+function sanitizePotPayload(input = {}) {
   return {
-    ...registered,
-    message:
-      typeof fallbackProfile.message === "string"
-        ? fallbackProfile.message
-        : registered.message,
-    avatarPhoto:
-      typeof fallbackProfile.avatarPhoto === "string"
-        ? fallbackProfile.avatarPhoto
-        : registered.avatarPhoto,
-    signature:
-      typeof fallbackProfile.signature === "string"
-        ? fallbackProfile.signature
-        : registered.signature,
+    tableId: typeof input.tableId === "string" ? input.tableId : null,
+    tableState:
+      input.tableState && typeof input.tableState === "object"
+        ? input.tableState
+        : null,
+    finalPotTextureUrl:
+      typeof input.finalPotTextureUrl === "string"
+        ? input.finalPotTextureUrl
+        : null,
+    chairCount: Number.isFinite(Number(input.chairCount))
+      ? Number(input.chairCount)
+      : 1,
+    chairColor:
+      typeof input.chairColor === "string"
+        ? input.chairColor
+        : "#e8f25a",
   };
 }
 
+function buildSnapshot() {
+  return {
+    roomId: "lobby",
+    players: Array.from(room.players.values()),
+    seats: Array.from(room.seats.values()),
+    pots: Array.from(room.tablePots.values()),
+  };
+}
+
+// -------------------------
+// socket
+// -------------------------
 io.on("connection", (socket) => {
   console.log("socket connected:", socket.id);
 
   socket.onAny((event, ...args) => {
+    if (event === "player:move" || event === "ping") return;
     console.log("[onAny]", event, "argsLen=", args.length);
   });
 
@@ -124,85 +175,120 @@ io.on("connection", (socket) => {
   // 1) White room: register formal identity
   // =========================
   socket.on("registerProfile", (profileInput = {}, ack) => {
-    const registeredProfile = buildRegisteredProfile(profileInput);
+    try {
+      const clean = sanitizeProfileInput(profileInput);
+      let profile = null;
 
-    room.profilesBySerial.set(registeredProfile.serial, registeredProfile);
-    room.serialBySocketId.set(socket.id, registeredProfile.serial);
+      // a. 前端如果有 serial，優先查 DB
+      if (clean.serial) {
+        const existing = getProfileBySerial(clean.serial);
+        if (existing) {
+          profile = saveProfile(mergeProfile(existing, clean));
+        }
+      }
 
-    console.log(
-      "[registerProfile]",
-      socket.id,
-      registeredProfile.name,
-      registeredProfile.serial,
-      registeredProfile.assignedTableId
-    );
+      // b. 沒查到就建立新 profile
+      if (!profile) {
+        const fresh = buildNewProfile(clean);
+        profile = saveProfile(fresh);
+      }
 
-    if (typeof ack === "function") {
-      ack({
+      room.serialBySocketId.set(socket.id, profile.serial);
+
+      console.log(
+        "[registerProfile]",
+        socket.id,
+        profile.name,
+        profile.serial,
+        profile.assignedTableId
+      );
+
+      ack?.({
         ok: true,
-        profile: registeredProfile,
+        profile,
+      });
+    } catch (err) {
+      console.error("[registerProfile] failed:", err);
+      ack?.({
+        ok: false,
+        error: "registerProfile failed",
       });
     }
   });
 
   // =========================
-  // 2) Hall: join room with server-trusted profile
+  // 2) Hall: join room with serial-first trusted profile
   // =========================
-  socket.on("join", (profile = {}, ack) => {
-    const trustedProfile = getRegisteredProfileForSocket(socket.id, profile);
+  socket.on("join", (profileInput = {}, ack) => {
+    try {
+      const clean = sanitizeProfileInput(profileInput);
+      let finalProfile = null;
 
-    // 若還沒 registerProfile，就退回最低限度暫時身份
-    const finalProfile =
-      trustedProfile ||
-      (() => {
-        const guest = buildRegisteredProfile(profile);
-        room.profilesBySerial.set(guest.serial, guest);
-        room.serialBySocketId.set(socket.id, guest.serial);
+      // a. 優先吃前端帶來的 serial
+      if (clean.serial) {
+        const existing = getProfileBySerial(clean.serial);
+        if (existing) {
+          finalProfile = saveProfile(mergeProfile(existing, clean));
+        }
+      }
+
+      // b. 如果 socket 之前 register 過，也可從 serialBySocketId 找
+      if (!finalProfile) {
+        const bySocket = getSocketProfile(socket.id);
+        if (bySocket) {
+          finalProfile = saveProfile(mergeProfile(bySocket, clean));
+        }
+      }
+
+      // c. 都沒有就 fallback 自動建新的
+      if (!finalProfile) {
+        finalProfile = saveProfile(buildNewProfile(clean));
         console.warn("[join] auto-registered fallback profile for", socket.id);
-        return guest;
-      })();
+      }
 
-    console.log(
-      "[join]",
-      socket.id,
-      finalProfile.name,
-      finalProfile.serial,
-      finalProfile.assignedTableId
-    );
+      room.serialBySocketId.set(socket.id, finalProfile.serial);
 
-    const player = {
-      id: socket.id,
-      name: finalProfile.name ?? "anon",
-      pos: { x: 0, y: 1.6, z: 0 },
-      rotY: 0,
-      profile: finalProfile,
-    };
+      console.log(
+        "[join]",
+        socket.id,
+        finalProfile.name,
+        finalProfile.serial,
+        finalProfile.assignedTableId
+      );
 
-    room.players.set(socket.id, player);
+      const player = {
+        id: socket.id,
+        name: finalProfile.name ?? "anon",
+        pos: { x: 0, y: 1.6, z: 0 },
+        rotY: 0,
+        profile: finalProfile,
+      };
 
-    if (typeof ack === "function") {
-      ack({
+      room.players.set(socket.id, player);
+
+      ack?.({
         self: {
           id: socket.id,
           profile: finalProfile,
         },
         other: Array.from(room.players.values()).filter((p) => p.id !== socket.id),
       });
+
+      socket.emit("snapshot", buildSnapshot());
+
+      socket.broadcast.emit("player:join", {
+        id: player.id,
+        pos: player.pos,
+        rotY: player.rotY,
+        profile: player.profile,
+      });
+    } catch (err) {
+      console.error("[join] failed:", err);
+      ack?.({
+        ok: false,
+        error: "join failed",
+      });
     }
-
-    socket.emit("snapshot", {
-      roomId: "lobby",
-      players: Array.from(room.players.values()),
-      seats: Array.from(room.seats.values()),
-      pots: {},
-    });
-
-    socket.broadcast.emit("player:join", {
-      id: player.id,
-      pos: player.pos,
-      rotY: player.rotY,
-      profile: player.profile,
-    });
   });
 
   socket.on("player:move", (payload) => {
@@ -217,6 +303,7 @@ io.on("connection", (socket) => {
       id: socket.id,
       pos: p.pos,
       rotY: p.rotY,
+      profile: p.profile,
     });
   });
 
@@ -257,6 +344,38 @@ io.on("connection", (socket) => {
     console.log("[seat] released", seatKey, "by", socket.id);
   });
 
+  // =========================
+  // 3) Pot state save / sync
+  // =========================
+  socket.on("pot:save", (payload = {}, ack) => {
+    try {
+      const clean = sanitizePotPayload(payload);
+
+      if (!clean.tableId) {
+        ack?.({ ok: false, error: "missing tableId" });
+        return;
+      }
+
+      const saved = saveTablePot(clean);
+
+      // memory cache 也更新，snapshot 直接用它
+      room.tablePots.set(saved.tableId, saved);
+
+      console.log("[pot:save]", saved.tableId, {
+        chairCount: saved.chairCount,
+        hasTexture: !!saved.finalPotTextureUrl,
+        initialized: !!saved.tableState?.initialized,
+      });
+
+      io.emit("pot:updated", saved);
+
+      ack?.({ ok: true, pot: saved });
+    } catch (err) {
+      console.error("[pot:save] failed:", err);
+      ack?.({ ok: false, error: "pot:save failed" });
+    }
+  });
+
   socket.on("disconnect", () => {
     room.players.delete(socket.id);
 
@@ -268,7 +387,7 @@ io.on("connection", (socket) => {
       }
     }
 
-    // 只解除 socket 與 serial 的當前綁定，不刪 profile
+    // 只解除 socket 綁定，不刪除 DB 內 profile
     room.serialBySocketId.delete(socket.id);
 
     socket.broadcast.emit("player:leave", { id: socket.id });

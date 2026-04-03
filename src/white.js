@@ -5,6 +5,15 @@ import "./style.css";
 import { depth } from "three/tsl";
 import { io } from "socket.io-client";
 
+// 全域字體改成 zpix
+const zpixStyle = document.createElement("style");
+zpixStyle.textContent = `
+  * {
+    font-family: "zpix", system-ui, -apple-system, Segoe UI, Roboto, sans-serif !important;
+  }
+`;
+document.head.appendChild(zpixStyle);
+
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0xffffff);
@@ -142,8 +151,7 @@ bubble.style.justifyContent = "center";
 bubble.style.borderRadius = "999px";
 bubble.style.background = "white";
 bubble.style.boxShadow = "0 8px 30px rgba(0,0,0,0.12)";
-bubble.style.fontFamily = "system-ui, -apple-system, Segoe UI, Roboto, sans-serif";
-bubble.style.fontSize = "16px";
+bubble.style.fontSize = "20px";
 bubble.style.fontWeight = "600";
 bubble.style.color = "#fd6fff";
 bubble.style.whiteSpace = "nowrap";
@@ -337,6 +345,7 @@ pencilImg.style.transformOrigin = "center";
 pencilBtn.appendChild(pencilImg);
 nameRow.appendChild(pencilBtn);
 
+
 const nameBubble = document.createElement("div");
 nameBubble.style.height = "55px";
 nameBubble.style.width = "240px";
@@ -346,7 +355,7 @@ nameBubble.style.boxShadow = "0 12px 30px rgba(0,0,0,0.16)";
 nameBubble.style.padding = "0 22px";     
 nameBubble.style.display = "none";
 nameBubble.style.alignItems = "center";
-nameBubble.style.justifyContent = "center";
+nameBubble.style.justifyContent = "flex-start";
 nameBubble.style.gap = "10px";
 nameBubble.style.transformOrigin = "right center";
 nameBubble.style.opacity = "0";
@@ -371,8 +380,20 @@ nameInput.style.pointerEvents = "auto";
 nameBubble.appendChild(nameInput);
 
 const nameOk = makePillButton("確定");
-nameOk.style.padding = "8px 14px";
-nameOk.style.display = "none";
+nameOk.style.width = "60px";
+nameOk.style.height = "55px";
+nameOk.style.padding = "0 18px";
+nameOk.style.display = "inline-flex";
+nameOk.style.alignItems = "center";
+nameOk.style.justifyContent = "center";
+nameOk.style.flexShrink = "0";
+nameOk.style.lineHeight = "40px";
+nameOk.style.whiteSpace = "nowrap";
+nameOk.style.fontSize = "16px";
+nameOk.style.position = "absolute";
+nameOk.style.right = "-6px"; 
+nameOk.style.top = "0";
+nameOk.style.transform = "none";
 nameBubble.appendChild(nameOk);
 
 const kicked = document.createElement("div");
@@ -1144,6 +1165,7 @@ function npcShowBubble(text){
 }
 function npcHideAll(){
   uiActive = false;
+  nameOk.style.display = "none";
 
   clearNpcTimers();
   npcState = NPC_STATE.HIDDEN;
@@ -1245,11 +1267,14 @@ async function submitName() {
   console.log("[name submit]", name);
 
   try {
+    const existing = loadProfileLocal();
+
     const registeredProfile = await registerProfileOnServer({
+      serial: existing?.serial ?? null,   
       name,
-      message: "",
-      avatarPhoto: null,
-      signature: null,
+      message: existing?.message ?? "",
+      avatarPhoto: existing?.avatarPhoto ?? null,
+      signature: existing?.signature ?? null,
     });
 
     saveProfileLocal(registeredProfile);
@@ -1274,7 +1299,7 @@ async function submitName() {
 
 function npcOpenNameInput() {
   npcState = NPC_STATE.NAME_INPUT;
-
+  nameOk.style.display = "inline-flex";
   nameBubble.style.display = "flex";
 
   requestAnimationFrame(() => {
@@ -1333,9 +1358,9 @@ nameInput.addEventListener("keydown", (e) => {
 });
 // 這一步先做到這裡：nameOk 先不做後續（之後要存到 server 或 local storage）
 nameOk.addEventListener("click", (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    console.log("[name]", nameInput.value);
+  e.preventDefault();
+  e.stopPropagation();
+  submitName();
 });
 kickedBtn.addEventListener("click", (e) => {
     e.stopPropagation();

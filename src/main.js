@@ -4,6 +4,7 @@ import "./style.css";
 import { GLTFLoader } from "three/examples/jsm/Addons.js";
 import { PointerLockControls } from "three/examples/jsm/controls/PointerLockControls.js";
 import { createPotController } from "./pot/potControllers.js";
+import { initMobileInput } from "./Input/mobileInput.js";
 
 
 const scene = new THREE.Scene();
@@ -32,7 +33,7 @@ function resize(){
 
 const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || "http://localhost:3001";
 const socket = io(SOCKET_URL, { transports: ["websocket"] });
-const profile = JSON.parse(localStorage.getItem("polypot_profile") || "null") || {};
+let currentProfile = JSON.parse(localStorage.getItem("polypot_profile") || "null") || {};
 const remotePlayers = new Map();
 let localPlayerId = null;
 
@@ -41,12 +42,13 @@ function mapSerialToTable(serial, tableCount = 8) {
   if (!Number.isFinite(num) || num <= 0) return null;
   return `table${((num - 1) % tableCount) + 1}`;
 }
+let hallSceneReady = false;
+let pendingSnapshotPots = [];
+let assignedTableId =
+  currentProfile?.assignedTableId ??
+  mapSerialToTable(currentProfile?.serial);
 
-const assignedTableId =
-  profile?.assignedTableId ??
-  mapSerialToTable(profile?.serial);
-
-console.log("[hall] profile =", profile);
+console.log("[hall] profile =", currentProfile);
 console.log("[hall] assignedTableId =", assignedTableId);
 
 let net = {
@@ -158,6 +160,7 @@ function createEmptyTablePotState(tableId) {
   };
 }
 
+
 socket.on("connect", () => {
   net.connected = true;
   localPlayerId = socket.id;
@@ -165,8 +168,26 @@ socket.on("connect", () => {
   console.log("[net] connected");
   console.log("[local] localPlayerId =", localPlayerId);
 
-  socket.emit("join", profile, ({ self, other } = {}) => {
+  if (!currentProfile?.serial) {
+    console.warn("[hall] missing profile.serial, redirect to white room");
+    window.location.href = "/white.html";
+    return;
+  }
+
+  socket.emit("join", currentProfile, ({ self, other } = {}) => {
     if (self?.id) localPlayerId = self.id;
+
+    if (self?.profile) {
+      currentProfile = self.profile;
+      localStorage.setItem("polypot_profile", JSON.stringify(currentProfile));
+
+      assignedTableId =
+        currentProfile?.assignedTableId ??
+        mapSerialToTable(currentProfile?.serial);
+
+      console.log("[hall] profile refreshed from server]", currentProfile);
+      console.log("[hall] assignedTableId refreshed]", assignedTableId);
+    }
 
     console.log("[join ack]", { self, other });
 
@@ -189,11 +210,46 @@ socket.on("disconnect", (reason) => {
 
 socket.on("snapshot", (snap) => {
   console.log("[socket] snapshot", snap);
-  for (const s of snap.seats) {
+
+  const players = Array.isArray(snap?.players) ? snap.players : [];
+  const seats = Array.isArray(snap?.seats) ? snap.seats : [];
+  const pots = Array.isArray(snap?.pots) ? snap.pots : [];
+
+  // --- players ---
+  for (const p of players) {
+    if (!p?.id || p.id === localPlayerId) continue;
+
+    let obj = remotePlayers.get(p.id);
+
+    if (!obj) {
+      spawnRemote(p);
+      obj = remotePlayers.get(p.id);
+    }
+
+    if (obj && p.pos) {
+      obj.visible = true;
+      obj.position.set(p.pos.x, p.pos.y, p.pos.z);
+      obj.rotation.y = p.rotY || 0;
+    }
+  }
+
+  // --- seats ---
+  for (const s of seats) {
     const localseat = seatsState.get(s.seatKey);
     if (localseat) {
       localseat.occupiedBy = s.occupiedBy ?? null;
     }
+  }
+
+  // --- pots ---
+  if (!hallSceneReady) {
+    pendingSnapshotPots = pots;
+    console.log("[snapshot] pots buffered until hallSceneReady", pots.length);
+    return;
+  }
+
+  for (const pot of pots) {
+    applyPotStateToTable(pot);
   }
 });
 socket.on("seatUpdated", (s) => {
@@ -221,7 +277,6 @@ socket.on("seatUpdated", (s) => {
 
     seated = null;
     state = FSM.FREE_ROAM;
-    camera.position.y = EYE_HEIGHT_STAND;
     console.log("[unseat local snap]");
 
     if (hallPostPotShown && prevTableId === assignedTableId) {
@@ -249,10 +304,30 @@ function makeRemoteAvatar(player) {
   const group = new THREE.Group();
 
   loader.load("/avatar.glb", (gltf) => {
+    console.log("[avatar glb loaded]", player.id);
     const root = gltf.scene;
     group.add(root);
 
-    // 找 mesh（跟 white 一樣）
+    // 尺寸校正
+    const box = new THREE.Box3().setFromObject(root);
+    const size = new THREE.Vector3();
+    const center = new THREE.Vector3();
+    box.getSize(size);
+    box.getCenter(center);
+
+    root.position.sub(center);
+
+    const maxAxis = Math.max(size.x, size.y, size.z) || 1;
+    const scale = 4.8 / maxAxis;
+    root.scale.setScalar(scale);
+
+    const box2 = new THREE.Box3().setFromObject(root);
+    root.position.y -= box2.min.y;
+
+    const REMOTE_EYE_TO_BODY = 0;
+    root.position.y -= REMOTE_EYE_TO_BODY;
+
+    // 找目標 mesh
     let targetMesh = null;
     root.traverse((o) => {
       if (o.isMesh && o.name === "userModel002") {
@@ -260,15 +335,41 @@ function makeRemoteAvatar(player) {
       }
     });
 
-    if (player.profile?.avatarPhoto && targetMesh) {
-      const tex = new THREE.TextureLoader().load(player.profile.avatarPhoto);
-      tex.colorSpace = THREE.SRGBColorSpace;
-      tex.flipY = false;
+    console.log("[targetMesh found]", player.id, targetMesh?.name);
 
-      const mat = targetMesh.material.clone();
-      mat.map = tex;
-      targetMesh.material = mat;
+    if (player.profile?.avatarPhoto && targetMesh) {
+      console.log("[avatar] applying texture", player.id, player.profile.avatarPhoto.slice(0, 60));
+      const img = new Image();
+      img.onload = () => {
+        console.log("[avatar] texture onload OK", player.id);
+        const tex = new THREE.Texture(img);
+        tex.colorSpace = THREE.SRGBColorSpace;
+        tex.flipY = false;
+        tex.needsUpdate = true;
+
+        // 直接換成乾淨材質，不沿用原本材質
+        targetMesh.material = new THREE.MeshBasicMaterial({
+          map: tex,
+          transparent: true,
+          side: THREE.DoubleSide,
+        });
+
+        targetMesh.material.needsUpdate = true;
+
+        console.log("[remote avatar texture applied]", player.id);
+      };
+      img.onerror = (e) => {
+      console.error("[avatar] texture FAILED", player.id, e);
+    };
+    
+
+      img.src = player.profile.avatarPhoto;
     }
+
+    console.log("[remote avatar ready]", player.id, {
+      pos: group.position.toArray(),
+      scale: root.scale.toArray(),
+    });
   });
 
   return group;
@@ -279,13 +380,20 @@ function spawnRemote(player) {
   if (remotePlayers.has(player.id)) return;
 
   const avatar = makeRemoteAvatar(player);
-  avatar.position.set(player.pos.x, player.pos.y, player.pos.z);
+
+  // 先放遠一點 / 先隱藏，避免卡在 origin 被場景吃掉
+  avatar.position.set(0, -9999, 0);
+  avatar.visible = false;
   avatar.rotation.y = player.rotY || 0;
 
   scene.add(avatar);
   remotePlayers.set(player.id, avatar);
 
-  console.log("[remote spawn]", player.id, player.profile);
+  console.log("[remote spawn]", player.id, {
+    pos: player.pos,
+    rotY: player.rotY,
+    profile: player.profile,
+  });
 }
 function despawnRemote(id) {
   const avatar = remotePlayers.get(id);
@@ -322,11 +430,34 @@ socket.on("player:leave", ({ id }) => {
   despawnRemote(id);
 });
 
-socket.on("player:move", ({ id, pos, rotY }) => {
-  const obj = remotePlayers.get(id);
+socket.on("player:move", ({ id, pos, rotY, profile }) => {
+  if (!id || id === localPlayerId) return;
+
+  let obj = remotePlayers.get(id);
+
+  if (!obj) {
+    spawnRemote({
+      id,
+      pos,
+      rotY,
+      profile: profile || {},
+    });
+    obj = remotePlayers.get(id);
+  }
+
   if (!obj) return;
+
+  obj.visible = true;
   obj.position.set(pos.x, pos.y, pos.z);
   obj.rotation.y = rotY || 0;
+
+  if (Math.random() < 0.02) {
+    console.log("[RECV pos]", id, pos);
+  }
+});
+socket.on("pot:updated", (pot) => {
+  console.log("[socket] pot:updated", pot);
+  applyPotStateToTable(pot);
 });
 
 let lastNetSend = 0;
@@ -351,18 +482,7 @@ controls.lock = () => {
 };
 
 
-const AVATAR_OFFSET = 3.0;
-const now = performance.now();
-if (now - lastNetSend > 50) {
-  lastNetSend = now;
-  socket.emit("player:move", {
-    pos: {
-      x: player.position.x,
-      y: player.position.y - AVATAR_OFFSET, // ✅ 修正
-      z: player.position.z,
-    }
-  });
-}
+
 
 socket.on("server:hello", (data) => {
   console.log("[socket] server:hello", data);
@@ -508,8 +628,8 @@ const pot = createPotController({
       return;
     }
 
-    state = FSM.SEATED;
-    console.log("[FSM] UI_OPEN -> SEATED (pot closed)");
+    console.log("[FSM] UI_OPEN -> close and unseat");
+    unseatSeat();
   },
 
   onRequestClose: () => {
@@ -526,20 +646,25 @@ const pot = createPotController({
       chairColor,
     });
 
-    if (tableId && tableState) {
-      tablePotStateMap.set(tableId, tableState);
-    }
+    const potPayload = {
+      tableId,
+      tableState,
+      finalPotTextureUrl,
+      chairCount,
+      chairColor,
+    };
 
-    if (tableId) {
-      applyChairCountToTable(tableId, chairCount, chairColor);
+    console.log("[before pot:save] connected=", socket.connected, potPayload);
 
-      const info = tableRegistry.get(tableId);
-      const potRoot = info?.potRoot ?? null;
+    // 先做本地更新
+    applyPotStateToTable(potPayload);
 
-      if (potRoot && finalPotTextureUrl) {
-        applyPotTextureToRoot(potRoot, finalPotTextureUrl);
-      }
-    }
+    // 再同步到 server
+    socket.emit("pot:save", potPayload, (res) => {
+      console.log("[pot:save ack]", res);
+    });
+
+    console.log("[after pot:save emit]");
 
     pot.close({ reason: "finalize" });
     hallPostPotShown = true;
@@ -558,7 +683,17 @@ function safeLockPointer() {
     console.warn("[pointerlock] lock failed", err);
   }
 }
+let mobileInput = null;
 
+if (window.matchMedia("(pointer: coarse)").matches) {
+  mobileInput = initMobileInput({
+    keys,
+    enqueueAction,
+    ACTION,
+    getState: () => state,
+    isUiOpen: () => (state === FSM.UI_OPEN) || pot.isOpen?.(),
+  });
+}
 
 
 const hub = document.createElement("div");
@@ -586,8 +721,9 @@ function showHUD(text) {
   hudEl.textContent = text;
   hudEl.style.display = "block";
 }
-function hideHUD(){
-  hub.style.display = "none";
+function hideHUD() {
+  if (!hudEl) return;
+  hudEl.style.display = "none";
 }
 
 
@@ -756,6 +892,33 @@ function applyPotTextureToRoot(potRoot, textureUrl) {
     console.warn("[applyPotTextureToRoot] soupTransparentMesh not found");
   }
 }
+function applyPotStateToTable(pot) {
+  if (!pot?.tableId) return;
+
+  if (pot.tableState) {
+    tablePotStateMap.set(pot.tableId, pot.tableState);
+  }
+
+  applyChairCountToTable(
+    pot.tableId,
+    pot.chairCount ?? 1,
+    pot.chairColor ?? "#e8f25a"
+  );
+
+  const info = tableRegistry.get(pot.tableId);
+  const potRoot = info?.potRoot ?? null;
+
+  if (potRoot && pot.finalPotTextureUrl) {
+    applyPotTextureToRoot(potRoot, pot.finalPotTextureUrl);
+  }
+
+  console.log("[applyPotStateToTable]", pot.tableId, {
+    hasTableState: !!pot.tableState,
+    chairCount: pot.chairCount,
+    chairColor: pot.chairColor,
+    hasTexture: !!pot.finalPotTextureUrl,
+  });
+}
 
 function createAssignedMarker() {
   const group = new THREE.Group();
@@ -922,10 +1085,12 @@ window.addEventListener("mousemove", (e) => {
   ndc.y = -(e.clientY / window.innerHeight) * 2 + 1;
 });
 
-window.addEventListener("click", async () =>{
-  try{
-  if (!pot.isOpen()) controls.lock();
-  } catch (err){}
+window.addEventListener("click", async () => {
+  try {
+    const isMobile = window.matchMedia("(pointer: coarse)").matches;
+    if (isMobile) return;
+    if (!pot.isOpen()) controls.lock();
+  } catch (err) {}
 });
 
 const keys = {
@@ -1018,8 +1183,7 @@ loader.load(
     const center = new THREE.Vector3();
     envBox.getCenter(center);
 
-    player.position.set(center.x, 1.8, center.z);
-    camera.position.set(0, 2, 0);
+    player.position.set(center.x, EYE_HEIGHT, center.z);
 
     tables.length = 0;
     tableBoxes.clear();
@@ -1299,6 +1463,20 @@ loader.load(
 
     if (hallAssignmentRevealed && assignedTableId) {
       showAssignedMarkerAtTable(assignedTableId);
+    }
+    console.log("[after env load] remote count =", remotePlayers.size);
+
+    remotePlayers.forEach((obj, id) => {
+      console.log("[remote still in scene?]", id, scene.children.includes(obj), obj.position.toArray());
+    });
+    hallSceneReady = true;
+
+    if (pendingSnapshotPots.length > 0) {
+      console.log("[hallSceneReady] flush buffered pots", pendingSnapshotPots.length);
+      for (const pot of pendingSnapshotPots) {
+        applyPotStateToTable(pot);
+      }
+      pendingSnapshotPots = [];
     }
     },
 
@@ -1816,7 +1994,7 @@ function requestSitSeat(seatLike){
 }
 function sitSeatLocalSnap(seat){
   const sid = seat.seatId ?? seat.id;
-  
+
   seated = { tableId: seat.tableId, seatId: sid };
   state = FSM.SEATED;
   activeTableId = seat.tableId;
@@ -1824,15 +2002,15 @@ function sitSeatLocalSnap(seat){
   player.position.copy(seat.pos);
   player.quaternion.copy(seat.quat);
 
-  player.position.y = player.position.y;
+  player.position.y = seat.pos.y + EYE_HEIGHT_SEATED;
   velY = 0;
   isGrounded = true;
-  camera.position.y = EYE_HEIGHT_SEATED;
+
   if (seat.tableId === assignedTableId) {
     hideAssignedMarker();
   }
 
-  console.log("[sit local snap]", seat.tableId, sid);
+  console.log("[sit local snap FIXED]", seat.tableId, sid, player.position.toArray());
 }
 function unseatSeat(){
   if (!seated) return;
@@ -2116,8 +2294,14 @@ if (state === FSM.FREE_ROAM || state === FSM.SEAT_SELECTING) {
   
 };
 const now = performance.now();
+
 if (socket.connected && now - lastNetSend > 50) {
   lastNetSend = now;
+
+  if (Math.random() < 0.02) {
+    console.log("[SEND pos]", player.position.toArray());
+  }
+
   socket.emit("player:move", {
     pos: {
       x: player.position.x,
@@ -2125,6 +2309,7 @@ if (socket.connected && now - lastNetSend > 50) {
       z: player.position.z,
     },
     rotY: getYawFromCamera(),
+    profile: currentProfile,
   });
 }
 
