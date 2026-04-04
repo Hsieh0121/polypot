@@ -642,7 +642,7 @@ ctaWrap.style.transform = "translateX(-50%)";
 ctaWrap.style.display = "none";
 ctaWrap.style.alignItems = "center";
 ctaWrap.style.justifyContent = "center";
-ctaWrap.style.pointerEvents = "none";
+ctaWrap.style.pointerEvents = "auto";
 ctaWrap.style.zIndex = "10001";
 hallUi.appendChild(ctaWrap);
 
@@ -665,19 +665,15 @@ ctaBtn.style.alignItems = "center";
 ctaBtn.style.justifyContent = "center";
 ctaBtn.style.userSelect = "none";
 
-ctaBtn.addEventListener("pointerdown", () => {
-  ctaBtn.style.transform = "scale(0.96)";
-});
 const resetCtaBtn = () => {
   ctaBtn.style.transform = "scale(1)";
 };
-ctaBtn.addEventListener("pointerup", resetCtaBtn);
-ctaBtn.addEventListener("pointercancel", resetCtaBtn);
-ctaBtn.addEventListener("pointerleave", resetCtaBtn);
 
-ctaBtn.addEventListener("click", (e) => {
+ctaBtn.addEventListener("pointerdown", (e) => {
   e.preventDefault();
   e.stopPropagation();
+
+  ctaBtn.style.transform = "scale(0.96)";
 
   if (state === FSM.SEATED && seated) {
     const tableId = seated.tableId;
@@ -698,12 +694,19 @@ ctaBtn.addEventListener("click", (e) => {
     clearMoveKeys();
     state = FSM.UI_OPEN;
 
-    console.log("[CTA] open pot directly", tableId);
+    console.log("[CTA] open pot directly", tableId, {
+      isOwnerTable,
+      tableState,
+    });
     return;
   }
 
   enqueueAction(ACTION.SELECT);
 });
+
+ctaBtn.addEventListener("pointerup", resetCtaBtn);
+ctaBtn.addEventListener("pointercancel", resetCtaBtn);
+ctaBtn.addEventListener("pointerleave", resetCtaBtn);
 
 ctaWrap.appendChild(ctaBtn);
 
@@ -723,10 +726,6 @@ function showCenterAction(label) {
 
 function hideCenterAction() {
   ctaWrap.style.display = "none";
-}
-
-function hideCenterBubble() {
-  enterPotBubble.style.display = "none";
 }
 
 function clearHallIntroTimers() {
