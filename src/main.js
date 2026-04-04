@@ -2581,7 +2581,7 @@ if (state === FSM.SEATED) {
   if (potHit) {
     const isOwnerTable = seated?.tableId === assignedTableId;
     shouldShowCTA = true;
-    nextCTALabel = isOwnerTable ? "開始製作火鍋" : "查看火鍋";
+    nextCTALabel = isOwnerTable ? "開始製作火鍋 DEBUG" : "查看火鍋";
   }
 }
 
