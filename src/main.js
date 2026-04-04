@@ -644,7 +644,7 @@ ctaWrap.style.alignItems = "center";
 ctaWrap.style.justifyContent = "center";
 ctaWrap.style.pointerEvents = "auto";
 ctaWrap.style.zIndex = "10001";
-hallUi.appendChild(ctaWrap);
+document.body.appendChild(ctaWrap);
 
 const ctaBtn = document.createElement("button");
 ctaBtn.type = "button";
@@ -673,6 +673,8 @@ ctaBtn.addEventListener("pointerdown", (e) => {
   console.log("[CTA pointerdown HIT]", {
     state,
     seated,
+    text: ctaBtn.textContent,
+    display: ctaWrap.style.display,
   });
 
   e.preventDefault();
@@ -686,6 +688,7 @@ ctaBtn.addEventListener("pointerdown", (e) => {
       tablePotStateMap.get(tableId) ?? createEmptyTablePotState(tableId);
 
     const isOwnerTable = tableId === assignedTableId;
+    console.log("[CTA] about to pot.open");
 
     controls.unlock();
 
@@ -2500,11 +2503,13 @@ if (activePotRoot) setPotHighlight(activePotRoot, shouldPotGlow);
 
 
 // ---------- hall CTA button ----------
-hideCenterAction();
+let shouldShowCTA = false;
+let nextCTALabel = "";
 
 if (state === FSM.FREE_ROAM && hallAssignmentRevealed) {
   if (isLookingAtAssignedTable()) {
-    showCenterAction("入座");
+    shouldShowCTA = true;
+    nextCTALabel = "入座";
   }
 }
 
@@ -2512,9 +2517,17 @@ if (state === FSM.SEATED) {
   const potHit = getLookAtPotHitForActiveTable();
   if (potHit) {
     const isOwnerTable = seated?.tableId === assignedTableId;
-    showCenterAction(isOwnerTable ? "開始製作火鍋" : "查看火鍋");
+    shouldShowCTA = true;
+    nextCTALabel = isOwnerTable ? "開始製作火鍋" : "查看火鍋";
   }
 }
+
+if (shouldShowCTA) {
+  showCenterAction(nextCTALabel);
+} else {
+  hideCenterAction();
+}
+
 if (assignedMarker?.visible) {
   const t = performance.now() * 0.002;
   assignedMarker.position.y = assignedMarkerBobBaseY + Math.sin(t) * 0.18;
