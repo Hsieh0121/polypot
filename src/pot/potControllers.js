@@ -17,6 +17,7 @@ export function createPotController({ appEl, onClose, onRequestClose, onFinalize
   let openFlag = false;
   let overlayEl = null;
   let panelEl = null;
+  let openedAt = 0;
 
   let activeTableId = null;
   let step = 0;
@@ -235,6 +236,7 @@ export function createPotController({ appEl, onClose, onRequestClose, onFinalize
   function open({ tableId, tableState, viewOnly: nextViewOnly = false, ownerTableId: nextOwnerTableId = null } = {}) {
     if (openFlag) return;
     openFlag = true;
+    openedAt = performance.now();
     activeTableId = tableId ?? null;
     viewOnly = !!nextViewOnly;
     ownerTableId = nextOwnerTableId ?? null;
@@ -321,7 +323,21 @@ export function createPotController({ appEl, onClose, onRequestClose, onFinalize
       inset: "0",
       background: "rgba(0,0,0,0.12)",
     });
-    dim.addEventListener("click", requestClose);
+
+    dim.addEventListener("click", (e) => {
+      const elapsed = performance.now() - openedAt;
+      console.log("[pot dim click]", { elapsed });
+
+      // 避免 mobile 同一次 tap 打開後立刻被 dim 吃掉
+      if (elapsed < 350) {
+        e.preventDefault();
+        e.stopPropagation();
+        return;
+      }
+
+      requestClose();
+    });
+
     overlayEl.appendChild(dim);
 
     panelEl = document.createElement("div");
@@ -333,6 +349,9 @@ export function createPotController({ appEl, onClose, onRequestClose, onFinalize
       borderRadius: "24px",
       boxShadow: "0 12px 40px rgba(0,0,0,0.18)",
       overflow: "hidden",
+    });
+    panelEl.addEventListener("click", (e) => {
+      e.stopPropagation();
     });
     overlayEl.appendChild(panelEl);
 

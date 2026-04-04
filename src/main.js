@@ -709,7 +709,6 @@ ctaBtn.style.userSelect = "none";
 const resetCtaBtn = () => {
   ctaBtn.style.transform = "scale(1)";
 };
-
 ctaBtn.addEventListener("pointerdown", (e) => {
   debugLog("[CTA pointerdown HIT]", {
     state,
@@ -737,6 +736,8 @@ ctaBtn.addEventListener("pointerdown", (e) => {
 
     controls.unlock();
     hideCenterAction();
+    clearMoveKeys();
+    state = FSM.UI_OPEN;
 
     pot.open({
       tableId,
@@ -745,12 +746,10 @@ ctaBtn.addEventListener("pointerdown", (e) => {
       ownerTableId: assignedTableId,
     });
 
-    clearMoveKeys();
-    state = FSM.UI_OPEN;
-
     debugLog("[CTA] open pot directly", {
       tableId,
       isOwnerTable,
+      potIsOpen: pot.isOpen?.(),
     });
     return;
   }
@@ -813,6 +812,8 @@ const pot = createPotController({
   appEl: document.querySelector("#app"),
 
   onClose: ({ reason = "normal" } = {}) => {
+    debugLog("[pot onClose]", { reason, stateBefore: state });
+
     clearMoveKeys();
 
     if (reason === "finalize") {
@@ -2302,24 +2303,23 @@ function updateSeatHover() {
 const clock = new THREE.Clock();
 const moveDir = new THREE.Vector3();
 
-function animate(){
+function animate() {
+  requestAnimationFrame(animate);
 
-    if (state === FSM.UI_OPEN) {
+  if (state === FSM.UI_OPEN) {
     renderer.render(scene, camera);
     return;
   }
-  requestAnimationFrame(animate);
-  
+
   const uiOpen = (state === FSM.UI_OPEN) || pot.isOpen?.();
 
   if (uiOpen) {
-
     while (actionQueue.length > 0) {
       const action = actionQueue.shift();
       dispatchAction(action);
     }
 
-    updateHUD(); 
+    updateHUD();
     renderer.render(scene, camera);
     return;
   }
