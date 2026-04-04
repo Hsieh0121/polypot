@@ -73,7 +73,6 @@ const ACTION = {
 const actionQueue = [];
 
 function enqueueAction(type, payload = null) {
-  debugLog("[enqueueAction]", { type, state });
   actionQueue.push({
     type,
     payload,
@@ -590,45 +589,7 @@ hallUi.style.pointerEvents = "none";
 hallUi.style.zIndex = "10000";
 document.body.appendChild(hallUi);
 
-const mobileDebug = document.createElement("div");
-mobileDebug.style.position = "fixed";
-mobileDebug.style.left = "12px";
-mobileDebug.style.top = "12px";
-mobileDebug.style.width = "min(88vw, 360px)";
-mobileDebug.style.maxHeight = "38vh";
-mobileDebug.style.overflow = "auto";
-mobileDebug.style.zIndex = "30000";
-mobileDebug.style.background = "rgba(0,0,0,0.72)";
-mobileDebug.style.color = "#00ff88";
-mobileDebug.style.fontFamily = "monospace";
-mobileDebug.style.fontSize = "11px";
-mobileDebug.style.lineHeight = "1.35";
-mobileDebug.style.padding = "8px 10px";
-mobileDebug.style.borderRadius = "10px";
-mobileDebug.style.whiteSpace = "pre-wrap";
-mobileDebug.style.pointerEvents = "none";
-mobileDebug.style.display = IS_MOBILE ? "block" : "none";
-document.body.appendChild(mobileDebug);
 
-function debugLog(...args) {
-  const line = args
-    .map((v) => {
-      if (typeof v === "string") return v;
-      try {
-        return JSON.stringify(v);
-      } catch {
-        return String(v);
-      }
-    })
-    .join(" ");
-
-  console.log(...args);
-
-  if (!IS_MOBILE) return;
-  const prev = mobileDebug.textContent ? mobileDebug.textContent.split("\n") : [];
-  prev.push(line);
-  mobileDebug.textContent = prev.slice(-12).join("\n");
-}
 
 // left announcement
 const announcementWrap = document.createElement("div");
@@ -710,13 +671,6 @@ const resetCtaBtn = () => {
   ctaBtn.style.transform = "scale(1)";
 };
 ctaBtn.addEventListener("pointerdown", (e) => {
-  debugLog("[CTA pointerdown HIT]", {
-    state,
-    seated,
-    text: ctaBtn.textContent,
-    display: ctaWrap.style.display,
-  });
-
   e.preventDefault();
   e.stopPropagation();
 
@@ -728,14 +682,6 @@ ctaBtn.addEventListener("pointerdown", (e) => {
       tablePotStateMap.get(tableId) ?? createEmptyTablePotState(tableId);
 
     const isOwnerTable = tableId === assignedTableId;
-
-    debugLog("[CTA] about to open CTA block", {
-      tableId,
-      isOwnerTable,
-      isMobile: IS_MOBILE,
-      isLocked: controls?.isLocked,
-    });
-
     const mobilePotDebug = IS_MOBILE;
 
     try {
@@ -754,23 +700,13 @@ ctaBtn.addEventListener("pointerdown", (e) => {
         ownerTableId: assignedTableId,
         mobileDebug: mobilePotDebug,
       });
-
-      debugLog("[CTA] open pot directly", {
-        tableId,
-        isOwnerTable,
-        potIsOpen: pot.isOpen?.(),
-        mobilePotDebug,
-      });
     } catch (err) {
-      debugLog("[CTA] CTA block ERROR", {
-        message: err?.message,
-        stack: err?.stack,
-      });
+      console.error("[CTA] open failed", err);
+      state = FSM.SEATED;
     }
     return;
   }
 
-  debugLog("[CTA] fallback enqueue SELECT");
   enqueueAction(ACTION.SELECT);
 });
 
@@ -828,16 +764,12 @@ const pot = createPotController({
   appEl: document.querySelector("#app"),
 
   onClose: ({ reason = "normal" } = {}) => {
-    debugLog("[pot onClose]", { reason, stateBefore: state });
-
     clearMoveKeys();
 
     if (reason === "finalize") {
-      console.log("[FSM] UI_OPEN -> finalize flow");
       return;
     }
 
-    console.log("[FSM] UI_OPEN -> close and unseat");
     unseatSeat();
   },
 
@@ -1966,7 +1898,6 @@ function dispatchAction(action) {
       if (type === ACTION.SELECT) {
         const potHit = getLookAtPotHitForActiveTable();
         if (!potHit) {
-          debugLog("[SEATED] SELECT but not looking at pot");
           return;
         }
 
@@ -2586,7 +2517,7 @@ if (state === FSM.SEATED) {
   if (potHit) {
     const isOwnerTable = seated?.tableId === assignedTableId;
     shouldShowCTA = true;
-    nextCTALabel = isOwnerTable ? "開始製作火鍋 DEBUG" : "查看火鍋";
+    nextCTALabel = isOwnerTable ? "開始製作火鍋" : "查看火鍋";
   }
 }
 
