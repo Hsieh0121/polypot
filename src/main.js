@@ -73,6 +73,7 @@ const ACTION = {
 const actionQueue = [];
 
 function enqueueAction(type, payload = null) {
+  debugLog("[enqueueAction]", { type, state });
   actionQueue.push({
     type,
     payload,
@@ -589,6 +590,46 @@ hallUi.style.pointerEvents = "none";
 hallUi.style.zIndex = "10000";
 document.body.appendChild(hallUi);
 
+const mobileDebug = document.createElement("div");
+mobileDebug.style.position = "fixed";
+mobileDebug.style.left = "12px";
+mobileDebug.style.top = "12px";
+mobileDebug.style.width = "min(88vw, 360px)";
+mobileDebug.style.maxHeight = "38vh";
+mobileDebug.style.overflow = "auto";
+mobileDebug.style.zIndex = "30000";
+mobileDebug.style.background = "rgba(0,0,0,0.72)";
+mobileDebug.style.color = "#00ff88";
+mobileDebug.style.fontFamily = "monospace";
+mobileDebug.style.fontSize = "11px";
+mobileDebug.style.lineHeight = "1.35";
+mobileDebug.style.padding = "8px 10px";
+mobileDebug.style.borderRadius = "10px";
+mobileDebug.style.whiteSpace = "pre-wrap";
+mobileDebug.style.pointerEvents = "none";
+mobileDebug.style.display = IS_MOBILE ? "block" : "none";
+document.body.appendChild(mobileDebug);
+
+function debugLog(...args) {
+  const line = args
+    .map((v) => {
+      if (typeof v === "string") return v;
+      try {
+        return JSON.stringify(v);
+      } catch {
+        return String(v);
+      }
+    })
+    .join(" ");
+
+  console.log(...args);
+
+  if (!IS_MOBILE) return;
+  const prev = mobileDebug.textContent ? mobileDebug.textContent.split("\n") : [];
+  prev.push(line);
+  mobileDebug.textContent = prev.slice(-12).join("\n");
+}
+
 // left announcement
 const announcementWrap = document.createElement("div");
 announcementWrap.style.position = "fixed";
@@ -670,7 +711,7 @@ const resetCtaBtn = () => {
 };
 
 ctaBtn.addEventListener("pointerdown", (e) => {
-  console.log("[CTA pointerdown HIT]", {
+  debugLog("[CTA pointerdown HIT]", {
     state,
     seated,
     text: ctaBtn.textContent,
@@ -688,7 +729,11 @@ ctaBtn.addEventListener("pointerdown", (e) => {
       tablePotStateMap.get(tableId) ?? createEmptyTablePotState(tableId);
 
     const isOwnerTable = tableId === assignedTableId;
-    console.log("[CTA] about to pot.open");
+
+    debugLog("[CTA] about to pot.open", {
+      tableId,
+      isOwnerTable,
+    });
 
     controls.unlock();
 
@@ -702,13 +747,14 @@ ctaBtn.addEventListener("pointerdown", (e) => {
     clearMoveKeys();
     state = FSM.UI_OPEN;
 
-    console.log("[CTA] open pot directly", tableId, {
+    debugLog("[CTA] open pot directly", {
+      tableId,
       isOwnerTable,
-      tableState,
     });
     return;
   }
 
+  debugLog("[CTA] fallback enqueue SELECT");
   enqueueAction(ACTION.SELECT);
 });
 
@@ -1902,7 +1948,7 @@ function dispatchAction(action) {
       if (type === ACTION.SELECT) {
         const potHit = getLookAtPotHitForActiveTable();
         if (!potHit) {
-          console.log("[SEATED] SELECT but not looking at pot");
+          debugLog("[SEATED] SELECT but not looking at pot");
           return;
         }
 
