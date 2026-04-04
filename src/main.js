@@ -678,6 +678,30 @@ ctaBtn.addEventListener("pointerleave", resetCtaBtn);
 ctaBtn.addEventListener("click", (e) => {
   e.preventDefault();
   e.stopPropagation();
+
+  if (state === FSM.SEATED && seated) {
+    const tableId = seated.tableId;
+    const tableState =
+      tablePotStateMap.get(tableId) ?? createEmptyTablePotState(tableId);
+
+    const isOwnerTable = tableId === assignedTableId;
+
+    controls.unlock();
+
+    pot.open({
+      tableId,
+      tableState,
+      viewOnly: !isOwnerTable,
+      ownerTableId: assignedTableId,
+    });
+
+    clearMoveKeys();
+    state = FSM.UI_OPEN;
+
+    console.log("[CTA] open pot directly", tableId);
+    return;
+  }
+
   enqueueAction(ACTION.SELECT);
 });
 
