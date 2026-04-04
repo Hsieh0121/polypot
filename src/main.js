@@ -739,18 +739,29 @@ ctaBtn.addEventListener("pointerdown", (e) => {
     clearMoveKeys();
     state = FSM.UI_OPEN;
 
-    pot.open({
-      tableId,
-      tableState,
-      viewOnly: !isOwnerTable,
-      ownerTableId: assignedTableId,
-    });
+    const mobilePotDebug = IS_MOBILE;
 
-    debugLog("[CTA] open pot directly", {
-      tableId,
-      isOwnerTable,
-      potIsOpen: pot.isOpen?.(),
-    });
+    try {
+      pot.open({
+        tableId,
+        tableState,
+        viewOnly: !isOwnerTable,
+        ownerTableId: assignedTableId,
+        mobileDebug: mobilePotDebug,
+      });
+
+      debugLog("[CTA] open pot directly", {
+        tableId,
+        isOwnerTable,
+        potIsOpen: pot.isOpen?.(),
+        mobilePotDebug,
+      });
+    } catch (err) {
+      debugLog("[CTA] pot.open ERROR", {
+        message: err?.message,
+        stack: err?.stack,
+      });
+    }
     return;
   }
 

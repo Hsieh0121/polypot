@@ -233,7 +233,13 @@ export function createPotController({ appEl, onClose, onRequestClose, onFinalize
     return openFlag;
   }
 
-  function open({ tableId, tableState, viewOnly: nextViewOnly = false, ownerTableId: nextOwnerTableId = null } = {}) {
+  function open({
+    tableId,
+    tableState,
+    viewOnly: nextViewOnly = false,
+    ownerTableId: nextOwnerTableId = null,
+    mobileDebug = false,
+  } = {}) {
     if (openFlag) return;
     openFlag = true;
     openedAt = performance.now();
@@ -243,7 +249,9 @@ export function createPotController({ appEl, onClose, onRequestClose, onFinalize
 
     loadStateFromTableState(tableState);
 
-    if (viewOnly) {
+    if (mobileDebug) {
+      step = 0;
+    } else if (viewOnly) {
       step = 4;
     } else {
       step = currentTableState?.initialized ? 4 : 0;
