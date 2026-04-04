@@ -736,6 +736,7 @@ ctaBtn.addEventListener("pointerdown", (e) => {
     });
 
     controls.unlock();
+    hideCenterAction();
 
     pot.open({
       tableId,
@@ -2302,6 +2303,11 @@ const clock = new THREE.Clock();
 const moveDir = new THREE.Vector3();
 
 function animate(){
+
+    if (state === FSM.UI_OPEN) {
+    renderer.render(scene, camera);
+    return;
+  }
   requestAnimationFrame(animate);
   
   const uiOpen = (state === FSM.UI_OPEN) || pot.isOpen?.();
