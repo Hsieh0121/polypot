@@ -729,19 +729,24 @@ ctaBtn.addEventListener("pointerdown", (e) => {
 
     const isOwnerTable = tableId === assignedTableId;
 
-    debugLog("[CTA] about to pot.open", {
+    debugLog("[CTA] about to open CTA block", {
       tableId,
       isOwnerTable,
+      isMobile: IS_MOBILE,
+      isLocked: controls?.isLocked,
     });
-
-    controls.unlock();
-    hideCenterAction();
-    clearMoveKeys();
-    state = FSM.UI_OPEN;
 
     const mobilePotDebug = IS_MOBILE;
 
     try {
+      if (!IS_MOBILE && controls?.isLocked) {
+        controls.unlock();
+      }
+
+      hideCenterAction();
+      clearMoveKeys();
+      state = FSM.UI_OPEN;
+
       pot.open({
         tableId,
         tableState,
@@ -757,7 +762,7 @@ ctaBtn.addEventListener("pointerdown", (e) => {
         mobilePotDebug,
       });
     } catch (err) {
-      debugLog("[CTA] pot.open ERROR", {
+      debugLog("[CTA] CTA block ERROR", {
         message: err?.message,
         stack: err?.stack,
       });
