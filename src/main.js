@@ -670,6 +670,11 @@ const resetCtaBtn = () => {
 };
 
 ctaBtn.addEventListener("pointerdown", (e) => {
+  console.log("[CTA pointerdown HIT]", {
+    state,
+    seated,
+  });
+
   e.preventDefault();
   e.stopPropagation();
 

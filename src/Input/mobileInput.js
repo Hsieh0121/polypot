@@ -385,6 +385,7 @@ export function initMobileInput({
   root.appendChild(interactBtn);
   root.appendChild(cancelBtn);
   root.appendChild(confirmBtn);
+  interactBtn.style.display = "none";
 
   function safeEnqueue(type) {
     enqueueAction(type);
@@ -394,7 +395,7 @@ export function initMobileInput({
   interactBtn.addEventListener("click", (e) => {
     e.preventDefault();
     e.stopPropagation();
-    safeEnqueue(ACTION.SELECT);
+    console.log("[mobileInput] interactBtn disabled");
   });
 
   cancelBtn.addEventListener("click", (e) => {
@@ -458,8 +459,8 @@ export function initMobileInput({
     update: updateVisibility,
 
     // 之後 hall 若要情境式顯示互動鍵，可以直接 call 這個
-    setInteractVisible(visible) {
-      interactBtn.style.display = visible && shouldShow() ? "inline-flex" : "none";
+    setInteractVisible() {
+      interactBtn.style.display = "none";
     },
 
     destroy() {
