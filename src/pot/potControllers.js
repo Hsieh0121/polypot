@@ -18,6 +18,7 @@ export function createPotController({ appEl, onClose, onRequestClose, onFinalize
   let overlayEl = null;
   let panelEl = null;
   let openedAt = 0;
+  let scaleWrapEl = null;
 
   let activeTableId = null;
   let step = 0;
@@ -281,6 +282,9 @@ export function createPotController({ appEl, onClose, onRequestClose, onFinalize
     if (overlayEl?.parentNode) overlayEl.parentNode.removeChild(overlayEl);
     overlayEl = null;
     panelEl = null;
+    scaleWrapEl = null;
+
+    window.removeEventListener("resize", applyPanelScale);
 
     potCanvas = null;
     potCtx = null;
@@ -310,6 +314,26 @@ export function createPotController({ appEl, onClose, onRequestClose, onFinalize
     if (typeof onClose === "function") {
       onClose({ reason });
     }
+  }
+
+  function applyPanelScale() {
+    if (!scaleWrapEl || !panelEl) return;
+
+    const DESIGN_W = UI.overlayW;   // 1308
+    const DESIGN_H = UI.overlayH;   // 643
+    const PADDING_X = 24;
+    const PADDING_Y = 24;
+
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+
+    const scale = Math.min(
+      (vw - PADDING_X * 2) / DESIGN_W,
+      (vh - PADDING_Y * 2) / DESIGN_H,
+      1
+    );
+
+    scaleWrapEl.style.transform = `translate(-50%, -50%) scale(${scale})`;
   }
 
   function mount() {
@@ -348,6 +372,20 @@ export function createPotController({ appEl, onClose, onRequestClose, onFinalize
 
     overlayEl.appendChild(dim);
 
+    scaleWrapEl = document.createElement("div");
+    Object.assign(scaleWrapEl.style, {
+      position: "absolute",
+      left: "50%",
+      top: "50%",
+      transform: "translate(-50%, -50%) scale(1)",
+      transformOrigin: "center center",
+      width: `${UI.overlayW}px`,
+      height: `${UI.overlayH}px`,
+      pointerEvents: "none",
+    });
+
+    overlayEl.appendChild(scaleWrapEl);
+
     panelEl = document.createElement("div");
     Object.assign(panelEl.style, {
       position: "relative",
@@ -357,11 +395,16 @@ export function createPotController({ appEl, onClose, onRequestClose, onFinalize
       borderRadius: "24px",
       boxShadow: "0 12px 40px rgba(0,0,0,0.18)",
       overflow: "hidden",
+      pointerEvents: "auto",
     });
+
     panelEl.addEventListener("click", (e) => {
       e.stopPropagation();
     });
-    overlayEl.appendChild(panelEl);
+
+    scaleWrapEl.appendChild(panelEl);
+    applyPanelScale();
+    window.addEventListener("resize", applyPanelScale);
 
     const cs = getComputedStyle(appEl);
     if (cs.position === "static") appEl.style.position = "relative";
