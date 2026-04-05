@@ -6,6 +6,11 @@ import { PointerLockControls } from "three/examples/jsm/controls/PointerLockCont
 import { createPotController } from "./pot/potControllers.js";
 import { initMobileInput } from "./Input/mobileInput.js";
 
+if (typeof document !== "undefined") {
+  const old = document.getElementById("__MOBILE_DEBUG__");
+  if (old) old.remove();
+}
+
 
 const scene = new THREE.Scene();
 
@@ -1247,7 +1252,7 @@ if (window.matchMedia("(pointer: coarse)").matches) {
 
       const dt = clock.getDelta(); // 你 main.js 已經有 clock
 
-      const SPEED = 2.2; // 可調（1.5~3）
+      const SPEED = 0.8
 
       touchLook.yaw -= nx * SPEED * dt;
       touchLook.pitch -= ny * SPEED * dt;

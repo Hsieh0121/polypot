@@ -688,6 +688,149 @@ function clearPanel() {
 
     return chip;
   }
+    function createColorPopover({
+    panelEl,
+    anchorRect,
+    initialColor = "#fd6fff",
+    onChange,
+    presetColors = ["#FD6FFF", "#1248FF", "#E8F25A", "#FFFFFF", "#000000", "#FF8A65", "#7ED957", "#B388FF"],
+  }) {
+    let open = false;
+
+    const pop = document.createElement("div");
+    Object.assign(pop.style, {
+      position: "absolute",
+      left: `${anchorRect.x + anchorRect.w + 12}px`,
+      top: `${anchorRect.y + 12}px`,
+      width: "210px",
+      background: "#1a1a1a",
+      borderRadius: "18px",
+      padding: "12px",
+      display: "none",
+      flexDirection: "column",
+      gap: "12px",
+      zIndex: "100",
+      boxShadow: "0 6px 20px rgba(0,0,0,0.28)",
+      boxSizing: "border-box",
+    });
+    panelEl.appendChild(pop);
+
+    const presetWrap = document.createElement("div");
+    Object.assign(presetWrap.style, {
+      display: "grid",
+      gridTemplateColumns: "repeat(4, 1fr)",
+      gap: "10px",
+    });
+    pop.appendChild(presetWrap);
+
+    const nativeLabel = document.createElement("div");
+    nativeLabel.textContent = "自訂顏色";
+    Object.assign(nativeLabel.style, {
+      fontFamily: '"zpix", ui-sans-serif, system-ui',
+      fontSize: "16px",
+      color: "#fff",
+      lineHeight: "1",
+    });
+    pop.appendChild(nativeLabel);
+
+    const nativeInputWrap = document.createElement("div");
+    Object.assign(nativeInputWrap.style, {
+      width: "100%",
+      height: "44px",
+      borderRadius: "999px",
+      overflow: "hidden",
+      border: "1px solid rgba(255,255,255,0.18)",
+      background: "#2a2a2a",
+    });
+    pop.appendChild(nativeInputWrap);
+
+    const nativeInput = document.createElement("input");
+    nativeInput.type = "color";
+    nativeInput.value = initialColor;
+    Object.assign(nativeInput.style, {
+      width: "100%",
+      height: "100%",
+      border: "0",
+      padding: "0",
+      background: "transparent",
+      cursor: "pointer",
+    });
+    nativeInputWrap.appendChild(nativeInput);
+
+    const swatchButtons = [];
+
+    function applyColor(nextColor) {
+      nativeInput.value = nextColor;
+      swatchButtons.forEach((btn) => {
+        const active = btn.dataset.color?.toLowerCase() === nextColor.toLowerCase();
+        btn.style.outline = active ? "3px solid #FD6FFF" : "2px solid transparent";
+      });
+      onChange?.(nextColor);
+    }
+
+    presetColors.forEach((color) => {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.dataset.color = color;
+      Object.assign(btn.style, {
+        width: "38px",
+        height: "38px",
+        borderRadius: "999px",
+        border: "0",
+        outline: "2px solid transparent",
+        background: color,
+        cursor: "pointer",
+        padding: "0",
+      });
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        applyColor(color);
+      });
+      presetWrap.appendChild(btn);
+      swatchButtons.push(btn);
+    });
+
+    nativeInput.addEventListener("input", (e) => {
+      applyColor(e.target.value);
+    });
+
+    function close() {
+      if (!open) return;
+      open = false;
+      pop.style.display = "none";
+      document.removeEventListener("pointerdown", onDocPointerDown, true);
+    }
+
+    function openPopover() {
+      if (open) return;
+      open = true;
+      pop.style.display = "flex";
+      setTimeout(() => {
+        document.addEventListener("pointerdown", onDocPointerDown, true);
+      }, 0);
+    }
+
+    function toggle() {
+      if (open) close();
+      else openPopover();
+    }
+
+    function onDocPointerDown(e) {
+      if (pop.contains(e.target)) return;
+      close();
+    }
+
+    applyColor(initialColor);
+
+    return {
+      el: pop,
+      toggle,
+      open: openPopover,
+      close,
+      setValue: applyColor,
+      isOpen: () => open,
+    };
+  }
 
   function addRoundedInput({ x, y, w, h, placeholder = "", value = "" }) {
     const input = document.createElement("input");
@@ -1001,21 +1144,34 @@ function clearPanel() {
     panelEl.appendChild(fluidMountEl);
     mountFluidEditor();
 
-    const colorBtn = addImageButton(ASSETS.colorPicker, s.colorBtn, {
-      onClick: () => {
-        const colorInput = document.createElement("input");
-        colorInput.type = "color";
-        colorInput.value = fluidColor;
-        colorInput.style.cssText = "position:absolute;opacity:0;pointer-events:none;";
-        panelEl.appendChild(colorInput);
-        colorInput.addEventListener("input", (e) => {
-          fluidColor = e.target.value;
-          fluidCtrl?.setColor(fluidColor);
-        });
-        colorInput.addEventListener("change", () => colorInput.remove());
-        colorInput.click();
+        const fluidColorPopover = createColorPopover({
+      panelEl,
+      anchorRect: s.colorBtn,
+      initialColor: fluidColor,
+      onChange: (nextColor) => {
+        fluidColor = nextColor;
+        fluidCtrl?.setColor(fluidColor);
       },
-      border: "0", bg: "transparent", radius: 0,
+      presetColors: [
+        "#FD6FFF",
+        "#1248FF",
+        "#E8F25A",
+        "#FFFFFF",
+        "#000000",
+        "#FF8A65",
+        "#7ED957",
+        "#B388FF",
+      ],
+    });
+
+    const colorBtn = addImageButton(ASSETS.colorPicker, s.colorBtn, {
+      onClick: (e) => {
+        e.stopPropagation();
+        fluidColorPopover.toggle();
+      },
+      border: "0",
+      bg: "transparent",
+      radius: 0,
     });
     attachHoverLabel(colorBtn, "湯頭：選擇顏色", s.colorLabel);
 
