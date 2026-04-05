@@ -353,6 +353,7 @@ function makePillButton(label){
     btn.style.userSelect = "transform 120ms ease";
     btn.addEventListener("pointerdown", () => (btn.style.transform = "scale(0.96)"));
     btn.addEventListener("pointerup", () => (btn.style.transform = "scale(1)"));
+    btn.addEventListener("pointercancel", () => (btn.style.transform = "scale(1)"));
     btn.addEventListener("pointerleave", () => (btn.style.transform = "scale(1)"));
     return btn;
 }
@@ -1471,41 +1472,55 @@ function npcOpenNameInput() {
 }
 
 
-btnNo.addEventListener("pointerdown", (e) => {
+btnNo.addEventListener("click", (e) => {
   e.preventDefault();
   e.stopPropagation();
-  e.stopImmediatePropagation();
   console.log("[btnNo] state=", npcState);
+
   if (npcState === NPC_STATE.Q1) npcKickOut();
+
   if (npcState === NPC_STATE.CHECK_ID) {
     clearProfileLocal();
     npcKickOut();
   }
 });
 
-btnYes.addEventListener("pointerdown", (e) => {
+btnYes.addEventListener("click", (e) => {
   e.preventDefault();
   e.stopPropagation();
-  e.stopImmediatePropagation();
   console.log("[btnYes] state=", npcState);
-  if (npcState === NPC_STATE.Q1) npcAskName();
+
+  if (npcState === NPC_STATE.Q1) {
+    npcAskName();
+    return;
+  }
+
   if (npcState === NPC_STATE.CHECK_ID) {
     npcState = NPC_STATE.SHOW_ID_CARD;
+
     const profile = loadProfileLocal();
     console.log("[show id card] profile =", profile);
+
     npcShowBubble("為您確認證件中......");
     optionRow.style.opacity = "0";
     optionRow.style.pointerEvents = "none";
-    showIdCard(profile);
-}
+
+    // 給按鈕一個 frame 完成 pointerup / click 視覺結束
+    requestAnimationFrame(() => {
+      showIdCard(profile);
+    });
+  }
 });
 
-pencilBtn.addEventListener("pointerdown", (e) => {
+pencilBtn.addEventListener("click", (e) => {
   console.count("pencil click handler fired");
   console.log("[click] pencilBtn state=", npcState);
   e.preventDefault();
   e.stopPropagation();
-  if (npcState === NPC_STATE.PENCIL_READY) npcOpenNameInput();
+
+  if (npcState === NPC_STATE.PENCIL_READY) {
+    npcOpenNameInput();
+  }
 });
 nameInput.addEventListener("keydown", (e) => {
   if (e.code === "Enter") {
