@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Polypot Intro</title>
+  <style>
+    html, body {
+      margin: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: #EDEDED;
+    }
+
+    body {
+      position: relative;
+      background: #EDEDED;
+    }
+
+    .intro-root {
+      position: relative;
+      width: 100vw;
+      height: 100vh;
+      overflow: hidden;
+      background: #EDEDED;
+    }
+
+    /* 滿版影片 */
+    .intro-video {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      object-position: center center;
+      display: block;
+      pointer-events: none;
+      background: #EDEDED;
+    }
+
+    /* UI 疊在影片上 */
+    .intro-ui {
+      position: absolute;
+      inset: 0;
+      z-index: 2;
+      pointer-events: none;
+    }
+
+    /* 按鈕群組：真正置中 */
+    .lang-row {
+      position: absolute;
+      left: 50%;
+      top: calc(50% + 170px);
+      transform: translateX(-50%);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 15px;
+      pointer-events: auto;
+    }
+
+    .lang-btn {
+      width: 154px;
+      height: 70px;
+      box-sizing: border-box;
+      border: 1px solid #FD6FFF;
+      border-radius: 999px;
+      background: transparent;
+      color: #FD6FFF;
+      text-decoration: none;
+
+      display: flex;
+      align-items: center;
+      justify-content: center;
+
+      padding: 0;
+      margin: 0;
+      cursor: pointer;
+
+      font-family: "zpix", sans-serif;
+      font-size: 20pt;
+      line-height: 1;
+
+      appearance: none;
+      -webkit-appearance: none;
+    }
+
+    .lang-btn:hover {
+      background: rgba(253, 111, 255, 0.06);
+    }
+
+    .lang-btn:active {
+      transform: translateY(1px);
+    }
+
+    /* 手機上按鈕縮一點，不然太擠 */
+    @media (max-width: 768px) {
+      .lang-row {
+        top: calc(50% + 140px);
+        gap: 12px;
+      }
+
+      .lang-btn {
+        width: 132px;
+        height: 60px;
+        font-size: 20pt;
+      }
+    }
+
+    @media (max-width: 480px) {
+      .lang-row {
+        top: calc(50% + 120px);
+        gap: 10px;
+      }
+
+      .lang-btn {
+        width: 118px;
+        height: 54px;
+        font-size: 17pt;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="intro-root">
+    <video
+      class="intro-video"
+      autoplay
+      muted
+      loop
+      playsinline
+      webkit-playsinline
+      preload="auto"
+    >
+      <source src="/motion.mp4" type="video/mp4" />
+    </video>
+
+    <div class="intro-ui">
+      <div class="lang-row">
+        <a href="/white.html" class="lang-btn">中文</a>
+        <button type="button" class="lang-btn">English</button>
+      </div>
+    </div>
+  </main>
+</body>
+</html>
