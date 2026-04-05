@@ -1612,7 +1612,7 @@ if (window.matchMedia("(pointer: coarse)").matches) {
 
       const dt = clock.getDelta(); // 你 main.js 已經有 clock
 
-      const SPEED = 2.2; // 可調（1.5~3）
+      const SPEED = 0.8
 
       touchLook.yaw -= nx * SPEED * dt;
       touchLook.pitch -= ny * SPEED * dt;
