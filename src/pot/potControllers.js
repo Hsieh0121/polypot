@@ -1194,7 +1194,7 @@ function clearPanel() {
       maxHeight: "400px",
       overflowY: "auto",
     });
-    overlayEl.appendChild(matPopup);
+    panelEl.appendChild(matPopup);
 
     const mats = [
       { key: "ink",    label: "Ink" },
@@ -1248,9 +1248,8 @@ function clearPanel() {
       onClick: () => {
         matPopupOpen = !matPopupOpen;
         if (matPopupOpen) {
-          const r = panelEl.getBoundingClientRect();
-          matPopup.style.left = `${r.left + s.materialBtn.x}px`;
-          matPopup.style.top  = `${r.top  + s.materialBtn.y + s.materialBtn.h + 8}px`;
+          matPopup.style.left = `${s.materialBtn.x + s.materialBtn.w + 12}px`;
+          matPopup.style.top  = `${s.materialBtn.y + 12}px`;
         }
         matPopup.style.display = matPopupOpen ? "flex" : "none";
         if (matPopupOpen) setTimeout(() => document.addEventListener("pointerdown", closeMatPopup), 0);
@@ -1258,6 +1257,9 @@ function clearPanel() {
       border: "0", bg: "transparent", radius: 0,
     });
     attachHoverLabel(materialBtn, "口感：選擇質地", s.materialLabel);
+    matPopup.addEventListener("pointerdown", (e) => {
+      e.stopPropagation();
+    });
 
     let fluidBrushRadius = 20;
 
@@ -1616,20 +1618,33 @@ function clearPanel() {
     panelEl.appendChild(ingredientCanvas);
     bindIngredientCanvasEvents();
 
-    const colorBtn = addImageButton(ASSETS.colorPicker, s.colorBtn, {
-      onClick: () => {
-        const colorInput = document.createElement("input");
-        colorInput.type = "color";
-        colorInput.value = ingredientBrushColor;
-        colorInput.style.cssText = "position:absolute;opacity:0;pointer-events:none;";
-        panelEl.appendChild(colorInput);
-        colorInput.addEventListener("input", (e) => {
-          ingredientBrushColor = e.target.value;
-        });
-        colorInput.addEventListener("change", () => colorInput.remove());
-        colorInput.click();
+        const ingredientColorPopover = createColorPopover({
+      panelEl,
+      anchorRect: s.colorBtn,
+      initialColor: ingredientBrushColor,
+      onChange: (nextColor) => {
+        ingredientBrushColor = nextColor;
       },
-      border: "0", bg: "transparent", radius: 0,
+      presetColors: [
+        "#FD6FFF",
+        "#1248FF",
+        "#E8F25A",
+        "#FFFFFF",
+        "#000000",
+        "#FF8A65",
+        "#7ED957",
+        "#B388FF",
+      ],
+    });
+
+    const colorBtn = addImageButton(ASSETS.colorPicker, s.colorBtn, {
+      onClick: (e) => {
+        e.stopPropagation();
+        ingredientColorPopover.toggle();
+      },
+      border: "0",
+      bg: "transparent",
+      radius: 0,
     });
     attachHoverLabel(colorBtn, "食用色素：選擇顏色", s.colorLabel);
 
@@ -3249,21 +3264,30 @@ function renderVerticalList({
     });
     colorWrap.appendChild(colorBtn);
 
-    colorBtn.addEventListener("click", () => {
-      const colorInput = document.createElement("input");
-      colorInput.type = "color";
-      colorInput.value = chairColor;
-      colorInput.style.cssText = "position:absolute;opacity:0;pointer-events:none;";
-      panelEl.appendChild(colorInput);
-
-      colorInput.addEventListener("input", (e) => {
-        chairColor = e.target.value;
+        const chairColorPopover = createColorPopover({
+      panelEl,
+      anchorRect: { x: 914, y: 330, w: 54, h: 54 },
+      initialColor: chairColor,
+      onChange: (nextColor) => {
+        chairColor = nextColor;
         colorBtn.style.background = chairColor;
         updateStep5ChairPreviewColor();
-      });
+      },
+      presetColors: [
+        "#E8F25A",
+        "#FD6FFF",
+        "#1248FF",
+        "#FFFFFF",
+        "#000000",
+        "#FF8A65",
+        "#7ED957",
+        "#B388FF",
+      ],
+    });
 
-      colorInput.addEventListener("change", () => colorInput.remove());
-      colorInput.click();
+    colorBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      chairColorPopover.toggle();
     });
 
     const selectEl = document.createElement("select");
