@@ -112,23 +112,20 @@
         display: block;
         position: absolute;
         left: 50%;
-        top: 12vh;
+        top: 9vh;
         transform: translateX(-50%);
         width: 100vw;
-        height: 42vh;
+        height: 46vh;
         overflow: hidden;
         background: #FFFFFF;
       }
 
       .mobile-video-stage video {
         position: absolute;
-        left: 50%;
-        top: 50%;
-        width: auto;
+        inset: 0;
+        width: 100%;
         height: 100%;
-        min-width: 100%;
-        transform: translate(-50%, -50%);
-        object-fit: cover;
+        object-fit: contain;
         object-position: center center;
         display: block;
         pointer-events: none;
@@ -137,7 +134,7 @@
 
       .lang-row {
         top: auto;
-        bottom: 12vh;
+        bottom: 18vh;
         left: 50%;
         transform: translateX(-50%);
         gap: 12px;
@@ -153,12 +150,12 @@
     /* 小手機 */
     @media (max-width: 480px) {
       .mobile-video-stage {
-        top: 10vh;
-        height: 40vh;
+        top: 8vh;
+        height: 44vh;
       }
 
       .lang-row {
-        bottom: 11vh;
+        bottom: 17vh;
         gap: 10px;
       }
 
