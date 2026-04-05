@@ -1,18 +1,19 @@
 import { defineConfig } from "vite";
 import { resolve } from "path";
 
-export default defineConfig ({
-    server: {
-        port: 5175,
-        strictPort: true,
-        watch: { usePolling: true }
+export default defineConfig({
+  server: {
+    port: 5175,
+    strictPort: true,
+    watch: { usePolling: true },
+  },
+  build: {
+    rollupOptions: {
+      input: {
+        index: resolve(__dirname, "index.html"),
+        white: resolve(__dirname, "white.html"),
+        hall: resolve(__dirname, "hall.html"),
+      },
     },
-    build: {
-        rollupOptions: {
-            input: {
-                white: resolve(__dirname, "white.html"),
-                hall: resolve(__dirname, "hall.html"),
-            },
-        },
-    },
+  },
 });
