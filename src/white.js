@@ -999,6 +999,7 @@ function showIdCard(profile) {
 
   nameValue.textContent = profile?.name ?? "";
   serialText.textContent = profile?.serial ?? "";
+
   infoBox.value = profile?.message ?? "";
 
   if (profile?.avatarPhoto) {
@@ -1323,6 +1324,7 @@ function npcShowBubble(text){
 function npcHideAll(){
   uiActive = false;
   if (IS_MOBILE) setMobileHudVisible(true);
+
   nameOk.style.display = "none";
 
   clearNpcTimers();
@@ -1336,7 +1338,7 @@ function npcHideAll(){
   optionRow.style.pointerEvents = "none";
 
   pencilBtn.style.opacity = "0";
-  pencilBtn.style.transform = `translateX(${PENCIL_SHIFT_CLOSED}px)`; 
+  pencilBtn.style.transform = `translateX(${PENCIL_SHIFT_CLOSED}px)`;
 
   nameBubble.style.display = "none";
   nameBubble.style.opacity = "0";
@@ -1348,9 +1350,11 @@ function npcHideAll(){
 }
 
 function npcEnterQ1() {
-console.log("[npcEnterQ1] begin", { locked: controls.isLocked });
+  console.log("[npcEnterQ1] begin", { locked: controls.isLocked });
+
   uiActive = true;
   if (IS_MOBILE) setMobileHudVisible(false);
+
   if (controls.isLocked) controls.unlock();
   console.log("[npcEnterQ1] after unlock", { locked: controls.isLocked });
 
@@ -1563,7 +1567,6 @@ function setMobileHudVisible(visible) {
     mobileInput.setVisible(isVisible);
   }
 
-  // fallback：就算 API 沒吃到，也直接抓 root
   const root = document.getElementById("mobile-input-root");
   if (root) {
     root.style.display = isVisible ? "block" : "none";
