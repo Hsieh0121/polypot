@@ -26,7 +26,7 @@
       background: #EDEDED;
     }
 
-    /* 桌機版：影片滿版 */
+    /* 桌機版：直接滿版 */
     .intro-video {
       position: absolute;
       inset: 0;
@@ -46,7 +46,6 @@
       pointer-events: none;
     }
 
-    /* 桌機版按鈕 */
     .lang-row {
       position: absolute;
       left: 50%;
@@ -68,19 +67,15 @@
       background: transparent;
       color: #FD6FFF;
       text-decoration: none;
-
       display: flex;
       align-items: center;
       justify-content: center;
-
       padding: 0;
       margin: 0;
       cursor: pointer;
-
       font-family: "zpix", sans-serif;
       font-size: 20pt;
       line-height: 1;
-
       appearance: none;
       -webkit-appearance: none;
     }
@@ -93,27 +88,44 @@
       transform: translateY(1px);
     }
 
-    /* ===== 手機 / 平板直向：改成手機版構圖 ===== */
+    /* 手機版白底畫布（預設桌機不顯示） */
+    .mobile-video-stage {
+      display: none;
+    }
+
+    /* ===== 手機 / 直向：改用固定比例白底畫布 ===== */
     @media (max-width: 768px), (orientation: portrait) {
-      .intro-root {
-        background: #EDEDED;
+      .intro-video {
+        display: none;
       }
 
-      .intro-video {
-        inset: auto;
+      .mobile-video-stage {
+        display: block;
+        position: absolute;
         left: 50%;
-        top: 22%;
+        top: 18%;
         transform: translateX(-50%);
+        width: 86vw;
+        aspect-ratio: 16 / 9;
+        background: #FFFFFF;
+        overflow: hidden;
+      }
+
+      .mobile-video-stage video {
+        position: absolute;
+        inset: 0;
         width: 100%;
-        height: 34vh;
-        object-fit: contain;
+        height: 100%;
+        object-fit: cover;
         object-position: center center;
-        background: transparent;
+        display: block;
+        pointer-events: none;
+        background: #FFFFFF;
       }
 
       .lang-row {
         top: auto;
-        bottom: 11vh;
+        bottom: 10vh;
         left: 50%;
         transform: translateX(-50%);
         gap: 12px;
@@ -126,15 +138,15 @@
       }
     }
 
-    /* ===== 小手機再細修 ===== */
+    /* 小手機再微調 */
     @media (max-width: 480px) {
-      .intro-video {
+      .mobile-video-stage {
+        width: 90vw;
         top: 20%;
-        height: 30vh;
       }
 
       .lang-row {
-        bottom: 10vh;
+        bottom: 9vh;
         gap: 10px;
       }
 
@@ -145,11 +157,15 @@
       }
     }
 
-    /* ===== 很矮的手機橫向，避免按鈕卡太下 ===== */
+    /* 很矮的手機橫向 */
     @media (max-height: 500px) and (orientation: landscape) {
+      .mobile-video-stage {
+        top: 10%;
+        width: 72vw;
+      }
+
       .lang-row {
-        top: auto;
-        bottom: 8vh;
+        bottom: 7vh;
       }
 
       .lang-btn {
@@ -162,6 +178,7 @@
 </head>
 <body>
   <main class="intro-root">
+    <!-- 桌機版影片 -->
     <video
       class="intro-video"
       autoplay
@@ -173,6 +190,20 @@
     >
       <source src="/motion.mp4" type="video/mp4" />
     </video>
+
+    <!-- 手機版白底畫布 -->
+    <div class="mobile-video-stage">
+      <video
+        autoplay
+        muted
+        loop
+        playsinline
+        webkit-playsinline
+        preload="auto"
+      >
+        <source src="/motion.mp4" type="video/mp4" />
+      </video>
+    </div>
 
     <div class="intro-ui">
       <div class="lang-row">
