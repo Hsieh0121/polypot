@@ -26,7 +26,7 @@
       background: #EDEDED;
     }
 
-    /* 滿版影片 */
+    /* 桌機版：影片滿版 */
     .intro-video {
       position: absolute;
       inset: 0;
@@ -39,7 +39,6 @@
       background: #EDEDED;
     }
 
-    /* UI 疊在影片上 */
     .intro-ui {
       position: absolute;
       inset: 0;
@@ -47,7 +46,7 @@
       pointer-events: none;
     }
 
-    /* 按鈕群組：真正置中 */
+    /* 桌機版按鈕 */
     .lang-row {
       position: absolute;
       left: 50%;
@@ -94,30 +93,69 @@
       transform: translateY(1px);
     }
 
-    /* 手機上按鈕縮一點，不然太擠 */
-    @media (max-width: 768px) {
+    /* ===== 手機 / 平板直向：改成手機版構圖 ===== */
+    @media (max-width: 768px), (orientation: portrait) {
+      .intro-root {
+        background: #EDEDED;
+      }
+
+      .intro-video {
+        inset: auto;
+        left: 50%;
+        top: 22%;
+        transform: translateX(-50%);
+        width: 100%;
+        height: 34vh;
+        object-fit: contain;
+        object-position: center center;
+        background: transparent;
+      }
+
       .lang-row {
-        top: calc(50% + 140px);
+        top: auto;
+        bottom: 11vh;
+        left: 50%;
+        transform: translateX(-50%);
         gap: 12px;
       }
 
       .lang-btn {
         width: 132px;
         height: 60px;
-        font-size: 20pt;
+        font-size: 18pt;
       }
     }
 
+    /* ===== 小手機再細修 ===== */
     @media (max-width: 480px) {
+      .intro-video {
+        top: 20%;
+        height: 30vh;
+      }
+
       .lang-row {
-        top: calc(50% + 120px);
+        bottom: 10vh;
         gap: 10px;
       }
 
       .lang-btn {
         width: 118px;
         height: 54px;
-        font-size: 17pt;
+        font-size: 16pt;
+      }
+    }
+
+    /* ===== 很矮的手機橫向，避免按鈕卡太下 ===== */
+    @media (max-height: 500px) and (orientation: landscape) {
+      .lang-row {
+        top: auto;
+        bottom: 8vh;
+      }
+
+      .lang-btn {
+        width: 118px;
+        height: 54px;
+        font-size: 16pt;
       }
     }
   </style>
