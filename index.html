@@ -26,8 +26,8 @@
       background: #EDEDED;
     }
 
-    /* 桌機版：直接滿版 */
-    .intro-video {
+    /* 桌機版影片 */
+    .intro-video-desktop {
       position: absolute;
       inset: 0;
       width: 100%;
@@ -42,7 +42,7 @@
     .intro-ui {
       position: absolute;
       inset: 0;
-      z-index: 2;
+      z-index: 3;
       pointer-events: none;
     }
 
@@ -88,14 +88,23 @@
       transform: translateY(1px);
     }
 
-    /* 手機版白底畫布（預設桌機不顯示） */
+    /* 手機版容器預設隱藏 */
     .mobile-video-stage {
       display: none;
     }
 
-    /* ===== 手機 / 直向：改用固定比例白底畫布 ===== */
+    /* ===== 手機版 ===== */
     @media (max-width: 768px), (orientation: portrait) {
-      .intro-video {
+      html, body {
+        background: #FFFFFF;
+      }
+
+      body,
+      .intro-root {
+        background: #FFFFFF;
+      }
+
+      .intro-video-desktop {
         display: none;
       }
 
@@ -103,19 +112,22 @@
         display: block;
         position: absolute;
         left: 50%;
-        top: 18%;
+        top: 12vh;
         transform: translateX(-50%);
-        width: 86vw;
-        aspect-ratio: 16 / 9;
-        background: #FFFFFF;
+        width: 100vw;
+        height: 42vh;
         overflow: hidden;
+        background: #FFFFFF;
       }
 
       .mobile-video-stage video {
         position: absolute;
-        inset: 0;
-        width: 100%;
+        left: 50%;
+        top: 50%;
+        width: auto;
         height: 100%;
+        min-width: 100%;
+        transform: translate(-50%, -50%);
         object-fit: cover;
         object-position: center center;
         display: block;
@@ -125,7 +137,7 @@
 
       .lang-row {
         top: auto;
-        bottom: 10vh;
+        bottom: 12vh;
         left: 50%;
         transform: translateX(-50%);
         gap: 12px;
@@ -138,15 +150,15 @@
       }
     }
 
-    /* 小手機再微調 */
+    /* 小手機 */
     @media (max-width: 480px) {
       .mobile-video-stage {
-        width: 90vw;
-        top: 20%;
+        top: 10vh;
+        height: 40vh;
       }
 
       .lang-row {
-        bottom: 9vh;
+        bottom: 11vh;
         gap: 10px;
       }
 
@@ -160,8 +172,8 @@
     /* 很矮的手機橫向 */
     @media (max-height: 500px) and (orientation: landscape) {
       .mobile-video-stage {
-        top: 10%;
-        width: 72vw;
+        top: 6vh;
+        height: 55vh;
       }
 
       .lang-row {
@@ -178,9 +190,8 @@
 </head>
 <body>
   <main class="intro-root">
-    <!-- 桌機版影片 -->
     <video
-      class="intro-video"
+      class="intro-video-desktop"
       autoplay
       muted
       loop
@@ -191,7 +202,6 @@
       <source src="/motion.mp4" type="video/mp4" />
     </video>
 
-    <!-- 手機版白底畫布 -->
     <div class="mobile-video-stage">
       <video
         autoplay
