@@ -650,7 +650,7 @@ ctaWrap.style.display = "none";
 ctaWrap.style.alignItems = "center";
 ctaWrap.style.justifyContent = "center";
 ctaWrap.style.pointerEvents = "auto";
-ctaWrap.style.zIndex = "10001";
+ctaWrap.style.zIndex = "30001";
 document.body.appendChild(ctaWrap);
 
 const ctaBtn = document.createElement("button");
@@ -740,6 +740,7 @@ function showCenterAction(label) {
 }
 
 function hideCenterAction() {
+  resetCtaBtn();
   ctaWrap.style.display = "none";
 }
 
@@ -1255,13 +1256,12 @@ let mobileInput = null;
 function setMobileHudVisible(visible) {
   const isVisible = !!visible;
 
-  // 1) 先嘗試走 mobileInput 自己的 API
   if (mobileInput?.setVisible) {
     mobileInput.setVisible(isVisible);
   }
 
-  // 2) 再做一層保險：直接把常見 mobile 控制容器一起藏掉
   const selectors = [
+    "#mobile-input-root",   // <- 這個一定要加
     "#mobile-input",
     "#mobile-controls",
     "#mobile-joystick",
@@ -1282,9 +1282,9 @@ function setMobileHudVisible(visible) {
     el.style.opacity = isVisible ? "1" : "0";
   });
 
-  // 3) CTA 本身也一起處理，避免 UI 開著時還殘留
   if (!isVisible) {
     hideCenterAction();
+    resetCtaBtn();
   }
 }
 
