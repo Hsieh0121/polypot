@@ -991,12 +991,13 @@ idCard.appendChild(footer);
 
 // --- helpers used by your existing flow ---
 function showIdCard(profile) {
+  uiActive = true;
+  if (IS_MOBILE) setMobileHudVisible(false);
+
   idOverlay.style.display = "block";
 
   nameValue.textContent = profile?.name ?? "";
   serialText.textContent = profile?.serial ?? "";
-
-  // info uses profile.message (keep schema)
   infoBox.value = profile?.message ?? "";
 
   if (profile?.avatarPhoto) {
@@ -1007,13 +1008,22 @@ function showIdCard(profile) {
   }
 
   sigLoadFromProfile(profile);
-
-  // default to edit when opening (your old logic did this once globally)
   setIdCardState("EDIT");
 }
 
 function hideIdCard() {
   idOverlay.style.display = "none";
+
+  const stillHasUi =
+    avatarOverlay.style.display !== "none" ||
+    npcState !== NPC_STATE.HIDDEN ||
+    doorUiActive;
+
+  uiActive = stillHasUi;
+
+  if (IS_MOBILE) {
+    setMobileHudVisible(!stillHasUi);
+  }
 }
 // =========================
 // AVATAR EDITOR OVERLAY
@@ -1165,31 +1175,40 @@ doorBtns.appendChild(btnWander);
 doorBtns.appendChild(btnEnterHall);
 
 function doorEnterPrompt() {
-    if (!IS_MOBILE && !controls?.isLocked) return;
-    doorUiActive = true;
-    uiActive = true;
+  if (!IS_MOBILE && !controls?.isLocked) return;
+  doorUiActive = true;
+  uiActive = true;
+  if (IS_MOBILE) setMobileHudVisible(false);
 
-    doorLayer.style.pointerEvents = "auto";
+  doorLayer.style.pointerEvents = "auto";
 
-    doorBubble.textContent = "是否進入宴席會場？";
-    doorBubble.style.opacity = "1";
-    doorBubble.style.transform = "translateY(0)";
+  doorBubble.textContent = "是否進入宴席會場？";
+  doorBubble.style.opacity = "1";
+  doorBubble.style.transform = "translateY(0)";
 
-    doorBtns.style.opacity = "1";
-    doorBtns.style.transform = "translateY(0)";
-    doorBtns.style.pointerEvents = "auto";
+  doorBtns.style.opacity = "1";
+  doorBtns.style.transform = "translateY(0)";
+  doorBtns.style.pointerEvents = "auto";
 }
 function doorHidePrompt() {
-    doorUiActive = false;
-    uiActive = false;
-    doorBubble.style.opacity = "0";
-    doorBubble.style.transform = "translateY(6px)";
+  doorUiActive = false;
 
-    doorLayer.style.pointerEvents = "none"
+  const stillHasUi =
+    idOverlay.style.display !== "none" ||
+    avatarOverlay.style.display !== "none" ||
+    npcState !== NPC_STATE.HIDDEN;
 
-    doorBtns.style.opacity = "0";
-    doorBtns.style.transform = "translateY(6px)";
-    doorBtns.style.pointerEvents = "none";
+  uiActive = stillHasUi;
+  if (IS_MOBILE) setMobileHudVisible(!stillHasUi);
+
+  doorBubble.style.opacity = "0";
+  doorBubble.style.transform = "translateY(6px)";
+
+  doorLayer.style.pointerEvents = "none";
+
+  doorBtns.style.opacity = "0";
+  doorBtns.style.transform = "translateY(6px)";
+  doorBtns.style.pointerEvents = "none";
 }
 
 let doorTipToken = 0;
@@ -1302,6 +1321,7 @@ function npcShowBubble(text){
 }
 function npcHideAll(){
   uiActive = false;
+  if (IS_MOBILE) setMobileHudVisible(true);
   nameOk.style.display = "none";
 
   clearNpcTimers();
@@ -1329,6 +1349,7 @@ function npcHideAll(){
 function npcEnterQ1() {
 console.log("[npcEnterQ1] begin", { locked: controls.isLocked });
   uiActive = true;
+  if (IS_MOBILE) setMobileHudVisible(false);
   if (controls.isLocked) controls.unlock();
   console.log("[npcEnterQ1] after unlock", { locked: controls.isLocked });
 
@@ -1520,6 +1541,21 @@ const keys = {
 };
 
 let mobileInput = null;
+function setMobileHudVisible(visible) {
+  const isVisible = !!visible;
+
+  if (mobileInput?.setVisible) {
+    mobileInput.setVisible(isVisible);
+  }
+
+  // fallback：就算 API 沒吃到，也直接抓 root
+  const root = document.getElementById("mobile-input-root");
+  if (root) {
+    root.style.display = isVisible ? "block" : "none";
+    root.style.pointerEvents = isVisible ? "auto" : "none";
+    root.style.opacity = isVisible ? "1" : "0";
+  }
+}
 
 const ACTION = {
   SELECT: "SELECT",
@@ -2032,18 +2068,32 @@ submitBtn.addEventListener("click", async () => {
 
 
 function openAvatarEditor () {
-    avatarOverlay.style.display = "block";
-    initAvatarPreview();
+  uiActive = true;
+  if (IS_MOBILE) setMobileHudVisible(false);
 
-    const profile = loadProfileLocal();
-    if (profile?.avatarPhoto){
-        photoImg.src = profile.avatarPhoto;
-        photoImg.style.display = "block";
-    }
+  avatarOverlay.style.display = "block";
+  initAvatarPreview();
+
+  const profile = loadProfileLocal();
+  if (profile?.avatarPhoto){
+    photoImg.src = profile.avatarPhoto;
+    photoImg.style.display = "block";
+  }
 }
 function closeAvatarEditor() {
-    avatarOverlay.style.display = "none";
-    fileInput.value = "";
+  avatarOverlay.style.display = "none";
+  fileInput.value = "";
+
+  const stillHasUi =
+    idOverlay.style.display !== "none" ||
+    npcState !== NPC_STATE.HIDDEN ||
+    doorUiActive;
+
+  uiActive = stillHasUi;
+
+  if (IS_MOBILE) {
+    setMobileHudVisible(!stillHasUi);
+  }
 }
 editBtn.addEventListener("click", (e) => {
     e.preventDefault();
