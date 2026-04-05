@@ -24,13 +24,14 @@ export function initMobileInput({
   });
 
   const IS_MOBILE_QUERY = "(pointer: coarse)";
+  let forceVisible = true;
 
   function isActuallyMobile() {
     return window.matchMedia(IS_MOBILE_QUERY).matches;
   }
 
   function shouldShow() {
-    return isActuallyMobile();
+    return isActuallyMobile() && forceVisible;
   }
 
   // =========================
@@ -414,20 +415,38 @@ export function initMobileInput({
   // visibility / lifecycle
   // =========================
   function updateVisibility() {
-    root.style.display = shouldShow() ? "block" : "none";
-
+    const visible = shouldShow();
     const uiOpen = !!isUiOpen();
+
+    root.style.display = visible ? "block" : "none";
+    root.style.pointerEvents = visible ? "auto" : "none";
+    root.style.opacity = visible ? "1" : "0";
 
     // 預設不常駐
     interactBtn.style.display = "none";
     cancelBtn.style.display = "none";
     confirmBtn.style.display = "none";
 
-    // 只有 UI 開啟時才顯示返回 / 確認
+    // 只有 mobile input 本身可見時，才考慮顯示按鈕
+    if (!visible) return;
+
+    // 如果你之後想保留 UI 開著時的返回/確認，也可以留
+    // 但你現在想要 pot UI 完整不被擋到，所以建議直接不要顯示
     if (uiOpen) {
-      cancelBtn.style.display = "inline-flex";
-      confirmBtn.style.display = "inline-flex";
+      // 先全部隱藏，避免和 pot UI 打架
+      cancelBtn.style.display = "none";
+      confirmBtn.style.display = "none";
     }
+  }
+  function setVisible(visible) {
+    forceVisible = !!visible;
+
+    if (!forceVisible) {
+      resetMoveStickAndKeys();
+      resetLookStick();
+    }
+
+    updateVisibility();
   }
 
   function onResize() {
@@ -457,8 +476,8 @@ export function initMobileInput({
   return {
     root,
     update: updateVisibility,
+    setVisible,
 
-    // 之後 hall 若要情境式顯示互動鍵，可以直接 call 這個
     setInteractVisible() {
       interactBtn.style.display = "none";
     },

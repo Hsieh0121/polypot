@@ -319,19 +319,26 @@ export function createPotController({ appEl, onClose, onRequestClose, onFinalize
   function applyPanelScale() {
     if (!scaleWrapEl || !panelEl) return;
 
-    const DESIGN_W = UI.overlayW;   // 1308
-    const DESIGN_H = UI.overlayH;   // 643
-    const PADDING_X = 24;
-    const PADDING_Y = 24;
+    const DESIGN_W = UI.overlayW;
+    const DESIGN_H = UI.overlayH;
 
     const vw = window.innerWidth;
     const vh = window.innerHeight;
 
-    const scale = Math.min(
+    const isMobile = window.matchMedia("(pointer: coarse)").matches;
+
+    const PADDING_X = isMobile ? 8 : 24;
+    const PADDING_Y = isMobile ? 8 : 24;
+
+    const fitScale = Math.min(
       (vw - PADDING_X * 2) / DESIGN_W,
-      (vh - PADDING_Y * 2) / DESIGN_H,
-      1
+      (vh - PADDING_Y * 2) / DESIGN_H
     );
+
+    // 桌機維持原本不超過 1；手機允許再稍微放大一點點
+    const scale = isMobile
+      ? Math.min(fitScale * 1.06, 1.12)
+      : Math.min(fitScale, 1);
 
     scaleWrapEl.style.transform = `translate(-50%, -50%) scale(${scale})`;
   }

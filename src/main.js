@@ -698,6 +698,10 @@ ctaBtn.addEventListener("pointerdown", (e) => {
       clearMoveKeys();
       state = FSM.UI_OPEN;
 
+      if (IS_MOBILE) {
+        setMobileHudVisible(false);
+      }
+
       pot.open({
         tableId,
         tableState,
@@ -771,6 +775,10 @@ const pot = createPotController({
   onClose: ({ reason = "normal" } = {}) => {
     clearMoveKeys();
 
+    if (IS_MOBILE) {
+      setMobileHudVisible(true);
+    }
+
     if (reason === "finalize") {
       return;
     }
@@ -814,6 +822,11 @@ const pot = createPotController({
 
     pot.close({ reason: "finalize" });
     hallPostPotShown = true;
+
+    if (IS_MOBILE) {
+      setMobileHudVisible(true);
+    }
+
     unseatSeat();
   },
 });
@@ -1238,6 +1251,42 @@ const keys = {
 };
 
 let mobileInput = null;
+
+function setMobileHudVisible(visible) {
+  const isVisible = !!visible;
+
+  // 1) 先嘗試走 mobileInput 自己的 API
+  if (mobileInput?.setVisible) {
+    mobileInput.setVisible(isVisible);
+  }
+
+  // 2) 再做一層保險：直接把常見 mobile 控制容器一起藏掉
+  const selectors = [
+    "#mobile-input",
+    "#mobile-controls",
+    "#mobile-joystick",
+    "#mobile-look",
+    "#mobile-actions",
+    ".mobile-input",
+    ".mobile-controls",
+    ".mobile-joystick",
+    ".mobile-look",
+    ".mobile-actions",
+    ".joystick-zone",
+    ".look-zone",
+  ];
+
+  document.querySelectorAll(selectors.join(",")).forEach((el) => {
+    el.style.display = isVisible ? "" : "none";
+    el.style.pointerEvents = isVisible ? "auto" : "none";
+    el.style.opacity = isVisible ? "1" : "0";
+  });
+
+  // 3) CTA 本身也一起處理，避免 UI 開著時還殘留
+  if (!isVisible) {
+    hideCenterAction();
+  }
+}
 
 if (window.matchMedia("(pointer: coarse)").matches) {
   mobileInput = initMobileInput({
@@ -1911,15 +1960,22 @@ function dispatchAction(action) {
         const isOwnerTable = activeTableId === assignedTableId;
 
         controls.unlock();
+        clearMoveKeys();
+        state = FSM.UI_OPEN;
+
+        if (IS_MOBILE) {
+          setMobileHudVisible(false);
+        }
+
         pot.open({
           tableId: activeTableId,
           tableState,
           viewOnly: !isOwnerTable,
           ownerTableId: assignedTableId,
+          mobileDebug: IS_MOBILE,
         });
-        clearMoveKeys();
+
         controls.unlock();
-        state = FSM.UI_OPEN;
 
         console.log(
           "[FSM] SEATED -> UI_OPEN table=",
