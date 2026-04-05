@@ -113,10 +113,10 @@
         display: block;
         position: absolute;
         left: 50%;
-        top: var(--mobile-video-top, -3vh);
+        top: var(--mobile-video-top, 9vh);
         transform: translateX(-50%);
         width: 100vw;
-        height: 90vh;
+        height: var(--mobile-video-height, 78vh);
         overflow: hidden;
         background: #FFFFFF;
       }
@@ -135,7 +135,7 @@
 
       .lang-row {
         top: auto;
-        bottom: 27vh;
+        bottom: var(--mobile-lang-bottom, 50vh);
         left: 50%;
         transform: translateX(-50%);
         gap: 12px;
@@ -217,12 +217,12 @@
 
     @media (max-height: 500px) and (orientation: landscape) {
       .mobile-video-stage {
-        top: var(--mobile-video-top, 6vh);
-        height: var(--mobile-video-height, 55vh);
+        top: -2vh;
+        height: 90vh;
       }
 
       .lang-row {
-        bottom: var(--mobile-lang-bottom, 7vh);
+        bottom: 27vh;
       }
 
       .lang-btn {
