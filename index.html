@@ -113,10 +113,10 @@
         display: block;
         position: absolute;
         left: 50%;
-        top: var(--mobile-video-top, 9vh);
+        top: 9vh;
         transform: translateX(-50%);
         width: 100vw;
-        height: var(--mobile-video-height, 78vh);
+        height: 78vh;
         overflow: hidden;
         background: #FFFFFF;
       }
@@ -135,7 +135,7 @@
 
       .lang-row {
         top: auto;
-        bottom: var(--mobile-lang-bottom, 50vh);
+        bottom: 50vh;
         left: 50%;
         transform: translateX(-50%);
         gap: 12px;
@@ -194,12 +194,12 @@
 
     @media (max-width: 480px) {
       .mobile-video-stage {
-        top: var(--mobile-video-top, 8vh);
-        height: var(--mobile-video-height, 58vh);
+        top: 8vh;
+        height: 58vh;
       }
 
       .lang-row {
-        bottom: var(--mobile-lang-bottom, 25vh);
+        bottom: 25vh;
         gap: 10px;
       }
 
@@ -270,91 +270,7 @@
         <button type="button" class="lang-btn">English</button>
       </div>
     </div>
-
-    <div class="mobile-adjust-panel" id="mobileAdjustPanel">
-      <label>
-        video top
-        <input id="videoTopSlider" type="range" min="-50" max="50" step="1" value="6">
-        <span class="mobile-adjust-value" id="videoTopValue">8vh</span>
-      </label>
-
-      <label>
-        video height
-        <input id="videoHeightSlider" type="range" min="40" max="85" step="0.5" value="58">
-        <span class="mobile-adjust-value" id="videoHeightValue">58vh</span>
-      </label>
-
-      <label>
-        button bottom
-        <input id="langBottomSlider" type="range" min="5" max="40" step="0.5" value="25">
-        <span class="mobile-adjust-value" id="langBottomValue">25vh</span>
-      </label>
-
-      <button class="mobile-adjust-reset" id="mobileAdjustReset" type="button">reset</button>
-    </div>
   </main>
 
-  <script>
-    const root = document.documentElement;
-    const isMobileLike = window.matchMedia("(max-width: 768px), (orientation: portrait)").matches;
-
-    const videoTopSlider = document.getElementById("videoTopSlider");
-    const videoHeightSlider = document.getElementById("videoHeightSlider");
-    const langBottomSlider = document.getElementById("langBottomSlider");
-
-    const videoTopValue = document.getElementById("videoTopValue");
-    const videoHeightValue = document.getElementById("videoHeightValue");
-    const langBottomValue = document.getElementById("langBottomValue");
-
-    const resetBtn = document.getElementById("mobileAdjustReset");
-    const panel = document.getElementById("mobileAdjustPanel");
-
-    if (!isMobileLike) {
-      panel.style.display = "none";
-    }
-
-    function applyValues() {
-      const videoTop = `${videoTopSlider.value}vh`;
-      const videoHeight = `${videoHeightSlider.value}vh`;
-      const langBottom = `${langBottomSlider.value}vh`;
-
-      root.style.setProperty("--mobile-video-top", videoTop);
-      root.style.setProperty("--mobile-video-height", videoHeight);
-      root.style.setProperty("--mobile-lang-bottom", langBottom);
-
-      videoTopValue.textContent = videoTop;
-      videoHeightValue.textContent = videoHeight;
-      langBottomValue.textContent = langBottom;
-    }
-
-    function setDefaults() {
-      const smallPhone = window.innerWidth <= 480;
-      const landscapeShort = window.innerHeight <= 500 && window.innerWidth > window.innerHeight;
-
-      if (landscapeShort) {
-        videoTopSlider.value = 6;
-        videoHeightSlider.value = 55;
-        langBottomSlider.value = 7;
-      } else if (smallPhone) {
-        videoTopSlider.value = 8;
-        videoHeightSlider.value = 58;
-        langBottomSlider.value = 25;
-      } else {
-        videoTopSlider.value = 9;
-        videoHeightSlider.value = 78;
-        langBottomSlider.value = 50;
-      }
-
-      applyValues();
-    }
-
-    [videoTopSlider, videoHeightSlider, langBottomSlider].forEach((el) => {
-      el.addEventListener("input", applyValues);
-    });
-
-    resetBtn.addEventListener("click", setDefaults);
-
-    setDefaults();
-  </script>
 </body>
 </html>
