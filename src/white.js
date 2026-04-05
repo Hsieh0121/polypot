@@ -232,7 +232,7 @@ const ui = document.createElement("div");
 ui.id = "white-ui";
 ui.style.position = "fixed";
 ui.style.inset = "0";
-ui.style.zIndex = "9999";
+ui.style.zIndex = "30000";
 ui.style.pointerEvents = "none";
 document.body.appendChild(ui);
 shiftUpOnMobile(ui, 40);
@@ -328,7 +328,7 @@ const uiRoot = document.createElement("div");
 uiRoot.id = "ui-root";
 uiRoot.style.position = "fixed";
 uiRoot.style.inset = "0";
-uiRoot.style.zIndex = "9999";
+uiRoot.style.zIndex = "30001";
 uiRoot.style.pointerEvents = "none";
 document.body.appendChild(uiRoot);
 shiftUpOnMobile(uiRoot, 40);
@@ -353,7 +353,6 @@ function makePillButton(label){
     btn.style.userSelect = "transform 120ms ease";
     btn.addEventListener("pointerdown", () => (btn.style.transform = "scale(0.96)"));
     btn.addEventListener("pointerup", () => (btn.style.transform = "scale(1)"));
-    btn.addEventListener("pointercancel", () => (btn.style.transform = "scale(1)"));
     btn.addEventListener("pointerleave", () => (btn.style.transform = "scale(1)"));
     return btn;
 }
@@ -591,7 +590,7 @@ document.head.appendChild(idFontStyle);
 const idOverlay = document.createElement("div");
 idOverlay.style.position = "fixed";
 idOverlay.style.inset = "0";
-idOverlay.style.zIndex = "10000";
+idOverlay.style.zIndex = "30002";
 idOverlay.style.display = "none";
 idOverlay.style.pointerEvents = "auto";
 uiRoot.appendChild(idOverlay);
@@ -992,14 +991,13 @@ idCard.appendChild(footer);
 
 // --- helpers used by your existing flow ---
 function showIdCard(profile) {
-  uiActive = true;
-  if (IS_MOBILE) setMobileHudVisible(false);
-
+  enterUiMode();
   idOverlay.style.display = "block";
 
   nameValue.textContent = profile?.name ?? "";
   serialText.textContent = profile?.serial ?? "";
 
+  // info uses profile.message (keep schema)
   infoBox.value = profile?.message ?? "";
 
   if (profile?.avatarPhoto) {
@@ -1010,21 +1008,20 @@ function showIdCard(profile) {
   }
 
   sigLoadFromProfile(profile);
+
+  // default to edit when opening (your old logic did this once globally)
   setIdCardState("EDIT");
 }
 
 function hideIdCard() {
   idOverlay.style.display = "none";
 
-  const stillHasUi =
-    avatarOverlay.style.display !== "none" ||
-    npcState !== NPC_STATE.HIDDEN ||
-    doorUiActive;
-
-  uiActive = stillHasUi;
-
-  if (IS_MOBILE) {
-    setMobileHudVisible(!stillHasUi);
+  if (
+    !doorUiActive &&
+    npcState === NPC_STATE.HIDDEN &&
+    avatarOverlay.style.display === "none"
+  ) {
+    exitUiMode();
   }
 }
 // =========================
@@ -1034,7 +1031,7 @@ function hideIdCard() {
 const avatarOverlay = document.createElement("div");
 avatarOverlay.style.position = "fixed";
 avatarOverlay.style.inset = "0"
-avatarOverlay.style.zIndex = "10001";
+avatarOverlay.style.zIndex = "30003";
 avatarOverlay.style.display = "none";
 avatarOverlay.style.pointerEvents = "auto";
 uiRoot.appendChild(avatarOverlay);
@@ -1177,40 +1174,38 @@ doorBtns.appendChild(btnWander);
 doorBtns.appendChild(btnEnterHall);
 
 function doorEnterPrompt() {
-  if (!IS_MOBILE && !controls?.isLocked) return;
-  doorUiActive = true;
-  uiActive = true;
-  if (IS_MOBILE) setMobileHudVisible(false);
+    if (!IS_MOBILE && !controls?.isLocked) return;
+    doorUiActive = true;
+    enterUiMode();
 
-  doorLayer.style.pointerEvents = "auto";
+    doorLayer.style.pointerEvents = "auto";
 
-  doorBubble.textContent = "是否進入宴席會場？";
-  doorBubble.style.opacity = "1";
-  doorBubble.style.transform = "translateY(0)";
+    doorBubble.textContent = "是否進入宴席會場？";
+    doorBubble.style.opacity = "1";
+    doorBubble.style.transform = "translateY(0)";
 
-  doorBtns.style.opacity = "1";
-  doorBtns.style.transform = "translateY(0)";
-  doorBtns.style.pointerEvents = "auto";
+    doorBtns.style.opacity = "1";
+    doorBtns.style.transform = "translateY(0)";
+    doorBtns.style.pointerEvents = "auto";
 }
 function doorHidePrompt() {
-  doorUiActive = false;
+    doorUiActive = false;
 
-  const stillHasUi =
-    idOverlay.style.display !== "none" ||
-    avatarOverlay.style.display !== "none" ||
-    npcState !== NPC_STATE.HIDDEN;
+    if (
+      idOverlay.style.display === "none" &&
+      avatarOverlay.style.display === "none" &&
+      npcState === NPC_STATE.HIDDEN
+    ) {
+      exitUiMode();
+    }
+    doorBubble.style.opacity = "0";
+    doorBubble.style.transform = "translateY(6px)";
 
-  uiActive = stillHasUi;
-  if (IS_MOBILE) setMobileHudVisible(!stillHasUi);
+    doorLayer.style.pointerEvents = "none"
 
-  doorBubble.style.opacity = "0";
-  doorBubble.style.transform = "translateY(6px)";
-
-  doorLayer.style.pointerEvents = "none";
-
-  doorBtns.style.opacity = "0";
-  doorBtns.style.transform = "translateY(6px)";
-  doorBtns.style.pointerEvents = "none";
+    doorBtns.style.opacity = "0";
+    doorBtns.style.transform = "translateY(6px)";
+    doorBtns.style.pointerEvents = "none";
 }
 
 let doorTipToken = 0;
@@ -1322,9 +1317,7 @@ function npcShowBubble(text){
     npcBubble.style.transform = "translateY(0)";
 }
 function npcHideAll(){
-  uiActive = false;
-  if (IS_MOBILE) setMobileHudVisible(true);
-
+  exitUiMode();
   nameOk.style.display = "none";
 
   clearNpcTimers();
@@ -1338,7 +1331,7 @@ function npcHideAll(){
   optionRow.style.pointerEvents = "none";
 
   pencilBtn.style.opacity = "0";
-  pencilBtn.style.transform = `translateX(${PENCIL_SHIFT_CLOSED}px)`;
+  pencilBtn.style.transform = `translateX(${PENCIL_SHIFT_CLOSED}px)`; 
 
   nameBubble.style.display = "none";
   nameBubble.style.opacity = "0";
@@ -1350,11 +1343,8 @@ function npcHideAll(){
 }
 
 function npcEnterQ1() {
-  console.log("[npcEnterQ1] begin", { locked: controls.isLocked });
-
-  uiActive = true;
-  if (IS_MOBILE) setMobileHudVisible(false);
-
+console.log("[npcEnterQ1] begin", { locked: controls.isLocked });
+  enterUiMode();
   if (controls.isLocked) controls.unlock();
   console.log("[npcEnterQ1] after unlock", { locked: controls.isLocked });
 
@@ -1476,55 +1466,41 @@ function npcOpenNameInput() {
 }
 
 
-btnNo.addEventListener("click", (e) => {
+btnNo.addEventListener("pointerdown", (e) => {
   e.preventDefault();
   e.stopPropagation();
+  e.stopImmediatePropagation();
   console.log("[btnNo] state=", npcState);
-
   if (npcState === NPC_STATE.Q1) npcKickOut();
-
   if (npcState === NPC_STATE.CHECK_ID) {
     clearProfileLocal();
     npcKickOut();
   }
 });
 
-btnYes.addEventListener("click", (e) => {
+btnYes.addEventListener("pointerdown", (e) => {
   e.preventDefault();
   e.stopPropagation();
+  e.stopImmediatePropagation();
   console.log("[btnYes] state=", npcState);
-
-  if (npcState === NPC_STATE.Q1) {
-    npcAskName();
-    return;
-  }
-
+  if (npcState === NPC_STATE.Q1) npcAskName();
   if (npcState === NPC_STATE.CHECK_ID) {
     npcState = NPC_STATE.SHOW_ID_CARD;
-
     const profile = loadProfileLocal();
     console.log("[show id card] profile =", profile);
-
     npcShowBubble("為您確認證件中......");
     optionRow.style.opacity = "0";
     optionRow.style.pointerEvents = "none";
-
-    // 給按鈕一個 frame 完成 pointerup / click 視覺結束
-    requestAnimationFrame(() => {
-      showIdCard(profile);
-    });
-  }
+    showIdCard(profile);
+}
 });
 
-pencilBtn.addEventListener("click", (e) => {
+pencilBtn.addEventListener("pointerdown", (e) => {
   console.count("pencil click handler fired");
   console.log("[click] pencilBtn state=", npcState);
   e.preventDefault();
   e.stopPropagation();
-
-  if (npcState === NPC_STATE.PENCIL_READY) {
-    npcOpenNameInput();
-  }
+  if (npcState === NPC_STATE.PENCIL_READY) npcOpenNameInput();
 });
 nameInput.addEventListener("keydown", (e) => {
   if (e.code === "Enter") {
@@ -1560,20 +1536,6 @@ const keys = {
 };
 
 let mobileInput = null;
-function setMobileHudVisible(visible) {
-  const isVisible = !!visible;
-
-  if (mobileInput?.setVisible) {
-    mobileInput.setVisible(isVisible);
-  }
-
-  const root = document.getElementById("mobile-input-root");
-  if (root) {
-    root.style.display = isVisible ? "block" : "none";
-    root.style.pointerEvents = isVisible ? "auto" : "none";
-    root.style.opacity = isVisible ? "1" : "0";
-  }
-}
 
 const ACTION = {
   SELECT: "SELECT",
@@ -1594,6 +1556,45 @@ function enqueueAction(type) {
   }
 }
 
+function setMobileHudVisible(visible) {
+  const isVisible = !!visible;
+
+  if (mobileInput?.setVisible) {
+    mobileInput.setVisible(isVisible);
+  }
+
+  const selectors = [
+    "#mobile-input-root",
+    "#mobile-input",
+    "#mobile-controls",
+    "#mobile-joystick",
+    "#mobile-look",
+    "#mobile-actions",
+    ".mobile-input",
+    ".mobile-controls",
+    ".mobile-joystick",
+    ".mobile-look",
+    ".mobile-actions",
+    ".joystick-zone",
+    ".look-zone",
+  ];
+
+  document.querySelectorAll(selectors.join(",")).forEach((el) => {
+    el.style.display = isVisible ? "" : "none";
+    el.style.pointerEvents = isVisible ? "auto" : "none";
+    el.style.opacity = isVisible ? "1" : "0";
+  });
+}
+
+function enterUiMode() {
+  uiActive = true;
+  if (IS_MOBILE) setMobileHudVisible(false);
+}
+
+function exitUiMode() {
+  uiActive = false;
+  if (IS_MOBILE) setMobileHudVisible(true);
+}
 
 if (window.matchMedia("(pointer: coarse)").matches) {
   mobileInput = initMobileInput({
@@ -1630,7 +1631,10 @@ if (window.matchMedia("(pointer: coarse)").matches) {
 window.addEventListener("keydown", (e) => {
   console.log("[keydown]", e.code, "uiActive=", uiActive, "locked=", controls?.isLocked);
 
-  if (e.code === "Escape") { npcHideAll(); return; }
+  if (e.code === "Escape") {
+    enqueueAction(ACTION.CANCEL);
+    return;
+  }
 
   if (uiActive) return;
 
@@ -2070,7 +2074,7 @@ submitBtn.addEventListener("click", async () => {
   idVerified = true;
   idOverlay.style.display = "none";
 
-  uiActive = false;
+  exitUiMode();
   npcState = NPC_STATE.HIDDEN;
   optionRow.style.pointerEvents = "none";
   optionRow.style.opacity = "0";
@@ -2086,32 +2090,27 @@ submitBtn.addEventListener("click", async () => {
 
 
 function openAvatarEditor () {
-  uiActive = true;
-  if (IS_MOBILE) setMobileHudVisible(false);
+    enterUiMode();
+    avatarOverlay.style.display = "block";
+    initAvatarPreview();
 
-  avatarOverlay.style.display = "block";
-  initAvatarPreview();
-
-  const profile = loadProfileLocal();
-  if (profile?.avatarPhoto){
-    photoImg.src = profile.avatarPhoto;
-    photoImg.style.display = "block";
-  }
+    const profile = loadProfileLocal();
+    if (profile?.avatarPhoto){
+        photoImg.src = profile.avatarPhoto;
+        photoImg.style.display = "block";
+    }
 }
 function closeAvatarEditor() {
-  avatarOverlay.style.display = "none";
-  fileInput.value = "";
+    avatarOverlay.style.display = "none";
+    fileInput.value = "";
 
-  const stillHasUi =
-    idOverlay.style.display !== "none" ||
-    npcState !== NPC_STATE.HIDDEN ||
-    doorUiActive;
-
-  uiActive = stillHasUi;
-
-  if (IS_MOBILE) {
-    setMobileHudVisible(!stillHasUi);
-  }
+    if (
+      idOverlay.style.display === "none" &&
+      !doorUiActive &&
+      npcState === NPC_STATE.HIDDEN
+    ) {
+      exitUiMode();
+    }
 }
 editBtn.addEventListener("click", (e) => {
     e.preventDefault();
