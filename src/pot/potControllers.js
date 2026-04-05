@@ -424,14 +424,9 @@ export function createPotController({ appEl, onClose, onRequestClose, onFinalize
 function clearPanel() {
   if (!panelEl) return;
   panelEl.innerHTML = "";
-  // reset canvas references so they get recreated fresh each time
   ingredientCanvas = null;
   ingredientCtx = null;
-  // reset step3 bind flag so events get re-attached when re-entering step3
   step3Bound = false;
-
-  // 清掉之前殘留在 overlayEl 的 cut color input
-  overlayEl?.querySelectorAll(".cut-color-input").forEach((el) => el.remove());
 }
 
   function renderStep() {
@@ -714,6 +709,167 @@ function clearPanel() {
       boxSizing: "border-box",
     });
     panelEl.appendChild(pop);
+
+      function createAttachedColorPopover({
+    panelEl,
+    anchorEl,
+    initialColor = "#000000",
+    onChange,
+    presetColors = ["#000000", "#FD6FFF", "#1248FF", "#E8F25A", "#FFFFFF", "#FF8A65", "#7ED957", "#B388FF"],
+    offsetX = 12,
+    offsetY = 0,
+  }) {
+    let open = false;
+
+    const pop = document.createElement("div");
+    Object.assign(pop.style, {
+      position: "absolute",
+      left: "0px",
+      top: "0px",
+      width: "210px",
+      background: "#1a1a1a",
+      borderRadius: "18px",
+      padding: "12px",
+      display: "none",
+      flexDirection: "column",
+      gap: "12px",
+      zIndex: "120",
+      boxShadow: "0 6px 20px rgba(0,0,0,0.28)",
+      boxSizing: "border-box",
+    });
+    panelEl.appendChild(pop);
+
+    const presetWrap = document.createElement("div");
+    Object.assign(presetWrap.style, {
+      display: "grid",
+      gridTemplateColumns: "repeat(4, 1fr)",
+      gap: "10px",
+    });
+    pop.appendChild(presetWrap);
+
+    const nativeLabel = document.createElement("div");
+    nativeLabel.textContent = "切割線顏色";
+    Object.assign(nativeLabel.style, {
+      fontFamily: '"zpix", ui-sans-serif, system-ui',
+      fontSize: "16px",
+      color: "#fff",
+      lineHeight: "1",
+    });
+    pop.appendChild(nativeLabel);
+
+    const nativeInputWrap = document.createElement("div");
+    Object.assign(nativeInputWrap.style, {
+      width: "100%",
+      height: "44px",
+      borderRadius: "999px",
+      overflow: "hidden",
+      border: "1px solid rgba(255,255,255,0.18)",
+      background: "#2a2a2a",
+    });
+    pop.appendChild(nativeInputWrap);
+
+    const nativeInput = document.createElement("input");
+    nativeInput.type = "color";
+    nativeInput.value = initialColor;
+    Object.assign(nativeInput.style, {
+      width: "100%",
+      height: "100%",
+      border: "0",
+      padding: "0",
+      background: "transparent",
+      cursor: "pointer",
+    });
+    nativeInputWrap.appendChild(nativeInput);
+
+    const swatchButtons = [];
+
+    function applyColor(nextColor) {
+      nativeInput.value = nextColor;
+      swatchButtons.forEach((btn) => {
+        const active = btn.dataset.color?.toLowerCase() === nextColor.toLowerCase();
+        btn.style.outline = active ? "3px solid #FD6FFF" : "2px solid transparent";
+      });
+      onChange?.(nextColor);
+    }
+
+    presetColors.forEach((color) => {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.dataset.color = color;
+      Object.assign(btn.style, {
+        width: "38px",
+        height: "38px",
+        borderRadius: "999px",
+        border: "0",
+        outline: "2px solid transparent",
+        background: color,
+        cursor: "pointer",
+        padding: "0",
+      });
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        applyColor(color);
+      });
+      presetWrap.appendChild(btn);
+      swatchButtons.push(btn);
+    });
+
+    nativeInput.addEventListener("input", (e) => {
+      applyColor(e.target.value);
+    });
+
+    pop.addEventListener("pointerdown", (e) => {
+      e.stopPropagation();
+    });
+
+    function positionPopover() {
+      if (!anchorEl) return;
+      const left = anchorEl.offsetLeft + anchorEl.offsetWidth + offsetX;
+      const top = anchorEl.offsetTop + offsetY;
+      pop.style.left = `${left}px`;
+      pop.style.top = `${top}px`;
+    }
+
+    function close() {
+      if (!open) return;
+      open = false;
+      pop.style.display = "none";
+      document.removeEventListener("pointerdown", onDocPointerDown, true);
+    }
+
+    function openPopover() {
+      if (open) return;
+      positionPopover();
+      open = true;
+      pop.style.display = "flex";
+      setTimeout(() => {
+        document.addEventListener("pointerdown", onDocPointerDown, true);
+      }, 0);
+    }
+
+    function toggle() {
+      if (open) close();
+      else openPopover();
+    }
+
+    function onDocPointerDown(e) {
+      if (pop.contains(e.target)) return;
+      if (anchorEl?.contains?.(e.target)) return;
+      close();
+    }
+
+    applyColor(initialColor);
+
+    return {
+      el: pop,
+      toggle,
+      open: openPopover,
+      close,
+      setValue: applyColor,
+      isOpen: () => open,
+      reposition: positionPopover,
+    };
+  }
 
     const presetWrap = document.createElement("div");
     Object.assign(presetWrap.style, {
@@ -2423,70 +2579,43 @@ function renderVerticalList({
       color: "#1248FF",
     });
 
-    addCapsuleButton({
+    const cutBtn = addCapsuleButton({
       x: s.controls.cut.x,
       y: s.controls.cut.y,
       w: 60,
       h: 60,
       bg: composeMode === "cut" ? "#FD6FFF" : "#EAEAEA",
       border: "0",
-      onClick: () => {
+      onClick: (e) => {
+        e.stopPropagation();
         activeBallId = null;
         activeIngredientId = null;
         composeMode = "cut";
-
-        const cutColorInput = document.createElement("input");
-        cutColorInput.type = "color";
-        cutColorInput.value = cutColor;
-        cutColorInput.className = "cut-color-input";
-
-        Object.assign(cutColorInput.style, {
-          position: "absolute",
-          left: "-9999px",
-          top: "0",
-          opacity: "0",
-          pointerEvents: "none",
-        });
-
-        panelEl.appendChild(cutColorInput);
-
-        cutColorInput.addEventListener("input", (e) => {
-          cutColor = e.target.value;
-          redrawComposeCanvas();
-        });
-
-        cutColorInput.addEventListener(
-          "change",
-          (e) => {
-            cutColor = e.target.value;
-            if (cutColorInput.parentNode) cutColorInput.remove();
-            renderStep();
-          },
-          { once: true }
-        );
-
-        cutColorInput.addEventListener(
-          "blur",
-          () => {
-            setTimeout(() => {
-              if (cutColorInput.parentNode) cutColorInput.remove();
-              renderStep();
-            }, 0);
-          },
-          { once: true }
-        );
-
-        try {
-          if (typeof cutColorInput.showPicker === "function") {
-            cutColorInput.showPicker();
-          } else {
-            cutColorInput.click();
-          }
-        } catch (err) {
-          console.warn("[cutColorInput] showPicker failed:", err);
-          cutColorInput.click();
-        }
+        cutColorPopover.toggle();
+        renderStep();
       },
+    });
+
+    const cutColorPopover = createAttachedColorPopover({
+      panelEl,
+      anchorEl: cutBtn,
+      initialColor: cutColor,
+      offsetX: 12,
+      offsetY: -18,
+      onChange: (nextColor) => {
+        cutColor = nextColor;
+        redrawComposeCanvas();
+      },
+      presetColors: [
+        "#000000",
+        "#FD6FFF",
+        "#1248FF",
+        "#E8F25A",
+        "#FFFFFF",
+        "#FF8A65",
+        "#7ED957",
+        "#B388FF",
+      ],
     });
 
     addImg(ASSETS.cut, {
