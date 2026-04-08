@@ -246,15 +246,34 @@ export function initMobileInput({
     bottom: 22,
     sideOffset: 22,
   });
+  let lookAxisLock = null; // "x" | "y" | null
 
   function emitLook(nx, ny) {
     if (typeof onLook !== "function") return;
 
-    const DEAD = 0.10;
-    const x = Math.abs(nx) < DEAD ? 0 : nx;
-    const y = Math.abs(ny) < DEAD ? 0 : ny;
+    const DEAD = 0.14;
+    const AXIS_LOCK_THRESHOLD = 0.18;
+
+    let x = Math.abs(nx) < DEAD ? 0 : nx;
+    let y = Math.abs(ny) < DEAD ? 0 : ny;
 
     if (x === 0 && y === 0) return;
+
+    // 還沒鎖軸時，先決定這次拖曳要走水平還是垂直
+    if (!lookAxisLock) {
+      if (Math.abs(x) < AXIS_LOCK_THRESHOLD && Math.abs(y) < AXIS_LOCK_THRESHOLD) {
+        return;
+      }
+
+      lookAxisLock = Math.abs(x) > Math.abs(y) ? "x" : "y";
+    }
+
+    if (lookAxisLock === "x") {
+      y = 0;
+    } else if (lookAxisLock === "y") {
+      x = 0;
+    }
+
     onLook(x, y);
   }
 
@@ -271,6 +290,7 @@ export function initMobileInput({
 
   function resetLookStick() {
     lookStick.reset();
+    lookAxisLock = null;
   }
 
   lookStick.wrap.addEventListener("pointerup", (e) => {

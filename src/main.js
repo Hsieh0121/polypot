@@ -1299,12 +1299,10 @@ if (window.matchMedia("(pointer: coarse)").matches) {
     onLook: (nx, ny) => {
       if (!touchLook) return;
 
-      const dt = clock.getDelta(); // 你 main.js 已經有 clock
+      const LOOK_STEP = 0.035;
 
-      const SPEED = 0.8
-
-      touchLook.yaw -= nx * SPEED * dt;
-      touchLook.pitch -= ny * SPEED * dt;
+      touchLook.yaw -= nx * LOOK_STEP;
+      touchLook.pitch -= ny * LOOK_STEP;
 
       touchLook.pitch = THREE.MathUtils.clamp(
         touchLook.pitch,
@@ -1367,7 +1365,7 @@ window.addEventListener("keyup", (e) => {
 
 const loader = new GLTFLoader();
 loader.load(
-  "/newenv.glb",
+  "/env.glb",
   (gltf) => {
     envRoot = gltf.scene;
     scene.add(envRoot);
