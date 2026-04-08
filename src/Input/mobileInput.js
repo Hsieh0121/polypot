@@ -251,30 +251,33 @@ export function initMobileInput({
   function emitLook(nx, ny) {
     if (typeof onLook !== "function") return;
 
-    const DEAD = 0.14;
-    const AXIS_LOCK_THRESHOLD = 0.18;
+    const DEAD = 0.22;
+    const LOCK_THRESHOLD = 0.30;
 
     let x = Math.abs(nx) < DEAD ? 0 : nx;
     let y = Math.abs(ny) < DEAD ? 0 : ny;
 
     if (x === 0 && y === 0) return;
 
-    // 還沒鎖軸時，先決定這次拖曳要走水平還是垂直
+    // 還沒鎖軸時，先決定這次拖曳只走水平或垂直
     if (!lookAxisLock) {
-      if (Math.abs(x) < AXIS_LOCK_THRESHOLD && Math.abs(y) < AXIS_LOCK_THRESHOLD) {
+      if (Math.abs(x) < LOCK_THRESHOLD && Math.abs(y) < LOCK_THRESHOLD) {
         return;
       }
 
       lookAxisLock = Math.abs(x) > Math.abs(y) ? "x" : "y";
     }
 
+    // 一旦鎖軸，就只輸出四方向固定值
     if (lookAxisLock === "x") {
-      y = 0;
-    } else if (lookAxisLock === "y") {
-      x = 0;
+      onLook(Math.sign(x), 0);
+      return;
     }
 
-    onLook(x, y);
+    if (lookAxisLock === "y") {
+      onLook(0, Math.sign(y));
+      return;
+    }
   }
 
   lookStick.wrap.addEventListener("pointerdown", (e) => {
