@@ -113,22 +113,8 @@ function isTouchLookBlocked() {
 }
 
 syncTouchLookFromCamera();
-
-renderer.domElement.addEventListener("pointerdown", (e) => {
-  if (isTouchLookBlocked()) return;
-
-  if (e.clientX < window.innerWidth * 0.45) return;
-
-  touchLook.active = true;
-  touchLook.pointerId = e.pointerId;
-  touchLook.lastX = e.clientX;
-  touchLook.lastY = e.clientY;
-
-  renderer.domElement.setPointerCapture?.(e.pointerId);
-  e.preventDefault();
-}, { passive: false });
-
 renderer.domElement.addEventListener("pointermove", (e) => {
+  if (IS_MOBILE) return;
   if (!touchLook.active) return;
   if (e.pointerId !== touchLook.pointerId) return;
 
@@ -151,6 +137,7 @@ renderer.domElement.addEventListener("pointermove", (e) => {
 }, { passive: false });
 
 function endTouchLook(e) {
+  if (IS_MOBILE) return;
   if (e.pointerId !== touchLook.pointerId) return;
   touchLook.active = false;
   touchLook.pointerId = null;
@@ -159,6 +146,7 @@ function endTouchLook(e) {
 renderer.domElement.addEventListener("pointerup", endTouchLook);
 renderer.domElement.addEventListener("pointercancel", endTouchLook);
 renderer.domElement.addEventListener("lostpointercapture", () => {
+  if (IS_MOBILE) return;
   touchLook.active = false;
   touchLook.pointerId = null;
 });

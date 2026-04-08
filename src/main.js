@@ -511,6 +511,7 @@ function isTouchLookBlocked() {
 syncTouchLookFromCamera();
 
 renderer.domElement.addEventListener("pointerdown", (e) => {
+  if (IS_MOBILE) return;
   if (isTouchLookBlocked()) return;
 
   // 左半邊保留給搖桿，右半邊才控制視角
@@ -526,6 +527,7 @@ renderer.domElement.addEventListener("pointerdown", (e) => {
 }, { passive: false });
 
 renderer.domElement.addEventListener("pointermove", (e) => {
+  if (IS_MOBILE) return;
   if (!touchLook.active) return;
   if (e.pointerId !== touchLook.pointerId) return;
 
@@ -548,6 +550,7 @@ renderer.domElement.addEventListener("pointermove", (e) => {
 }, { passive: false });
 
 function endTouchLook(e) {
+  if (IS_MOBILE) return;
   if (e.pointerId !== touchLook.pointerId) return;
   touchLook.active = false;
   touchLook.pointerId = null;
@@ -556,6 +559,7 @@ function endTouchLook(e) {
 renderer.domElement.addEventListener("pointerup", endTouchLook);
 renderer.domElement.addEventListener("pointercancel", endTouchLook);
 renderer.domElement.addEventListener("lostpointercapture", () => {
+  if (IS_MOBILE) return;
   touchLook.active = false;
   touchLook.pointerId = null;
 });
