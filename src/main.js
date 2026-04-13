@@ -38,18 +38,22 @@ function resize(){
 
 const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || "http://localhost:3001";
 const socket = io(SOCKET_URL, { transports: ["websocket"] });
-const LS_SERIAL = "polypot_serial";
+const SS_SERIAL = "polypot_serial";
+const LS_HAS_PLAYED = "polypot_has_played";
+const LS_LAST_SERIAL = "polypot_last_serial";
 
 function loadHallIdentity() {
-  const serial = localStorage.getItem(LS_SERIAL) || "";
+  const serial = sessionStorage.getItem(SS_SERIAL) || "";
   return serial ? { serial } : {};
 }
 
 function saveHallIdentity(profile) {
   if (profile?.serial) {
-    localStorage.setItem(LS_SERIAL, profile.serial);
+    sessionStorage.setItem(SS_SERIAL, profile.serial);
+    localStorage.setItem(LS_HAS_PLAYED, "1");
+    localStorage.setItem(LS_LAST_SERIAL, profile.serial);
   } else {
-    localStorage.removeItem(LS_SERIAL);
+    sessionStorage.removeItem(SS_SERIAL);
   }
 }
 
@@ -217,8 +221,8 @@ socket.on("connect", () => {
   console.log("[connect] current serial =", currentProfile?.serial); 
 
   if (!currentProfile?.serial) {
-    console.warn("[hall] missing profile.serial, redirect to white room");
-    window.location.href = "/white.html";
+    console.warn("[hall] missing profile.serial, redirect to entry");
+    window.location.href = "/entry.html";
     return;
   }
 
@@ -226,8 +230,8 @@ socket.on("connect", () => {
     if (self?.id) localPlayerId = self.id;
 
     if (ok === false) {
-      console.warn("[hall] join failed, redirect to white room");
-      window.location.href = "/white.html";
+      console.warn("[hall] join failed, redirect to entry");
+      window.location.href = "/entry.html";
       return;
     }
 

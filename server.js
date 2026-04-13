@@ -1,5 +1,6 @@
 import express from "express";
 import http from "http";
+import cors from "cors";
 import { Server } from "socket.io";
 import {
   getProfileBySerial,
@@ -25,6 +26,11 @@ const allowedOrigins = [
   process.env.CLIENT_ORIGIN,
 ].filter(Boolean);
 
+app.use(cors({
+  origin: allowedOrigins,
+  methods: ["GET", "POST"],
+}));
+
 const io = new Server(server, {
   cors: {
     origin: allowedOrigins,
@@ -33,6 +39,39 @@ const io = new Server(server, {
 });
 
 app.get("/health", (_, res) => res.send("ok"));
+app.get("/profiles/:serial", (req, res) => {
+  try {
+    const rawSerial =
+      typeof req.params.serial === "string" ? req.params.serial.trim() : "";
+
+    if (!rawSerial) {
+      return res.status(400).json({
+        ok: false,
+        error: "missing serial",
+      });
+    }
+
+    const profile = getProfileBySerial(rawSerial);
+
+    if (!profile) {
+      return res.status(404).json({
+        ok: false,
+        error: "profile not found",
+      });
+    }
+
+    return res.json({
+      ok: true,
+      profile,
+    });
+  } catch (err) {
+    console.error("[GET /profiles/:serial] failed:", err);
+    return res.status(500).json({
+      ok: false,
+      error: "get profile failed",
+    });
+  }
+});
 
 const room = {
   players: new Map(),          // socket.id -> player

@@ -1,0 +1,508 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Polypot Entry</title>
+  <style>
+    html, body {
+      margin: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: #EDEDED;
+    }
+
+    body {
+      position: relative;
+      background: #EDEDED;
+    }
+
+    .intro-root {
+      position: relative;
+      width: 100vw;
+      height: 100vh;
+      overflow: hidden;
+      background: #EDEDED;
+    }
+
+    .intro-video-desktop {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      object-position: center center;
+      display: block;
+      pointer-events: none;
+      background: #EDEDED;
+    }
+
+    .intro-ui {
+      position: absolute;
+      inset: 0;
+      z-index: 3;
+      pointer-events: none;
+    }
+
+    .lang-row {
+      position: absolute;
+      left: 50%;
+      top: calc(50% + 170px);
+      transform: translateX(-50%);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 15px;
+      pointer-events: auto;
+    }
+
+    .lang-btn {
+      width: 154px;
+      height: 70px;
+      box-sizing: border-box;
+      border: 1px solid #FD6FFF;
+      border-radius: 999px;
+      background: transparent;
+      color: #FD6FFF;
+      text-decoration: none;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0;
+      margin: 0;
+      cursor: pointer;
+      font-family: "zpix", sans-serif;
+      font-size: 20pt;
+      line-height: 1;
+      appearance: none;
+      -webkit-appearance: none;
+    }
+
+    .lang-btn:hover {
+      background: rgba(253, 111, 255, 0.06);
+    }
+
+    .lang-btn:active {
+      transform: translateY(1px);
+    }
+
+    .mobile-video-stage {
+      display: none;
+    }
+
+    .login-panel {
+      position: fixed;
+      inset: 0;
+      z-index: 10;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      background: rgba(237, 237, 237, 0.72);
+      pointer-events: auto;
+    }
+
+    .login-panel.is-open {
+      display: flex;
+    }
+
+    .login-card {
+      position: relative;
+      width: min(440px, calc(100vw - 32px));
+      box-sizing: border-box;
+      border: 1px solid #FD6FFF;
+      border-radius: 28px;
+      background: rgba(255, 255, 255, 0.96);
+      padding: 34px 24px 24px;
+      box-shadow: 0 16px 48px rgba(0, 0, 0, 0.12);
+      pointer-events: auto;
+    }
+
+    .login-close {
+      position: absolute;
+      top: 12px;
+      right: 12px;
+      width: 42px;
+      height: 42px;
+      border: 1px solid #FD6FFF;
+      border-radius: 999px;
+      background: #fff;
+      color: #FD6FFF;
+      cursor: pointer;
+      font-family: "zpix", sans-serif;
+      font-size: 14pt;
+      line-height: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      appearance: none;
+      -webkit-appearance: none;
+    }
+
+    .login-title {
+      margin-bottom: 18px;
+      color: #FD6FFF;
+      font-family: "zpix", sans-serif;
+      font-size: 20pt;
+      line-height: 1.3;
+      text-align: center;
+    }
+
+    .login-input {
+      width: 100%;
+      height: 58px;
+      box-sizing: border-box;
+      border: 1px solid #FD6FFF;
+      border-radius: 999px;
+      outline: none;
+      background: #fff;
+      color: #FD6FFF;
+      text-align: center;
+      font-family: "zpix", sans-serif;
+      font-size: 16pt;
+      padding: 0 18px;
+      appearance: none;
+      -webkit-appearance: none;
+    }
+
+    .login-input::placeholder {
+      color: rgba(253, 111, 255, 0.5);
+    }
+
+    .login-error {
+      min-height: 28px;
+      margin-top: 12px;
+      color: #FD6FFF;
+      font-family: "zpix", sans-serif;
+      font-size: 11pt;
+      text-align: center;
+      line-height: 1.4;
+    }
+
+    .login-actions {
+      margin-top: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .login-confirm {
+      width: 154px;
+      height: 70px;
+      box-sizing: border-box;
+      border: 1px solid #FD6FFF;
+      border-radius: 999px;
+      background: transparent;
+      color: #FD6FFF;
+      cursor: pointer;
+      font-family: "zpix", sans-serif;
+      font-size: 20pt;
+      line-height: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      appearance: none;
+      -webkit-appearance: none;
+    }
+
+    .login-confirm:hover {
+      background: rgba(253, 111, 255, 0.06);
+    }
+
+    .login-confirm:disabled {
+      opacity: 0.45;
+      cursor: wait;
+      pointer-events: none;
+    }
+
+    @media (max-width: 768px), (orientation: portrait) {
+      html, body {
+        background: #FFFFFF;
+      }
+
+      body,
+      .intro-root {
+        background: #FFFFFF;
+      }
+
+      .intro-video-desktop {
+        display: none;
+      }
+
+      .mobile-video-stage {
+        display: block;
+        position: absolute;
+        left: 50%;
+        top: 9vh;
+        transform: translateX(-50%);
+        width: 100vw;
+        height: 78vh;
+        overflow: hidden;
+        background: #FFFFFF;
+      }
+
+      .mobile-video-stage video {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        object-fit: contain;
+        object-position: center center;
+        display: block;
+        pointer-events: none;
+        background: #FFFFFF;
+      }
+
+      .lang-row {
+        top: auto;
+        bottom: 50vh;
+        left: 50%;
+        transform: translateX(-50%);
+        gap: 12px;
+      }
+
+      .lang-btn {
+        width: 132px;
+        height: 60px;
+        font-size: 18pt;
+      }
+
+      .login-card {
+        width: min(420px, calc(100vw - 24px));
+        padding: 30px 18px 20px;
+        border-radius: 24px;
+      }
+
+      .login-title {
+        font-size: 18pt;
+      }
+
+      .login-input {
+        height: 54px;
+        font-size: 14pt;
+      }
+
+      .login-confirm {
+        width: 132px;
+        height: 60px;
+        font-size: 18pt;
+      }
+    }
+
+    @media (max-width: 480px) {
+      .mobile-video-stage {
+        top: 8vh;
+        height: 58vh;
+      }
+
+      .lang-row {
+        bottom: 25vh;
+        gap: 10px;
+      }
+
+      .lang-btn {
+        width: 118px;
+        height: 54px;
+        font-size: 16pt;
+      }
+
+      .login-title {
+        font-size: 16pt;
+      }
+
+      .login-input {
+        height: 50px;
+        font-size: 13pt;
+      }
+
+      .login-confirm {
+        width: 118px;
+        height: 54px;
+        font-size: 16pt;
+      }
+    }
+
+    @media (max-height: 500px) and (orientation: landscape) {
+      .mobile-video-stage {
+        top: -18vh;
+        height: 115vh;
+      }
+
+      .lang-row {
+        bottom: 27vh;
+      }
+
+      .lang-btn {
+        width: 118px;
+        height: 54px;
+        font-size: 16pt;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="intro-root">
+    <video
+      class="intro-video-desktop"
+      autoplay
+      muted
+      loop
+      playsinline
+      webkit-playsinline
+      preload="auto"
+    >
+      <source src="/Emotion.mp4" type="video/mp4" />
+    </video>
+
+    <div class="mobile-video-stage" id="mobileVideoStage">
+      <video
+        autoplay
+        muted
+        loop
+        playsinline
+        webkit-playsinline
+        preload="auto"
+      >
+        <source src="/Emotion.mp4" type="video/mp4" />
+      </video>
+    </div>
+
+    <div class="intro-ui">
+      <div class="lang-row">
+        <button type="button" class="lang-btn" id="continueBtn">繼續遊戲</button>
+        <button type="button" class="lang-btn" id="newGameBtn">新遊戲</button>
+      </div>
+    </div>
+  </main>
+
+  <div class="login-panel" id="loginPanel" aria-hidden="true">
+    <div class="login-card" role="dialog" aria-modal="true" aria-labelledby="loginTitle">
+      <button type="button" class="login-close" id="closeLoginBtn">×</button>
+      <div class="login-title" id="loginTitle">輸入序號</div>
+      <input
+        id="serialInput"
+        class="login-input"
+        type="text"
+        inputmode="text"
+        autocomplete="off"
+        placeholder="P000187"
+      />
+      <div class="login-error" id="loginError"></div>
+      <div class="login-actions">
+        <button type="button" class="login-confirm" id="loginConfirmBtn">確認</button>
+      </div>
+    </div>
+  </div>
+
+<script>
+  const STORAGE_KEYS = {
+    lastSerial: "polypot_last_serial",
+    currentSerial: "polypot_serial",
+  };
+
+  const API_BASE = "http://localhost:3001";
+
+  const continueBtn = document.getElementById("continueBtn");
+  const newGameBtn = document.getElementById("newGameBtn");
+  const loginPanel = document.getElementById("loginPanel");
+  const closeLoginBtn = document.getElementById("closeLoginBtn");
+  const loginConfirmBtn = document.getElementById("loginConfirmBtn");
+  const serialInput = document.getElementById("serialInput");
+  const loginError = document.getElementById("loginError");
+
+  const lastSerial = localStorage.getItem(STORAGE_KEYS.lastSerial) || "";
+  if (lastSerial) {
+    serialInput.value = lastSerial;
+  }
+
+  function openLoginPanel() {
+    loginPanel.classList.add("is-open");
+    loginPanel.setAttribute("aria-hidden", "false");
+    loginError.textContent = "";
+    setTimeout(() => {
+      serialInput.focus();
+      serialInput.select();
+    }, 0);
+  }
+
+  function closeLoginPanelFn() {
+    loginPanel.classList.remove("is-open");
+    loginPanel.setAttribute("aria-hidden", "true");
+    loginError.textContent = "";
+    loginConfirmBtn.disabled = false;
+  }
+
+  continueBtn.addEventListener("click", () => {
+    openLoginPanel();
+  });
+
+  closeLoginBtn.addEventListener("click", closeLoginPanelFn);
+
+  loginPanel.addEventListener("click", (e) => {
+    if (e.target === loginPanel) {
+      closeLoginPanelFn();
+    }
+  });
+
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && loginPanel.classList.contains("is-open")) {
+      closeLoginPanelFn();
+    }
+  });
+
+  newGameBtn.addEventListener("click", () => {
+    sessionStorage.removeItem(STORAGE_KEYS.currentSerial);
+    location.href = "/white.html";
+  });
+
+  async function handleContinue() {
+    const rawSerial = serialInput.value.trim().toUpperCase();
+
+    if (!rawSerial) {
+      loginError.textContent = "請輸入序號";
+      return;
+    }
+
+    loginError.textContent = "";
+    loginConfirmBtn.disabled = true;
+
+    try {
+      const res = await fetch(`${API_BASE}/profiles/${encodeURIComponent(rawSerial)}`, {
+        method: "GET",
+        headers: {
+          "Accept": "application/json"
+        }
+      });
+
+      const data = await res.json().catch(() => null);
+
+      if (!res.ok || !data?.ok) {
+        loginError.textContent = "身分證號不存在，請開啟新遊戲。";
+        loginConfirmBtn.disabled = false;
+        return;
+      }
+
+      const resolvedSerial = data.profile?.serial || rawSerial;
+
+      sessionStorage.setItem(STORAGE_KEYS.currentSerial, resolvedSerial);
+      localStorage.setItem("polypot_has_played", "1");
+      localStorage.setItem("polypot_last_serial", resolvedSerial);
+
+      location.href = "/hall.html";
+    } catch (err) {
+      console.error("[entry] continue failed:", err);
+      loginError.textContent = "連線失敗，請稍後再試";
+      loginConfirmBtn.disabled = false;
+    }
+  }
+
+  loginConfirmBtn.addEventListener("click", handleContinue);
+
+  serialInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      handleContinue();
+    }
+  });
+</script>
+</body>
+</html>

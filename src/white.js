@@ -1225,7 +1225,10 @@ function doorTipOnce(text, ms = 1500) {
 // Profile / Serial helpers (localStorage MVP)
 // =========================
 
-const LS_SERIAL = "polypot_serial";
+const SS_SERIAL = "polypot_serial";
+const LS_HAS_PLAYED = "polypot_has_played";
+const LS_LAST_SERIAL = "polypot_last_serial";
+
 const MEM_PROFILE = {
   value: null,
 };
@@ -1234,26 +1237,27 @@ function saveProfileLocal(profile) {
   MEM_PROFILE.value = profile ?? null;
 
   if (profile?.serial) {
-    localStorage.setItem(LS_SERIAL, profile.serial);
+    sessionStorage.setItem(SS_SERIAL, profile.serial);
+    localStorage.setItem(LS_HAS_PLAYED, "1");
+    localStorage.setItem(LS_LAST_SERIAL, profile.serial);
   } else {
-    localStorage.removeItem(LS_SERIAL);
+    sessionStorage.removeItem(SS_SERIAL);
   }
 }
 
 function loadProfileLocal() {
   if (MEM_PROFILE.value) return MEM_PROFILE.value;
 
-  const serial = localStorage.getItem(LS_SERIAL);
+  const serial = sessionStorage.getItem(SS_SERIAL);
   if (!serial) return null;
 
-  // 這裡只回最小身份，不回舊的 message / avatar / signature
   return { serial };
 }
 
 function clearProfileLocal() {
   MEM_PROFILE.value = null;
   localStorage.removeItem("polypot_name");
-  localStorage.removeItem(LS_SERIAL);
+  sessionStorage.removeItem(SS_SERIAL);
 }
 function registerProfileOnServer(profileInput) {
   return new Promise((resolve, reject) => {
@@ -1293,7 +1297,7 @@ const params = new URLSearchParams(window.location.search);
 const FORCE_FRESH = params.get("fresh") === "1";
 
 if (FORCE_FRESH) {
-  localStorage.removeItem("polypot_serial");
+  sessionStorage.removeItem("polypot_serial");
   localStorage.removeItem("polypot_name");
 }
 function fetchProfileFromServer(serial) {
