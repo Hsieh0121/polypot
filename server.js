@@ -309,9 +309,7 @@ io.on("connection", (socket) => {
         return ack?.({ ok: false, error: "profile not found" });
       }
 
-      room.serialBySocketId.set(socket.id, profile.serial);
-      updateRoomPlayerProfile(socket.id, profile);
-
+      // 純查詢：不要改 socket 身份，也不要改 room player profile
       ack?.({
         ok: true,
         profile,
@@ -505,30 +503,46 @@ io.on("connection", (socket) => {
     }
   });
 
-  socket.on("disconnect", () => {
+    socket.on("disconnect", () => {
     const p = room.players.get(socket.id);
     const serial = room.serialBySocketId.get(socket.id);
 
+    let offlinePayload = null;
+
     if (p?.profile?.serial || serial) {
       const finalSerial = p?.profile?.serial || serial;
+      const dbProfile = getProfileBySerial(finalSerial);
+
       const finalAssignedTableId =
         p?.profile?.assignedTableId ||
-        getProfileBySerial(finalSerial)?.assignedTableId ||
+        dbProfile?.assignedTableId ||
         null;
+
+      const finalPos = p?.pos ?? { x: 0, y: 0, z: 0 };
+      const finalRotY = p?.rotY ?? 0;
 
       setAvatarPresenceOnline(finalSerial, false);
 
-      // 如果這個人從來沒存過位置，補存一次
-      if (p?.pos) {
-        saveAvatarPresence({
-          serial: finalSerial,
-          assignedTableId: finalAssignedTableId,
-          pos: p.pos,
-          rotY: p.rotY ?? 0,
-          isOnline: false,
-          mode: "static",
-        });
-      }
+      saveAvatarPresence({
+        serial: finalSerial,
+        assignedTableId: finalAssignedTableId,
+        pos: finalPos,
+        rotY: finalRotY,
+        isOnline: false,
+        mode: "static",
+      });
+
+      const freshProfile = getProfileBySerial(finalSerial);
+
+      offlinePayload = {
+        serial: finalSerial,
+        assignedTableId: finalAssignedTableId,
+        pos: finalPos,
+        rotY: finalRotY,
+        isOnline: false,
+        mode: "static",
+        profile: freshProfile,
+      };
     }
 
     room.players.delete(socket.id);
@@ -544,6 +558,12 @@ io.on("connection", (socket) => {
     room.serialBySocketId.delete(socket.id);
 
     socket.broadcast.emit("player:leave", { id: socket.id });
+
+    if (offlinePayload) {
+      socket.broadcast.emit("avatar:offline", offlinePayload);
+      console.log("[disconnect -> avatar:offline]", offlinePayload.serial, offlinePayload.assignedTableId);
+    }
+
     console.log("socket disconnected:", socket.id);
   });
 });

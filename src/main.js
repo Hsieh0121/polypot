@@ -60,6 +60,39 @@ function saveHallIdentity(profile) {
 let currentProfile = loadHallIdentity();
 const remotePlayers = new Map(); // key = avatar:${serial}
 let localPlayerId = null;
+const DEBUG_AVATAR = false;
+
+const pendingProfileHydration = new Set();
+
+function requestRemoteProfileHydration(serial) {
+  if (!serial) return;
+  if (serial === currentProfile?.serial) return;
+  if (pendingProfileHydration.has(serial)) return;
+
+  pendingProfileHydration.add(serial);
+
+  socket.emit("getProfile", { serial }, (res) => {
+    pendingProfileHydration.delete(serial);
+
+    if (!res?.ok || !res.profile) {
+      console.warn("[remote profile hydration failed]", serial, res);
+      return;
+    }
+
+    const found = findRemoteBySerial(serial);
+    if (!found?.obj) {
+      console.warn("[remote profile hydration] avatar disappeared before apply", serial);
+      return;
+    }
+
+    applyProfileToAvatar(found.obj, res.profile);
+
+    console.log("[remote profile hydrated]", serial, {
+      hasAvatarPhoto: !!res.profile.avatarPhoto,
+      hasTargetMesh: !!found.obj.userData?.targetMesh,
+    });
+  });
+}
 
 function getSerialFromPlayerLike(data) {
   return data?.profile?.serial ?? data?.serial ?? null;
@@ -195,6 +228,9 @@ let hallIntroTimers = [];
 let assignedMarker = null;
 let assignedMarkerBobBaseY = 0;
 let assignedMarkerTarget = null;
+let lastSentAvatarPos = null;
+let lastSentRotY = null;
+
 function createEmptyTablePotState(tableId) {
   return {
     tableId,
@@ -404,7 +440,8 @@ function makeRemoteAvatar(playerLike) {
   group.userData.playerId = playerLike.id ?? null;
   group.userData.serial = serial;
   group.userData.profile = playerLike.profile || {};
-  group.userData.presenceType = playerLike.presenceType ?? (playerLike.id ? "online" : "offline");
+  group.userData.presenceType =
+    playerLike.presenceType ?? (playerLike.id ? "online" : "offline");
 
   group.userData.targetMesh = null;
   group.userData.modelAnchor = null;
@@ -433,8 +470,9 @@ function makeRemoteAvatar(playerLike) {
   hitbox.position.set(0, 1.6, 0);
   group.add(hitbox);
 
+  // 改這裡
   const modelAnchor = new THREE.Group();
-  hitbox.add(modelAnchor);
+  group.add(modelAnchor);
   group.userData.modelAnchor = modelAnchor;
 
   loader.load("/avatar.glb", (gltf) => {
@@ -483,14 +521,28 @@ function makeRemoteAvatar(playerLike) {
     group.userData.avatarRoot = root;
     group.userData.targetMesh = targetMesh;
 
-    console.log("[targetMesh found]", serial, targetMesh?.name);
+    if (!targetMesh) {
+      console.warn("[avatar] targetMesh missing", serial);
+    } else {
+      console.log("[targetMesh found]", serial, targetMesh.name);
+    }
 
-    const pendingProfile = group.userData.pendingProfile || group.userData.profile || null;
+    const pendingProfile =
+      group.userData.pendingProfile || group.userData.profile || null;
+
     if (pendingProfile) {
       applyProfileToAvatar(group, pendingProfile);
     }
 
     group.visible = true;
+
+    const hasAvatarPhoto =
+      !!group.userData.profile?.avatarPhoto ||
+      !!group.userData.pendingProfile?.avatarPhoto;
+
+    if (!hasAvatarPhoto) {
+      requestRemoteProfileHydration(serial);
+    }
 
     console.log("[remote avatar ready]", serial, {
       visible: group.visible,
@@ -499,6 +551,8 @@ function makeRemoteAvatar(playerLike) {
       rootLocalPos: root.position.toArray(),
       scale: root.scale.toArray(),
       presenceType: group.userData.presenceType,
+      hasTargetMesh: !!targetMesh,
+      hasAvatarPhoto,
     });
   });
 
@@ -529,12 +583,15 @@ function applyProfileToAvatar(avatar, incomingProfile) {
 
   const targetMesh = avatar.userData.targetMesh;
   if (!targetMesh) {
+    console.log("[applyProfileToAvatar] targetMesh not ready yet", {
+      serial: avatar.userData.serial,
+      hasAvatarPhoto: !!nextProfile.avatarPhoto,
+    });
     return;
   }
 
   const avatarPhoto = nextProfile.avatarPhoto ?? null;
 
-  // 沒有新圖時，保留舊 texture，不要清掉
   if (!avatarPhoto) {
     console.log("[applyProfileToAvatar] no avatarPhoto, keep existing texture", {
       serial: avatar.userData.serial,
@@ -612,22 +669,37 @@ function syncRemoteAvatar(playerLike) {
   if (playerLike.pos) {
     avatar.position.set(playerLike.pos.x, playerLike.pos.y, playerLike.pos.z);
   }
+
   avatar.rotation.y = playerLike.rotY || 0;
   avatar.visible = true;
 
-  console.log("[syncRemoteAvatar final]", {
+  const mergedProfile = {
+    ...(avatar.userData.profile || {}),
+    ...(playerLike.profile || {}),
     serial,
-    presenceType: avatar.userData.presenceType,
-    pos: avatar.position.toArray(),
-    rotY: avatar.rotation.y,
-    visible: avatar.visible,
-  });
+  };
 
-  avatar.rotation.y = playerLike.rotY || 0;
-  avatar.visible = true;
+  avatar.userData.profile = mergedProfile;
+  avatar.userData.pendingProfile = mergedProfile;
 
-  if (playerLike.profile) {
-    applyProfileToAvatar(avatar, playerLike.profile);
+  applyProfileToAvatar(avatar, mergedProfile);
+
+  const hasAvatarPhoto = !!mergedProfile.avatarPhoto;
+  if (!hasAvatarPhoto) {
+    requestRemoteProfileHydration(serial);
+  }
+
+  if (DEBUG_AVATAR) {
+    console.log("[syncRemoteAvatar final]", {
+      serial,
+      presenceType: avatar.userData.presenceType,
+      pos: avatar.position.toArray(),
+      rotY: avatar.rotation.y,
+      visible: avatar.visible,
+      hasProfile: !!avatar.userData.profile,
+      hasAvatarPhoto,
+      hasTargetMesh: !!avatar.userData.targetMesh,
+    });
   }
 
   return avatar;
@@ -729,11 +801,36 @@ socket.on("player:leave", ({ id }) => {
   if (!found) return;
 
   const serial = found.obj?.userData?.serial;
-  despawnRemote(found.key);
+  console.log("[player:leave] waiting for offline replacement", id, "serial=", serial);
 
-  console.log("[player:leave] removed avatar", id, "serial=", serial);
+  // 先不要 despawn
+  // 由 avatar:offline 事件來接手轉成 offline avatar
+});
+socket.on("avatar:offline", (a) => {
+  if (!a?.serial) return;
+  if (a.serial === currentProfile?.serial) return;
 
-  // 離線 avatar 之後仍然靠下一次 snapshot 補回
+  const tableId =
+    a.assignedTableId ||
+    a.profile?.assignedTableId ||
+    mapSerialToTable(a.serial);
+
+  const fixedPose =
+    hallSceneReady && tableId
+      ? getOfflineAvatarPoseForTable(tableId, a.serial)
+      : null;
+
+  const finalPos = fixedPose?.pos || a.pos;
+  const finalRotY = fixedPose?.rotY ?? a.rotY ?? 0;
+
+  syncRemoteAvatar({
+    ...a,
+    pos: finalPos,
+    rotY: finalRotY,
+    presenceType: "offline",
+  });
+
+  console.log("[avatar:offline] applied", a.serial, finalPos, finalRotY);
 });
 
 socket.on("player:move", ({ id, pos, rotY, profile }) => {
@@ -743,16 +840,63 @@ socket.on("player:move", ({ id, pos, rotY, profile }) => {
   if (!serial) return;
   if (serial === currentProfile?.serial) return;
 
-  const obj = syncRemoteAvatar({
-    id,
-    serial,
-    pos,
-    rotY,
-    profile: profile || {},
-    presenceType: "online",
-  });
+  const found = findRemoteBySerial(serial);
 
-  if (!obj) return;
+  if (!found?.obj) {
+    const obj = syncRemoteAvatar({
+      id,
+      serial,
+      pos,
+      rotY,
+      profile: profile || {},
+      presenceType: "online",
+    });
+
+    if (!obj) return;
+
+    if (Math.random() < 0.02) {
+      console.log("[remote applied pos:first]", serial, {
+        pos,
+        visible: obj.visible,
+        world: obj.position.toArray(),
+      });
+    }
+    return;
+  }
+
+  const obj = found.obj;
+
+  obj.userData.playerId = id;
+  obj.userData.serial = serial;
+  obj.userData.presenceType = "online";
+
+  if (pos) {
+    obj.position.set(pos.x, pos.y, pos.z);
+  }
+  obj.rotation.y = rotY || 0;
+  obj.visible = true;
+
+  // 只有在缺資料時才補 profile / hydration
+  if (profile && Object.keys(profile).length > 0) {
+    const prevPhoto = obj.userData.profile?.avatarPhoto ?? null;
+    const nextPhoto = profile.avatarPhoto ?? prevPhoto ?? null;
+
+    obj.userData.profile = {
+      ...(obj.userData.profile || {}),
+      ...profile,
+      serial,
+      avatarPhoto: nextPhoto,
+    };
+    obj.userData.pendingProfile = obj.userData.profile;
+
+    if (!obj.userData.targetMesh || nextPhoto !== prevPhoto) {
+      applyProfileToAvatar(obj, obj.userData.profile);
+    }
+
+    if (!nextPhoto) {
+      requestRemoteProfileHydration(serial);
+    }
+  }
 
   if (Math.random() < 0.02) {
     console.log("[remote applied pos]", serial, {
@@ -760,10 +904,6 @@ socket.on("player:move", ({ id, pos, rotY, profile }) => {
       visible: obj.visible,
       world: obj.position.toArray(),
     });
-  }
-
-  if (Math.random() < 0.02) {
-    console.log("[RECV pos]", serial, pos);
   }
 });
 
@@ -2697,7 +2837,7 @@ function animate() {
 
   const baseSpeed = 0.15;
   const speed = keys.boost ? baseSpeed * 2.5 : baseSpeed;
-  
+
   const forward = new THREE.Vector3();
   camera.getWorldDirection(forward);
   forward.y = 0;
@@ -2707,9 +2847,8 @@ function animate() {
   const WORLD_UP = new THREE.Vector3(0, 1, 0);
   right.crossVectors(forward, WORLD_UP).normalize();
 
-  let framePotHit = null;
   if (state === FSM.SEATED) {
-    framePotHit = getLookAtPotHitForActiveTable();
+    getLookAtPotHitForActiveTable();
   }
 
   const delta = new THREE.Vector3();
@@ -2718,152 +2857,141 @@ function animate() {
   if (keys.right) delta.add(right);
   if (keys.left) delta.sub(right);
 
-  if (state === FSM.FREE_ROAM){
-  if (delta.lengthSq() > 0){
-    delta.normalize().multiplyScalar(speed);
+  if (state === FSM.FREE_ROAM) {
+    if (delta.lengthSq() > 0) {
+      delta.normalize().multiplyScalar(speed);
 
-    const nextPos = player.position.clone();
-    nextPos.x += delta.x;
-    resolveHorizontalCollisions(nextPos);
-    nextPos.z += delta.z;
-    resolveHorizontalCollisions(nextPos);
+      const nextPos = player.position.clone();
+      nextPos.x += delta.x;
+      resolveHorizontalCollisions(nextPos);
+      nextPos.z += delta.z;
+      resolveHorizontalCollisions(nextPos);
 
-    if (worldBounds) {
-      clampToWorldBounds (nextPos, worldBounds, PLAYER_RADIUS);
+      if (worldBounds) {
+        clampToWorldBounds(nextPos, worldBounds, PLAYER_RADIUS);
+      }
+
+      player.position.x = nextPos.x;
+      player.position.z = nextPos.z;
     }
-    player.position.x = nextPos.x;
-    player.position.z = nextPos.z;
   }
-  }
-  
+
   const dtRaw = clock.getDelta();
-  const dt = Math.min(dtRaw, 0.05)
+  const dt = Math.min(dtRaw, 0.05);
 
   if (state === FSM.FREE_ROAM) {
+    velY -= GRAVITY * dt;
+    player.position.y += velY * dt;
 
-  velY -= GRAVITY * dt;
-  player.position.y += velY * dt;
+    const groundY = getGroundYUnderPlayer(player.position);
+    if (groundY !== null) {
+      const targetPlayerY = groundY + EYE_HEIGHT;
+      const falling = velY <= 0;
 
-  const groundY = getGroundYUnderPlayer(player.position);
-  if (groundY !== null) {
-    const targetPlayerY = groundY + EYE_HEIGHT;
-    const falling = velY <= 0;
-
-    if (falling && player.position.y <= targetPlayerY + GROUND_EPS){
-      player.position.y = targetPlayerY
-      velY = 0;
-      isGrounded = true;
+      if (falling && player.position.y <= targetPlayerY + GROUND_EPS) {
+        player.position.y = targetPlayerY;
+        velY = 0;
+        isGrounded = true;
+      } else {
+        isGrounded = false;
+      }
     } else {
       isGrounded = false;
-    };
-  } else {
-    isGrounded = false;
+    }
   }
-}
-  
 
-  // --- 桌子 hover / select ---
-if (tables.length > 0) {
-  if (!selectedTable){
-    const hitTable = getLookAtTable();
-    if (hitTable !== highlightedTable ) {
-      if (highlightedTable) restoreEmissive(highlightedTable);
-      highlightedTable = hitTable;
-      if (highlightedTable){
-        applyDim(highlightedTable, 0x33333);
-        console.log("looking at:", highlightedTable.name);
+  // --- table hover / select ---
+  if (tables.length > 0) {
+    if (!selectedTable) {
+      const hitTable = getLookAtTable();
+      if (hitTable !== highlightedTable) {
+        if (highlightedTable) restoreEmissive(highlightedTable);
+        highlightedTable = hitTable;
+        if (highlightedTable) {
+          applyDim(highlightedTable, 0x33333);
+          console.log("looking at:", highlightedTable.name);
+        }
       }
-    } 
 
-    const hoverId = hitTable ? hitTable.name : null;
-    const hoveredEnt = hoverId ? (tableRegistry.get(hoverId) || null) : null;
+      const hoverId = hitTable ? hitTable.name : null;
+      const hoveredEnt = hoverId ? (tableRegistry.get(hoverId) || null) : null;
 
-    hoveredTableId = hoverId;
-    hoveredEntry = hoveredEnt;
+      hoveredTableId = hoverId;
+      hoveredEntry = hoveredEnt;
 
-    if(pendingSelect){
-      pendingSelect = false;
+      if (pendingSelect) {
+        pendingSelect = false;
+      }
+
+      if (hoveredEntry) {
+        const d = distanceToTable(hoveredEntry, playerPos);
+        if (d <= INTERACT_DISTANCE) showHUD(`${hoverId} - Press E`);
+        else showHUD(`${hoveredTableId}`);
+      } else {
+        hideHUD();
+      }
+
+      if (pendingSelect) {
+        pendingSelect = false;
+        if (highlightedTable) {
+          selectedTable = highlightedTable;
+          applyDim(selectedTable, 0xFFFF);
+          console.log("selected:", selectedTable.name);
+        }
+      }
     }
 
-    if (hoveredEntry) {
-      const d = distanceToTable(hoveredEntry, playerPos);
-      if (d <= INTERACT_DISTANCE) showHUD (`${hoverId} - Press E`);
-      else showHUD (`${hoveredTableId}`);
+    let candidateTableId = selectedTableId || hoveredTableId;
+    if (candidateTableId) {
+      const info = tableRegistry.get(candidateTableId);
+      if (info) {
+        const dist = distanceToTable(info, player.position);
+        const canInteract = dist <= INTERACT_DISTANCE;
+        if (!selectedTable) {
+          if (canInteract) showHUD(`Press E to select ${candidateTableId}`);
+          else showHUD(`${candidateTableId} (too far)`);
+        } else {
+          showHUD(`selected: ${selectedTable} (R to cancel)`);
+        }
+      } else {
+        hideHUD();
+      }
     } else {
       hideHUD();
     }
+  }
 
-    if (pendingSelect){
-      pendingSelect = false;
-      if (highlightedTable){
-        selectedTable = highlightedTable;
-        applyDim(selectedTable, 0xFFFF);
-        console.log ("selected:", selectedTable.name);
-      }
-    }
-  } 
+  let nextPotRoot = null;
+  if (activeTableId) {
+    nextPotRoot = tableRegistry.get(activeTableId)?.potRef ?? null;
+  }
+  if (nextPotRoot !== activePotRoot) {
+    if (activePotRoot) setPotHighlight(activePotRoot, false);
+    activePotRoot = nextPotRoot;
+    if (activePotRoot) setPotHighlight(activePotRoot, true);
+    console.log("active pot:", activePotRoot?.name ?? "none");
+  }
 
+  if (!window.__seatDebugOnce) {
+    window.__seatDebugOnce = true;
+    console.log("[seatDebug] seatHitMeshes len =", seatHitMeshes?.length);
+    console.log("[seatDebug] seatVisualByKey size =", seatVisualByKey?.size);
+    console.log("[seatDebug] seatAnchorByKey size =", seatAnchorByKey?.size);
+  }
+  if (!window.__seatNameOnce && seatHitMeshes?.length) {
+    window.__seatNameOnce = true;
+    console.log("[seatDebug] sample hitMesh name =", seatHitMeshes[0].name);
+  }
 
+  updateSeatHover();
 
-let candidateTableId = selectedTableId || hoveredTableId;
-if (candidateTableId){
-  const info = tableRegistry.get(candidateTableId);
-  if(info){
-    const dist = distanceToTable(info, player.position);
-    const canInteract = dist <= INTERACT_DISTANCE;
-    if (!selectedTable){
-      if (canInteract) showHUD(`Press E to select ${candidateTableId}`);
-      else showHUD(`${candidateTableId} (too far)`);
-    } else {
-      showHUD(`selected: ${selectedTable} (R to cancel)`);
-    }
-  } else {
-    hideHUD();
-  } 
-} else {
-  hideHUD();
-}
+  if (hudEl) {
+    const netText = net.connected ? `NET OK ${net.ping ?? "-"}ms` : `NET DOWN`;
+    hudEl.textContent =
+      `state=${state} table=${hoveredTableId ?? "-"} seat=${hoveredSeatKey ?? "-"} | ${netText}`;
+  }
 
-let nextPotRoot = null;
-if (activeTableId) {
-  nextPotRoot = tableRegistry.get(activeTableId)?.potRef ?? null;
-}
-if (nextPotRoot !== activePotRoot) {
-  if (activePotRoot) setPotHighlight (activePotRoot, false);
-  activePotRoot = nextPotRoot;
-  if (activePotRoot) setPotHighlight (activePotRoot, true);
-  console.log("active pot:", activePotRoot?.name ?? "none");
-}
-
-if (!window.__seatDebugOnce) {
-  window.__seatDebugOnce = true;
-  console.log("[seatDebug] seatHitMeshes len =", seatHitMeshes?.length);
-  console.log("[seatDebug] seatVisualByKey size =", seatVisualByKey?.size);
-  console.log("[seatDebug] seatAnchorByKey size =", seatAnchorByKey?.size);
-}
-if (!window.__seatNameOnce && seatHitMeshes?.length) {
-  window.__seatNameOnce = true;
-  console.log("[seatDebug] sample hitMesh name =", seatHitMeshes[0].name);
-}
-
-
-updateSeatHover();
-if (hudEl) {
-  const netText = net.connected
-  ? `NET OK ${net.ping ?? "-"}ms`
-  : `NET DOWN`;
-
-  hudEl.textContent = 
-  `state=${state} table=${hoveredTableId ?? "-"} seat=${hoveredSeatKey ?? "-"} | ${netText}`;
-}
-
-if (!window.__seatRayTick) {
-  window.__seatRayTick = 0;
-}
-
-
-
-if (state === FSM.FREE_ROAM || state === FSM.SEAT_SELECTING) {
+  if (state === FSM.FREE_ROAM || state === FSM.SEAT_SELECTING) {
     if (hoveredSeatKey) {
       showHUD(`Seat ${hoveredSeatKey} - Press E`);
     } else {
@@ -2871,89 +2999,104 @@ if (state === FSM.FREE_ROAM || state === FSM.SEAT_SELECTING) {
     }
   }
 
-  for (const s of seatsState.values()){
+  for (const s of seatsState.values()) {
     const key = `${s.tableId}_${s.seatId}`;
     const visual = seatVisualByKey.get(key);
     if (!visual) continue;
-    if (s.occupiedBy){
+    if (s.occupiedBy) {
       visual.scale.set(0.85, 0.85, 0.85);
     }
   }
 
-  // controls.update();
-  
-};
-const now = performance.now();
+  const now = performance.now();
 
-if (socket.connected && now - lastNetSend > 50) {
-  lastNetSend = now;
+  if (socket.connected && now - lastNetSend > 100) {
+    const nextPos = getAvatarWorldPos();
+    const nextRotY = getYawFromCamera();
 
-  if (Math.random() < 0.02) {
-    console.log("[SEND pos]", player.position.toArray());
+    const movedEnough =
+      !lastSentAvatarPos ||
+      Math.abs(nextPos.x - lastSentAvatarPos.x) > 0.01 ||
+      Math.abs(nextPos.y - lastSentAvatarPos.y) > 0.01 ||
+      Math.abs(nextPos.z - lastSentAvatarPos.z) > 0.01;
+
+    const rotatedEnough =
+      lastSentRotY == null ||
+      Math.abs(nextRotY - lastSentRotY) > 0.01;
+
+    if (movedEnough || rotatedEnough) {
+      lastNetSend = now;
+      lastSentAvatarPos = { ...nextPos };
+      lastSentRotY = nextRotY;
+
+      if (Math.random() < 0.02) {
+        console.log("[SEND pos]", nextPos);
+      }
+
+      socket.emit("player:move", {
+        pos: nextPos,
+        rotY: nextRotY,
+      });
+    }
   }
 
-  socket.emit("player:move", {
-    pos: getAvatarWorldPos(),
-    rotY: getYawFromCamera(),
-  });
-}
-
-while (actionQueue.length > 0) {
-  const action = actionQueue.shift();
-  console.log("[action] dispatch", action.type, "state=", state, "selectedTableId=", selectedTableId);
-  dispatchAction(action);
-}
-if (state !== window.__lastState) {
-  console.log("[FSM] state change:", window.__lastState, "->", state);
-  window.__lastState = state;
-}
-
-let shouldPotGlow = false;
-if (state === FSM.SEATED) {
-  shouldPotGlow = !!getLookAtPotHitForActiveTable();
-}
-const potRoot = seated?.tableId ? (tableRegistry.get(seated.tableId)?.potRef ?? null) : null;
-if (potRoot !== activePotRoot) {
-  if (activePotRoot) setPotHighlight(activePotRoot, false);
-  activePotRoot = potRoot;
-}
-if (activePotRoot) setPotHighlight(activePotRoot, shouldPotGlow);
-
-
-// ---------- hall CTA button ----------
-let shouldShowCTA = false;
-let nextCTALabel = "";
-
-if (state === FSM.FREE_ROAM && hallAssignmentRevealed) {
-  if (isLookingAtAssignedTable()) {
-    shouldShowCTA = true;
-    nextCTALabel = "入座";
+  while (actionQueue.length > 0) {
+    const action = actionQueue.shift();
+    console.log("[action] dispatch", action.type, "state=", state, "selectedTableId=", selectedTableId);
+    dispatchAction(action);
   }
-}
 
-if (state === FSM.SEATED) {
-  const potHit = getLookAtPotHitForActiveTable();
-  if (potHit) {
-    const isOwnerTable = seated?.tableId === assignedTableId;
-    shouldShowCTA = true;
-    nextCTALabel = isOwnerTable ? "開始製作火鍋" : "查看火鍋";
+  if (state !== window.__lastState) {
+    console.log("[FSM] state change:", window.__lastState, "->", state);
+    window.__lastState = state;
   }
-}
 
-if (shouldShowCTA) {
-  showCenterAction(nextCTALabel);
-} else {
-  hideCenterAction();
-}
+  let shouldPotGlow = false;
+  if (state === FSM.SEATED) {
+    shouldPotGlow = !!getLookAtPotHitForActiveTable();
+  }
 
-if (assignedMarker?.visible) {
-  const t = performance.now() * 0.002;
-  assignedMarker.position.y = assignedMarkerBobBaseY + Math.sin(t) * 0.18;
-  assignedMarker.rotation.y += 0.01;
-}
+  const potRoot = seated?.tableId ? (tableRegistry.get(seated.tableId)?.potRef ?? null) : null;
+  if (potRoot !== activePotRoot) {
+    if (activePotRoot) setPotHighlight(activePotRoot, false);
+    activePotRoot = potRoot;
+  }
+  if (activePotRoot) setPotHighlight(activePotRoot, shouldPotGlow);
 
-updateHUD();
-renderer.render(scene, camera);
+  // CTA
+  let shouldShowCTA = false;
+  let nextCTALabel = "";
+
+  if (state === FSM.FREE_ROAM && hallAssignmentRevealed) {
+    if (isLookingAtAssignedTable()) {
+      shouldShowCTA = true;
+      nextCTALabel = "入座";
+    }
+  }
+
+  if (state === FSM.SEATED) {
+    const potHit = getLookAtPotHitForActiveTable();
+    if (potHit) {
+      const isOwnerTable = seated?.tableId === assignedTableId;
+      shouldShowCTA = true;
+      nextCTALabel = isOwnerTable ? "開始製作火鍋" : "查看火鍋";
+    }
+  }
+
+  if (shouldShowCTA) {
+    showCenterAction(nextCTALabel);
+  } else {
+    hideCenterAction();
+  }
+
+  if (assignedMarker?.visible) {
+    const t = performance.now() * 0.002;
+    assignedMarker.position.y = assignedMarkerBobBaseY + Math.sin(t) * 0.18;
+    assignedMarker.rotation.y += 0.01;
+  }
+
+  updateHUD();
+  renderer.render(scene, camera);
 }
 
 
