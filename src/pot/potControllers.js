@@ -496,21 +496,57 @@ function clearPanel() {
     previewImgEl.style.display = "none";
   }
 
-  function storeIngredient(name) {
-    if (!ingredientPreviewImgUrl) return;
+function imageUrlToDataUrl(url) {
+  return new Promise((resolve, reject) => {
+    if (!url) return reject(new Error("missing url"));
 
-    const item = {
-      id: crypto.randomUUID(),
-      name: name?.trim() || "Unnamed",
-      previewUrl: ingredientPreviewImgUrl,
-      createdAt: Date.now(),
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const canvas = document.createElement("canvas");
+        canvas.width = img.naturalWidth || img.width;
+        canvas.height = img.naturalHeight || img.height;
+
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0);
+
+        const dataUrl = canvas.toDataURL("image/png");
+        resolve(dataUrl);
+      } catch (err) {
+        reject(err);
+      }
     };
+    img.onerror = (err) => reject(err);
+    img.src = url;
+  });
+}
 
-    ingredients.unshift(item);
-    activeIngredientId = item.id;
+async function storeIngredient(name) {
+  if (!ingredientPreviewImgUrl) return;
 
-    renderHorizontalIngredientList(UI.step2.listFrame);
+  let stablePreviewUrl = ingredientPreviewImgUrl;
+
+  try {
+    if (typeof stablePreviewUrl === "string" && stablePreviewUrl.startsWith("blob:")) {
+      stablePreviewUrl = await imageUrlToDataUrl(stablePreviewUrl);
+    }
+  } catch (err) {
+    console.error("[storeIngredient] preview convert failed", err);
+    return;
   }
+
+  const item = {
+    id: crypto.randomUUID(),
+    name: name?.trim() || "Unnamed",
+    previewUrl: stablePreviewUrl,
+    createdAt: Date.now(),
+  };
+
+  ingredients.unshift(item);
+  activeIngredientId = item.id;
+
+  renderHorizontalIngredientList(UI.step2.listFrame);
+}
 
   // ---------- generic ui helpers ----------
   function addImg(src, { x, y, w, h, rotate = 0, z = 1, opacity = 1, pointerEvents = "none" } = {}) {
@@ -1086,8 +1122,16 @@ function clearPanel() {
     ingredients.length = 0;
     composePlacements.length = 0;
 
-    balls.push(...(state.balls || []).map((x) => ({ ...x })));
-    ingredients.push(...(state.ingredients || []).map((x) => ({ ...x })));
+    balls.push(
+      ...(state.balls || [])
+        .map((x) => ({ ...x }))
+        .filter((x) => !(typeof x.previewUrl === "string" && x.previewUrl.startsWith("blob:")))
+    );
+    ingredients.push(
+      ...(state.ingredients || [])
+        .map((x) => ({ ...x }))
+        .filter((x) => !(typeof x.previewUrl === "string" && x.previewUrl.startsWith("blob:")))
+    );
     composePlacements.push(...(state.composePlacements || []).map((x) => ({ ...x })));
 
     activeBallId = state.activeBallId ?? null;
@@ -2024,9 +2068,11 @@ function clearPanel() {
       cursor: "pointer",
       padding: "0",
     });
-    confirmBtn.addEventListener("click", () => {
+    confirmBtn.addEventListener("click", async () => {
       const nm = previewNameInput.value.trim() || `配料 ${ingredients.length + 1}`;
-      storeIngredient(nm);
+
+      await storeIngredient(nm);
+
       ingredientPreviewImgUrl = null;
       clearIngredientDrawing(ingredientCanvas, ingredientCtx);
       previewNameInput.value = "";
@@ -2115,15 +2161,25 @@ function clearPanel() {
   function getCachedImage(src) {
     if (!src) return null;
 
-    let img = imageCache.get(src);
-    if (!img) {
-      img = new Image();
-      img.src = src;
-      img.onload = () => {
-        redrawComposeCanvas();
-      };
-      imageCache.set(src, img);
-    }
+    let entry = imageCache.get(src);
+    if (entry) return entry;
+
+    const img = new Image();
+    img.__loadState = "loading";
+
+    img.onload = () => {
+      img.__loadState = "loaded";
+      redrawComposeCanvas();
+    };
+
+    img.onerror = () => {
+      img.__loadState = "error";
+      console.warn("[getCachedImage] failed:", src);
+      redrawComposeCanvas();
+    };
+
+    img.src = src;
+    imageCache.set(src, img);
     return img;
   }
 
@@ -2176,7 +2232,7 @@ function clearPanel() {
     if (!ball) return;
 
     const img = getCachedImage(ball.previewUrl);
-    if (!img || !img.complete) return;
+    if (!canDrawImage(img)) return;
 
     const scale = placement.scale ?? 1.0;
     const r = Math.round(26 * scale);
@@ -2185,8 +2241,28 @@ function clearPanel() {
     ctx.beginPath();
     ctx.arc(placement.x, placement.y, r, 0, Math.PI * 2);
     ctx.clip();
-    ctx.drawImage(img, placement.x - r, placement.y - r, r * 2, r * 2);
+
+    try {
+      ctx.drawImage(img, placement.x - r, placement.y - r, r * 2, r * 2);
+    } catch (err) {
+      console.warn("[drawSoupPlacement] skipped broken image", {
+        previewUrl: ball.previewUrl,
+        itemId: ball.id,
+        err,
+      });
+    }
+
     ctx.restore();
+  }
+
+  function canDrawImage(img) {
+    return !!(
+      img &&
+      img.complete &&
+      img.naturalWidth > 0 &&
+      img.naturalHeight > 0 &&
+      img.__loadState !== "error"
+    );
   }
 
   function drawIngredientPlacement(ctx, placement) {
@@ -2194,12 +2270,23 @@ function clearPanel() {
     if (!item) return;
 
     const img = getCachedImage(item.previewUrl);
-    if (!img || !img.complete) return;
+    if (!canDrawImage(img)) {
+      return;
+    }
 
     const scale = placement.scale ?? 1.0;
     const w = Math.round(72 * scale);
     const h = Math.round(36 * scale);
-    ctx.drawImage(img, placement.x - w / 2, placement.y - h / 2, w, h);
+
+    try {
+      ctx.drawImage(img, placement.x - w / 2, placement.y - h / 2, w, h);
+    } catch (err) {
+      console.warn("[drawIngredientPlacement] skipped broken image", {
+        previewUrl: item.previewUrl,
+        itemId: item.id,
+        err,
+      });
+    }
   }
 
   const composePlacements = [];

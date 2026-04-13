@@ -10,7 +10,6 @@ if (!fs.existsSync(dataDir)) {
 const dbPath = path.join(dataDir, "polypot.sqlite");
 const db = new Database(dbPath);
 
-// 比較安全
 db.pragma("journal_mode = WAL");
 
 // --------------------
@@ -37,7 +36,64 @@ db.exec(`
     chair_color TEXT,
     updated_at INTEGER NOT NULL
   );
+
+  CREATE TABLE IF NOT EXISTS avatar_presences (
+    serial TEXT PRIMARY KEY,
+    assigned_table_id TEXT,
+    last_pos_x REAL,
+    last_pos_y REAL,
+    last_pos_z REAL,
+    last_rot_y REAL,
+    is_online INTEGER NOT NULL DEFAULT 0,
+    mode TEXT NOT NULL DEFAULT 'static',
+    updated_at INTEGER NOT NULL
+  );
 `);
+
+// --------------------
+// shared helpers
+// --------------------
+function isBlobUrl(value) {
+  return typeof value === "string" && value.startsWith("blob:");
+}
+
+function deepStripBlobUrls(value) {
+  if (Array.isArray(value)) {
+    return value.map(deepStripBlobUrls);
+  }
+
+  if (value && typeof value === "object") {
+    const out = {};
+    for (const [key, v] of Object.entries(value)) {
+      out[key] = deepStripBlobUrls(v);
+    }
+    return out;
+  }
+
+  if (isBlobUrl(value)) {
+    return null;
+  }
+
+  return value;
+}
+
+function safeJsonParse(jsonText, fallback = null) {
+  if (!jsonText) return fallback;
+  try {
+    return JSON.parse(jsonText);
+  } catch (err) {
+    console.error("[db] JSON parse failed:", err);
+    return fallback;
+  }
+}
+
+function sanitizeFinalPotTextureUrl(url) {
+  if (isBlobUrl(url)) {
+    console.warn("[db] dropping blob finalPotTextureUrl");
+    return null;
+  }
+  return typeof url === "string" ? url : null;
+}
 
 // --------------------
 // profile helpers
@@ -108,6 +164,7 @@ export function saveProfile(profile) {
   upsertProfileStmt.run(row);
   return getProfileBySerial(profile.serial);
 }
+
 const getMaxProfileIdStmt = db.prepare(`
   SELECT MAX(id) as maxId FROM profiles
 `);
@@ -168,12 +225,20 @@ const upsertPotStmt = db.prepare(`
     updated_at = excluded.updated_at
 `);
 
+function sanitizeTableState(tableState) {
+  return deepStripBlobUrls(tableState ?? null);
+}
+
 function parsePotRow(row) {
   if (!row) return null;
+
+  const parsedState = safeJsonParse(row.tableStateJson, null);
+  const sanitizedState = sanitizeTableState(parsedState);
+
   return {
     tableId: row.tableId,
-    tableState: row.tableStateJson ? JSON.parse(row.tableStateJson) : null,
-    finalPotTextureUrl: row.finalPotTextureUrl ?? null,
+    tableState: sanitizedState,
+    finalPotTextureUrl: sanitizeFinalPotTextureUrl(row.finalPotTextureUrl),
     chairCount: row.chairCount ?? 0,
     chairColor: row.chairColor ?? null,
     updatedAt: row.updatedAt,
@@ -189,10 +254,15 @@ export function listAllPots() {
 }
 
 export function saveTablePot(pot) {
+  const safeTableState = sanitizeTableState(pot.tableState);
+  const safeFinalPotTextureUrl = sanitizeFinalPotTextureUrl(
+    pot.finalPotTextureUrl
+  );
+
   const row = {
     tableId: pot.tableId,
-    tableStateJson: JSON.stringify(pot.tableState ?? null),
-    finalPotTextureUrl: pot.finalPotTextureUrl ?? null,
+    tableStateJson: JSON.stringify(safeTableState),
+    finalPotTextureUrl: safeFinalPotTextureUrl,
     chairCount: pot.chairCount ?? 0,
     chairColor: pot.chairColor ?? null,
     updatedAt: Date.now(),
@@ -200,6 +270,146 @@ export function saveTablePot(pot) {
 
   upsertPotStmt.run(row);
   return getPotByTableId(pot.tableId);
+}
+
+// --------------------
+// avatar presence helpers
+// --------------------
+const getAvatarPresenceBySerialStmt = db.prepare(`
+  SELECT
+    serial,
+    assigned_table_id as assignedTableId,
+    last_pos_x as lastPosX,
+    last_pos_y as lastPosY,
+    last_pos_z as lastPosZ,
+    last_rot_y as lastRotY,
+    is_online as isOnline,
+    mode,
+    updated_at as updatedAt
+  FROM avatar_presences
+  WHERE serial = ?
+`);
+
+const listAllAvatarPresencesStmt = db.prepare(`
+  SELECT
+    serial,
+    assigned_table_id as assignedTableId,
+    last_pos_x as lastPosX,
+    last_pos_y as lastPosY,
+    last_pos_z as lastPosZ,
+    last_rot_y as lastRotY,
+    is_online as isOnline,
+    mode,
+    updated_at as updatedAt
+  FROM avatar_presences
+  ORDER BY updated_at DESC
+`);
+
+const upsertAvatarPresenceStmt = db.prepare(`
+  INSERT INTO avatar_presences (
+    serial,
+    assigned_table_id,
+    last_pos_x,
+    last_pos_y,
+    last_pos_z,
+    last_rot_y,
+    is_online,
+    mode,
+    updated_at
+  )
+  VALUES (
+    @serial,
+    @assignedTableId,
+    @lastPosX,
+    @lastPosY,
+    @lastPosZ,
+    @lastRotY,
+    @isOnline,
+    @mode,
+    @updatedAt
+  )
+  ON CONFLICT(serial) DO UPDATE SET
+    assigned_table_id = excluded.assigned_table_id,
+    last_pos_x = excluded.last_pos_x,
+    last_pos_y = excluded.last_pos_y,
+    last_pos_z = excluded.last_pos_z,
+    last_rot_y = excluded.last_rot_y,
+    is_online = excluded.is_online,
+    mode = excluded.mode,
+    updated_at = excluded.updated_at
+`);
+
+function parseAvatarPresenceRow(row) {
+  if (!row) return null;
+
+  return {
+    serial: row.serial,
+    assignedTableId: row.assignedTableId ?? null,
+    pos:
+      row.lastPosX == null || row.lastPosY == null || row.lastPosZ == null
+        ? null
+        : {
+            x: row.lastPosX,
+            y: row.lastPosY,
+            z: row.lastPosZ,
+          },
+    rotY: row.lastRotY ?? 0,
+    isOnline: !!row.isOnline,
+    mode: row.mode ?? "static",
+    updatedAt: row.updatedAt,
+  };
+}
+
+export function getAvatarPresenceBySerial(serial) {
+  return parseAvatarPresenceRow(getAvatarPresenceBySerialStmt.get(serial));
+}
+
+export function listAllAvatarPresences() {
+  return listAllAvatarPresencesStmt.all().map(parseAvatarPresenceRow);
+}
+
+export function saveAvatarPresence(input) {
+  if (!input?.serial) {
+    throw new Error("saveAvatarPresence: serial is required");
+  }
+
+  const profile = getProfileBySerial(input.serial);
+
+  const row = {
+    serial: input.serial,
+    assignedTableId:
+      input.assignedTableId ??
+      profile?.assignedTableId ??
+      null,
+    lastPosX:
+      typeof input.pos?.x === "number" ? input.pos.x : null,
+    lastPosY:
+      typeof input.pos?.y === "number" ? input.pos.y : null,
+    lastPosZ:
+      typeof input.pos?.z === "number" ? input.pos.z : null,
+    lastRotY:
+      typeof input.rotY === "number" ? input.rotY : 0,
+    isOnline: input.isOnline ? 1 : 0,
+    mode: typeof input.mode === "string" ? input.mode : "static",
+    updatedAt: Date.now(),
+  };
+
+  upsertAvatarPresenceStmt.run(row);
+  return getAvatarPresenceBySerial(input.serial);
+}
+
+export function setAvatarPresenceOnline(serial, isOnline) {
+  const existing = getAvatarPresenceBySerial(serial);
+  if (!existing) return null;
+
+  return saveAvatarPresence({
+    serial,
+    assignedTableId: existing.assignedTableId,
+    pos: existing.pos,
+    rotY: existing.rotY,
+    isOnline,
+    mode: existing.mode,
+  });
 }
 
 export default db;

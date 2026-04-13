@@ -1225,23 +1225,35 @@ function doorTipOnce(text, ms = 1500) {
 // Profile / Serial helpers (localStorage MVP)
 // =========================
 
-const LS_PROFILE = "polypot_profile";
+const LS_SERIAL = "polypot_serial";
+const MEM_PROFILE = {
+  value: null,
+};
 
 function saveProfileLocal(profile) {
-  localStorage.setItem(LS_PROFILE, JSON.stringify(profile));
-}
+  MEM_PROFILE.value = profile ?? null;
 
-function loadProfileLocal() {
-  try {
-    return JSON.parse(localStorage.getItem(LS_PROFILE) || "null");
-  } catch {
-    return null;
+  if (profile?.serial) {
+    localStorage.setItem(LS_SERIAL, profile.serial);
+  } else {
+    localStorage.removeItem(LS_SERIAL);
   }
 }
 
+function loadProfileLocal() {
+  if (MEM_PROFILE.value) return MEM_PROFILE.value;
+
+  const serial = localStorage.getItem(LS_SERIAL);
+  if (!serial) return null;
+
+  // 這裡只回最小身份，不回舊的 message / avatar / signature
+  return { serial };
+}
+
 function clearProfileLocal() {
+  MEM_PROFILE.value = null;
   localStorage.removeItem("polypot_name");
-  localStorage.removeItem(LS_PROFILE);
+  localStorage.removeItem(LS_SERIAL);
 }
 function registerProfileOnServer(profileInput) {
   return new Promise((resolve, reject) => {
@@ -1277,7 +1289,46 @@ function registerProfileOnServer(profileInput) {
     });
   });
 }
+const params = new URLSearchParams(window.location.search);
+const FORCE_FRESH = params.get("fresh") === "1";
 
+if (FORCE_FRESH) {
+  localStorage.removeItem("polypot_serial");
+  localStorage.removeItem("polypot_name");
+}
+function fetchProfileFromServer(serial) {
+  return new Promise((resolve, reject) => {
+    if (!socket.connected) {
+      return reject(new Error("socket not connected"));
+    }
+
+    socket.emit("getProfile", { serial }, (res) => {
+      if (!res?.ok || !res?.profile) {
+        return reject(new Error(res?.error || "getProfile failed"));
+      }
+
+      resolve(res.profile);
+    });
+  });
+}
+async function ensureFullProfileLocal() {
+  const profile = loadProfileLocal();
+  if (!profile?.serial) return null;
+
+  const hasFullData =
+    typeof profile.name === "string" ||
+    typeof profile.message === "string" ||
+    typeof profile.avatarPhoto === "string" ||
+    typeof profile.signature === "string";
+
+  if (hasFullData) {
+    return profile;
+  }
+
+  const fresh = await fetchProfileFromServer(profile.serial);
+  saveProfileLocal(fresh);
+  return fresh;
+}
 
 const NPC_STATE = {
     HIDDEN: "HIDDEN",
@@ -1396,7 +1447,8 @@ function npcCheckId() {
     pencilBtn.style.pointerEvents = "none";
 }
 async function submitName() {
-    console.log("[submitName] fired");
+  console.log("[submitName] fired");
+
   const raw = nameInput.value ?? "";
   const name = raw.trim();
 
@@ -1405,17 +1457,15 @@ async function submitName() {
     return;
   }
 
-  console.log("[name submit]", name);
-
   try {
     const existing = loadProfileLocal();
 
     const registeredProfile = await registerProfileOnServer({
-      serial: existing?.serial ?? null,   
+      serial: existing?.serial ?? null,
       name,
-      message: existing?.message ?? "",
-      avatarPhoto: existing?.avatarPhoto ?? null,
-      signature: existing?.signature ?? null,
+      message: "",
+      avatarPhoto: null,
+      signature: null,
     });
 
     saveProfileLocal(registeredProfile);
@@ -1432,10 +1482,27 @@ async function submitName() {
     pencilBtn.style.pointerEvents = "none";
 
     npcCheckId();
-    } catch (err) {
+  } catch (err) {
     console.error("[submitName] register failed", err);
     npcShowBubble(`身份登記失敗：${err.message}`);
-    }
+  }
+}
+async function syncCurrentProfileToServer() {
+  const profile = loadProfileLocal();
+  if (!profile?.serial) {
+    throw new Error("missing profile serial");
+  }
+
+  const latestProfile = await registerProfileOnServer({
+    serial: profile.serial,
+    name: profile.name ?? "",
+    message: profile.message ?? "",
+    avatarPhoto: profile.avatarPhoto ?? null,
+    signature: profile.signature ?? null,
+  });
+
+  saveProfileLocal(latestProfile);
+  return latestProfile;
 }
 
 function npcOpenNameInput() {
@@ -1474,13 +1541,20 @@ btnYes.addEventListener("pointerdown", (e) => {
   if (npcState === NPC_STATE.Q1) npcAskName();
   if (npcState === NPC_STATE.CHECK_ID) {
     npcState = NPC_STATE.SHOW_ID_CARD;
-    const profile = loadProfileLocal();
-    console.log("[show id card] profile =", profile);
     npcShowBubble("為您確認證件中......");
     optionRow.style.opacity = "0";
     optionRow.style.pointerEvents = "none";
-    showIdCard(profile);
-}
+
+    ensureFullProfileLocal()
+      .then((profile) => {
+        console.log("[show id card] profile =", profile);
+        showIdCard(profile);
+      })
+      .catch((err) => {
+        console.error("[show id card] failed", err);
+        npcShowBubble(`證件讀取失敗：${err.message}`);
+      });
+  }
 });
 
 pencilBtn.addEventListener("pointerdown", (e) => {
@@ -2057,21 +2131,28 @@ continueEditBtn.addEventListener("click", () => {
     setIdCardState("EDIT");
 });
 submitBtn.addEventListener("click", async () => {
-  idVerified = true;
-  idOverlay.style.display = "none";
+  try {
+    await syncCurrentProfileToServer();
 
-  exitUiMode();
-  npcState = NPC_STATE.HIDDEN;
-  optionRow.style.pointerEvents = "none";
-  optionRow.style.opacity = "0";
-  optionRow.style.transform = "translateY(6px)";
+    idVerified = true;
+    idOverlay.style.display = "none";
 
-  if (!controls.isLocked) controls.lock();
+    exitUiMode();
+    npcState = NPC_STATE.HIDDEN;
+    optionRow.style.pointerEvents = "none";
+    optionRow.style.opacity = "0";
+    optionRow.style.transform = "translateY(6px)";
 
-  await bubbleFor("已為您確認身份", 1500);
-  await bubbleFor("您可以從旁邊的大門進入會場", 1500);
+    if (!controls.isLocked) controls.lock();
 
-  bubbleHide();
+    await bubbleFor("已為您確認身份", 1500);
+    await bubbleFor("您可以從旁邊的大門進入會場", 1500);
+
+    bubbleHide();
+  } catch (err) {
+    console.error("[submitBtn] sync failed", err);
+    npcShowBubble(`證件提交失敗：${err.message}`);
+  }
 });
 
 

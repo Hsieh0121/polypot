@@ -7,6 +7,9 @@ import {
   listAllPots,
   saveTablePot,
   getNextSerialNumberFallback,
+  listAllAvatarPresences,
+  saveAvatarPresence,
+  setAvatarPresenceOnline,
 } from "./db.js";
 
 console.log("[server] boot", new Date().toISOString());
@@ -116,11 +119,15 @@ function mergeProfile(existing, input = {}) {
   return {
     serial: existing.serial,
     assignedTableId:
-      clean.assignedTableId ?? existing.assignedTableId ?? mapSerialToTable(existing.serial),
-    name: clean.name || existing.name || "anon",
-    message: clean.message ?? existing.message ?? "",
-    avatarPhoto: clean.avatarPhoto ?? existing.avatarPhoto ?? null,
-    signature: clean.signature ?? existing.signature ?? null,
+      clean.assignedTableId || existing.assignedTableId || mapSerialToTable(existing.serial),
+    name:
+      clean.name !== "" ? clean.name : (existing.name || "anon"),
+    message:
+      clean.message !== "" ? clean.message : (existing.message || ""),
+    avatarPhoto:
+      clean.avatarPhoto !== null ? clean.avatarPhoto : (existing.avatarPhoto ?? null),
+    signature:
+      clean.signature !== null ? clean.signature : (existing.signature ?? null),
   };
 }
 
@@ -152,12 +159,42 @@ function sanitizePotPayload(input = {}) {
 }
 
 function buildSnapshot() {
+  const onlineSerials = new Set(
+    Array.from(room.players.values())
+      .map((p) => p.profile?.serial)
+      .filter(Boolean)
+  );
+
+  const offlineAvatars = listAllAvatarPresences()
+    .filter((a) => !onlineSerials.has(a.serial))
+    .map((a) => {
+      const profile = getProfileBySerial(a.serial);
+      return {
+        serial: a.serial,
+        assignedTableId: a.assignedTableId,
+        pos: a.pos,
+        rotY: a.rotY ?? 0,
+        isOnline: false,
+        mode: a.mode ?? "static",
+        profile,
+      };
+    })
+    .filter((a) => !!a.profile);
+
   return {
     roomId: "lobby",
     players: Array.from(room.players.values()),
     seats: Array.from(room.seats.values()),
     pots: Array.from(room.tablePots.values()),
+    offlineAvatars,
   };
+}
+
+function updateRoomPlayerProfile(socketId, profile) {
+  const p = room.players.get(socketId);
+  if (!p) return;
+  p.profile = profile;
+  p.name = profile?.name ?? p.name ?? "anon";
 }
 
 // -------------------------
@@ -172,14 +209,14 @@ io.on("connection", (socket) => {
   });
 
   // =========================
-  // 1) White room: register formal identity
+  // 1) White room: create/update formal identity
   // =========================
   socket.on("registerProfile", (profileInput = {}, ack) => {
     try {
       const clean = sanitizeProfileInput(profileInput);
       let profile = null;
 
-      // a. 前端如果有 serial，優先查 DB
+      // 有 serial -> 更新既有
       if (clean.serial) {
         const existing = getProfileBySerial(clean.serial);
         if (existing) {
@@ -187,13 +224,13 @@ io.on("connection", (socket) => {
         }
       }
 
-      // b. 沒查到就建立新 profile
+      // 沒 serial 或查無資料 -> 建新身份
       if (!profile) {
-        const fresh = buildNewProfile(clean);
-        profile = saveProfile(fresh);
+        profile = saveProfile(buildNewProfile(clean));
       }
 
       room.serialBySocketId.set(socket.id, profile.serial);
+      updateRoomPlayerProfile(socket.id, profile);
 
       console.log(
         "[registerProfile]",
@@ -217,30 +254,57 @@ io.on("connection", (socket) => {
   });
 
   // =========================
-  // 2) Hall: join room with serial-first trusted profile
+  // 1.5) Fetch full profile by serial
+  // =========================
+  socket.on("getProfile", ({ serial } = {}, ack) => {
+    try {
+      const cleanSerial =
+        typeof serial === "string" ? serial.trim() : "";
+
+      if (!cleanSerial) {
+        return ack?.({ ok: false, error: "missing serial" });
+      }
+
+      const profile = getProfileBySerial(cleanSerial);
+      if (!profile) {
+        return ack?.({ ok: false, error: "profile not found" });
+      }
+
+      room.serialBySocketId.set(socket.id, profile.serial);
+      updateRoomPlayerProfile(socket.id, profile);
+
+      ack?.({
+        ok: true,
+        profile,
+      });
+    } catch (err) {
+      console.error("[getProfile] failed:", err);
+      ack?.({
+        ok: false,
+        error: "getProfile failed",
+      });
+    }
+  });
+
+  // =========================
+  // 2) Hall: join room with DB-first trusted profile
   // =========================
   socket.on("join", (profileInput = {}, ack) => {
     try {
       const clean = sanitizeProfileInput(profileInput);
       let finalProfile = null;
 
-      // a. 優先吃前端帶來的 serial
+      // a. 優先從 serial 取 DB 完整資料
       if (clean.serial) {
-        const existing = getProfileBySerial(clean.serial);
-        if (existing) {
-          finalProfile = saveProfile(mergeProfile(existing, clean));
-        }
+        finalProfile = getProfileBySerial(clean.serial);
       }
 
-      // b. 如果 socket 之前 register 過，也可從 serialBySocketId 找
+      // b. 沒 serial 再看 socket 之前是否已綁定
       if (!finalProfile) {
-        const bySocket = getSocketProfile(socket.id);
-        if (bySocket) {
-          finalProfile = saveProfile(mergeProfile(bySocket, clean));
-        }
+        finalProfile = getSocketProfile(socket.id);
       }
 
-      // c. 都沒有就 fallback 自動建新的
+      // c. 都沒有才建立新 profile
       if (!finalProfile) {
         finalProfile = saveProfile(buildNewProfile(clean));
         console.warn("[join] auto-registered fallback profile for", socket.id);
@@ -256,17 +320,29 @@ io.on("connection", (socket) => {
         finalProfile.assignedTableId
       );
 
+      const existingPlayer = room.players.get(socket.id);
+
       const player = {
         id: socket.id,
         name: finalProfile.name ?? "anon",
-        pos: { x: 0, y: 1.6, z: 0 },
-        rotY: 0,
+        pos: existingPlayer?.pos ?? { x: 0, y: 1.6, z: 0 },
+        rotY: existingPlayer?.rotY ?? 0,
         profile: finalProfile,
       };
 
       room.players.set(socket.id, player);
 
+      saveAvatarPresence({
+        serial: finalProfile.serial,
+        assignedTableId: finalProfile.assignedTableId,
+        pos: player.pos,
+        rotY: player.rotY,
+        isOnline: true,
+        mode: "static",
+      });
+
       ack?.({
+        ok: true,
         self: {
           id: socket.id,
           profile: finalProfile,
@@ -291,13 +367,29 @@ io.on("connection", (socket) => {
     }
   });
 
-  socket.on("player:move", (payload) => {
+  socket.on("player:move", (payload = {}) => {
     const p = room.players.get(socket.id);
     if (!p) return;
     if (!payload?.pos) return;
 
     p.pos = payload.pos;
     p.rotY = payload.rotY ?? 0;
+
+    if (payload.profile && typeof payload.profile === "object") {
+      p.profile = mergeProfile(p.profile || {}, payload.profile);
+      p.name = p.profile?.name ?? p.name ?? "anon";
+    }
+
+    if (p.profile?.serial) {
+      saveAvatarPresence({
+        serial: p.profile.serial,
+        assignedTableId: p.profile.assignedTableId,
+        pos: p.pos,
+        rotY: p.rotY,
+        isOnline: true,
+        mode: "static",
+      });
+    }
 
     socket.broadcast.emit("player:move", {
       id: socket.id,
@@ -357,8 +449,6 @@ io.on("connection", (socket) => {
       }
 
       const saved = saveTablePot(clean);
-
-      // memory cache 也更新，snapshot 直接用它
       room.tablePots.set(saved.tableId, saved);
 
       console.log("[pot:save]", saved.tableId, {
@@ -377,6 +467,31 @@ io.on("connection", (socket) => {
   });
 
   socket.on("disconnect", () => {
+    const p = room.players.get(socket.id);
+    const serial = room.serialBySocketId.get(socket.id);
+
+    if (p?.profile?.serial || serial) {
+      const finalSerial = p?.profile?.serial || serial;
+      const finalAssignedTableId =
+        p?.profile?.assignedTableId ||
+        getProfileBySerial(finalSerial)?.assignedTableId ||
+        null;
+
+      setAvatarPresenceOnline(finalSerial, false);
+
+      // 如果這個人從來沒存過位置，補存一次
+      if (p?.pos) {
+        saveAvatarPresence({
+          serial: finalSerial,
+          assignedTableId: finalAssignedTableId,
+          pos: p.pos,
+          rotY: p.rotY ?? 0,
+          isOnline: false,
+          mode: "static",
+        });
+      }
+    }
+
     room.players.delete(socket.id);
 
     for (const [k, seat] of room.seats.entries()) {
@@ -387,7 +502,6 @@ io.on("connection", (socket) => {
       }
     }
 
-    // 只解除 socket 綁定，不刪除 DB 內 profile
     room.serialBySocketId.delete(socket.id);
 
     socket.broadcast.emit("player:leave", { id: socket.id });

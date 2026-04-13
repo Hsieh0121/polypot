@@ -38,10 +38,51 @@ function resize(){
 
 const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || "http://localhost:3001";
 const socket = io(SOCKET_URL, { transports: ["websocket"] });
-let currentProfile = JSON.parse(localStorage.getItem("polypot_profile") || "null") || {};
-const remotePlayers = new Map();
+const LS_SERIAL = "polypot_serial";
+
+function loadHallIdentity() {
+  const serial = localStorage.getItem(LS_SERIAL) || "";
+  return serial ? { serial } : {};
+}
+
+function saveHallIdentity(profile) {
+  if (profile?.serial) {
+    localStorage.setItem(LS_SERIAL, profile.serial);
+  } else {
+    localStorage.removeItem(LS_SERIAL);
+  }
+}
+
+let currentProfile = loadHallIdentity();
+const remotePlayers = new Map(); // key = avatar:${serial}
 let localPlayerId = null;
 
+function getSerialFromPlayerLike(data) {
+  return data?.profile?.serial ?? data?.serial ?? null;
+}
+
+function getRemoteKeyFromPlayerLike(data) {
+  const serial = getSerialFromPlayerLike(data);
+  return serial ? `avatar:${serial}` : null;
+}
+
+function findRemoteBySerial(serial) {
+  if (!serial) return null;
+  const key = `avatar:${serial}`;
+  const obj = remotePlayers.get(key) ?? null;
+  return obj ? { key, obj } : null;
+}
+
+function findRemoteByPlayerId(playerId) {
+  if (!playerId) return null;
+
+  for (const [key, obj] of remotePlayers.entries()) {
+    if (obj?.userData?.playerId === playerId) {
+      return { key, obj };
+    }
+  }
+  return null;
+}
 function mapSerialToTable(serial, tableCount = 8) {
   const num = parseInt(String(serial || "").replace(/^P/i, ""), 10);
   if (!Number.isFinite(num) || num <= 0) return null;
@@ -172,6 +213,8 @@ socket.on("connect", () => {
 
   console.log("[net] connected");
   console.log("[local] localPlayerId =", localPlayerId);
+  console.log("[connect] currentProfile =", currentProfile);
+  console.log("[connect] current serial =", currentProfile?.serial); 
 
   if (!currentProfile?.serial) {
     console.warn("[hall] missing profile.serial, redirect to white room");
@@ -179,12 +222,18 @@ socket.on("connect", () => {
     return;
   }
 
-  socket.emit("join", currentProfile, ({ self, other } = {}) => {
+  socket.emit("join", { serial: currentProfile.serial }, ({ self, other, ok } = {}) => {
     if (self?.id) localPlayerId = self.id;
+
+    if (ok === false) {
+      console.warn("[hall] join failed, redirect to white room");
+      window.location.href = "/white.html";
+      return;
+    }
 
     if (self?.profile) {
       currentProfile = self.profile;
-      localStorage.setItem("polypot_profile", JSON.stringify(currentProfile));
+      saveHallIdentity(currentProfile);
 
       assignedTableId =
         currentProfile?.assignedTableId ??
@@ -195,11 +244,18 @@ socket.on("connect", () => {
     }
 
     console.log("[join ack]", { self, other });
+    console.log("[join ack other count]", (other || []).length, other);
 
     for (const p of other || []) {
-      if (!remotePlayers.has(p.id)) {
-        spawnRemote(p);
-      }
+      const serial = p?.profile?.serial;
+      if (!serial) continue;
+      if (serial === currentProfile?.serial) continue;
+
+      syncRemoteAvatar({
+        ...p,
+        serial,
+        presenceType: "online",
+      });
     }
   });
 });
@@ -219,23 +275,49 @@ socket.on("snapshot", (snap) => {
   const players = Array.isArray(snap?.players) ? snap.players : [];
   const seats = Array.isArray(snap?.seats) ? snap.seats : [];
   const pots = Array.isArray(snap?.pots) ? snap.pots : [];
+  const offlineAvatars = Array.isArray(snap?.offlineAvatars) ? snap.offlineAvatars : [];
 
   // --- players ---
   for (const p of players) {
-    if (!p?.id || p.id === localPlayerId) continue;
+    const serial = p?.profile?.serial;
+    if (!serial) continue;
+    if (serial === currentProfile?.serial) continue;
 
-    let obj = remotePlayers.get(p.id);
+    syncRemoteAvatar({
+      ...p,
+      serial,
+      presenceType: "online",
+    });
+  }
+  // --- offline avatars ---
+  for (const a of offlineAvatars) {
+    if (!a?.serial) continue;
+    if (a.serial === currentProfile?.serial) continue;
 
-    if (!obj) {
-      spawnRemote(p);
-      obj = remotePlayers.get(p.id);
+    const tableId =
+      a.assignedTableId ||
+      a.profile?.assignedTableId ||
+      mapSerialToTable(a.serial);
+
+    const fixedPose =
+      hallSceneReady && tableId
+        ? getOfflineAvatarPoseForTable(tableId, a.serial)
+        : null;
+
+    const finalPos = fixedPose?.pos || a.pos;
+    const finalRotY = fixedPose?.rotY ?? a.rotY ?? 0;
+
+    const existing = findRemoteBySerial(a.serial);
+    if (existing?.obj?.userData?.presenceType === "online") {
+      continue;
     }
 
-    if (obj && p.pos) {
-      obj.visible = true;
-      obj.position.set(p.pos.x, p.pos.y, p.pos.z);
-      obj.rotation.y = p.rotY || 0;
-    }
+    syncRemoteAvatar({
+      ...a,
+      pos: finalPos,
+      rotY: finalRotY,
+      presenceType: "offline",
+    });
   }
 
   // --- seats ---
@@ -256,6 +338,7 @@ socket.on("snapshot", (snap) => {
   for (const pot of pots) {
     applyPotStateToTable(pot);
   }
+  console.log("[snapshot players count]", players.length, players);
 });
 socket.on("seatUpdated", (s) => {
   console.log("[socket] seatUpdated raw =", s);
@@ -305,34 +388,87 @@ setInterval(() => {
   });
 }, 1000);
 
-function makeRemoteAvatar(player) {
+function makeRemoteAvatar(playerLike) {
+  const serial = getSerialFromPlayerLike(playerLike);
+  if (!serial) {
+    console.warn("[makeRemoteAvatar] missing serial", playerLike);
+    return null;
+  }
+
   const group = new THREE.Group();
+  group.userData.isRemoteAvatar = true;
+  group.userData.playerId = playerLike.id ?? null;
+  group.userData.serial = serial;
+  group.userData.profile = playerLike.profile || {};
+  group.userData.presenceType = playerLike.presenceType ?? (playerLike.id ? "online" : "offline");
+
+  group.userData.targetMesh = null;
+  group.userData.modelAnchor = null;
+  group.userData.avatarRoot = null;
+  group.userData.avatarTexture = null;
+  group.userData.pendingProfile = playerLike.profile || null;
+  group.userData.__avatarInitialized = false;
+
+  group.visible = false;
+
+  const hitbox = new THREE.Mesh(
+    new THREE.CapsuleGeometry(0.7, 2.4, 4, 8),
+    new THREE.MeshBasicMaterial({
+      color: 0x1248ff,
+      wireframe: true,
+      transparent: true,
+      opacity: 0.55,
+      depthWrite: false,
+    })
+  );
+
+  hitbox.name = `REMOTE_HIT_${serial}`;
+  hitbox.userData.playerId = playerLike.id ?? null;
+  hitbox.userData.serial = serial;
+  hitbox.userData.isRemoteAvatarHit = true;
+  hitbox.position.set(0, 1.6, 0);
+  group.add(hitbox);
+
+  const modelAnchor = new THREE.Group();
+  hitbox.add(modelAnchor);
+  group.userData.modelAnchor = modelAnchor;
 
   loader.load("/avatar.glb", (gltf) => {
-    console.log("[avatar glb loaded]", player.id);
+    if (group.userData.__avatarInitialized) return;
+    group.userData.__avatarInitialized = true;
+
     const root = gltf.scene;
-    group.add(root);
+    modelAnchor.add(root);
 
-    // 尺寸校正
-    const box = new THREE.Box3().setFromObject(root);
+    root.position.set(0, 0, 0);
+    root.rotation.set(0, 0, 0);
+    root.scale.set(1, 1, 1);
+    root.updateMatrixWorld(true);
+
+    let box = new THREE.Box3().setFromObject(root);
     const size = new THREE.Vector3();
-    const center = new THREE.Vector3();
     box.getSize(size);
-    box.getCenter(center);
-
-    root.position.sub(center);
 
     const maxAxis = Math.max(size.x, size.y, size.z) || 1;
     const scale = 4.8 / maxAxis;
     root.scale.setScalar(scale);
 
-    const box2 = new THREE.Box3().setFromObject(root);
-    root.position.y -= box2.min.y;
+    root.updateMatrixWorld(true);
+    box = new THREE.Box3().setFromObject(root);
 
-    const REMOTE_EYE_TO_BODY = 0;
-    root.position.y -= REMOTE_EYE_TO_BODY;
+    const center = new THREE.Vector3();
+    box.getCenter(center);
 
-    // 找目標 mesh
+    root.position.x -= center.x;
+    root.position.z -= center.z;
+
+    root.updateMatrixWorld(true);
+    box = new THREE.Box3().setFromObject(root);
+    root.position.y -= box.min.y;
+
+    const MODEL_Y_OFFSET = 0;
+    root.position.y += MODEL_Y_OFFSET;
+
     let targetMesh = null;
     root.traverse((o) => {
       if (o.isMesh && o.name === "userModel002") {
@@ -340,68 +476,209 @@ function makeRemoteAvatar(player) {
       }
     });
 
-    console.log("[targetMesh found]", player.id, targetMesh?.name);
+    group.userData.avatarRoot = root;
+    group.userData.targetMesh = targetMesh;
 
-    if (player.profile?.avatarPhoto && targetMesh) {
-      console.log("[avatar] applying texture", player.id, player.profile.avatarPhoto.slice(0, 60));
-      const img = new Image();
-      img.onload = () => {
-        console.log("[avatar] texture onload OK", player.id);
-        const tex = new THREE.Texture(img);
-        tex.colorSpace = THREE.SRGBColorSpace;
-        tex.flipY = false;
-        tex.needsUpdate = true;
+    console.log("[targetMesh found]", serial, targetMesh?.name);
 
-        // 直接換成乾淨材質，不沿用原本材質
-        targetMesh.material = new THREE.MeshBasicMaterial({
-          map: tex,
-          transparent: true,
-          side: THREE.DoubleSide,
-        });
-
-        targetMesh.material.needsUpdate = true;
-
-        console.log("[remote avatar texture applied]", player.id);
-      };
-      img.onerror = (e) => {
-      console.error("[avatar] texture FAILED", player.id, e);
-    };
-    
-
-      img.src = player.profile.avatarPhoto;
+    const pendingProfile = group.userData.pendingProfile || group.userData.profile || null;
+    if (pendingProfile) {
+      applyProfileToAvatar(group, pendingProfile);
     }
 
-    console.log("[remote avatar ready]", player.id, {
-      pos: group.position.toArray(),
+    group.visible = true;
+
+    console.log("[remote avatar ready]", serial, {
+      visible: group.visible,
+      groupPos: group.position.toArray(),
+      hitboxPos: hitbox.position.toArray(),
+      rootLocalPos: root.position.toArray(),
       scale: root.scale.toArray(),
+      presenceType: group.userData.presenceType,
     });
   });
 
   return group;
 }
+function applyProfileToAvatar(avatar, incomingProfile) {
+  if (!avatar) return;
 
-function spawnRemote(player) {
-  if (!player?.id || player.id === localPlayerId) return;
-  if (remotePlayers.has(player.id)) return;
+  const prevProfile = avatar.userData.profile || {};
 
-  const avatar = makeRemoteAvatar(player);
+  const nextProfile = {
+    ...prevProfile,
+    ...(incomingProfile || {}),
+    serial:
+      incomingProfile?.serial ??
+      prevProfile?.serial ??
+      avatar.userData.serial ??
+      null,
+    avatarPhoto:
+      incomingProfile?.avatarPhoto ??
+      prevProfile?.avatarPhoto ??
+      null,
+  };
 
-  // 先放遠一點 / 先隱藏，避免卡在 origin 被場景吃掉
-  avatar.position.set(0, -9999, 0);
-  avatar.visible = false;
-  avatar.rotation.y = player.rotY || 0;
+  avatar.userData.profile = nextProfile;
+  avatar.userData.serial = nextProfile.serial ?? avatar.userData.serial ?? null;
+  avatar.userData.pendingProfile = nextProfile;
+
+  const targetMesh = avatar.userData.targetMesh;
+  if (!targetMesh) {
+    return;
+  }
+
+  const avatarPhoto = nextProfile.avatarPhoto ?? null;
+
+  // 沒有新圖時，保留舊 texture，不要清掉
+  if (!avatarPhoto) {
+    console.log("[applyProfileToAvatar] no avatarPhoto, keep existing texture", {
+      serial: avatar.userData.serial,
+    });
+    return;
+  }
+
+  if (targetMesh.userData.__appliedAvatarPhoto === avatarPhoto) {
+    return;
+  }
+
+  const img = new Image();
+  img.onload = () => {
+    const serialKey = `avatar:${avatar.userData.serial}`;
+    if (!remotePlayers.has(serialKey)) {
+      return;
+    }
+
+    if (avatar.userData.avatarTexture) {
+      avatar.userData.avatarTexture.dispose?.();
+      avatar.userData.avatarTexture = null;
+    }
+
+    const tex = new THREE.Texture(img);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.flipY = false;
+    tex.needsUpdate = true;
+
+    const oldMat = targetMesh.material;
+    if (oldMat?.map) oldMat.map.dispose?.();
+    oldMat?.dispose?.();
+
+    targetMesh.material = new THREE.MeshBasicMaterial({
+      map: tex,
+      transparent: true,
+      side: THREE.DoubleSide,
+    });
+    targetMesh.material.needsUpdate = true;
+
+    targetMesh.userData.__appliedAvatarPhoto = avatarPhoto;
+    avatar.userData.avatarTexture = tex;
+
+    console.log("[remote avatar texture applied]", avatar.userData.serial);
+  };
+
+  img.onerror = (e) => {
+    console.error("[avatar] texture FAILED", avatar.userData.serial, e);
+  };
+
+  img.src = avatarPhoto;
+}
+
+function syncRemoteAvatar(playerLike) {
+  const serial = getSerialFromPlayerLike(playerLike);
+  if (!serial) {
+    console.warn("[syncRemoteAvatar] missing serial", playerLike);
+    return null;
+  }
+
+  if (serial === currentProfile?.serial) return null;
+
+  const key = `avatar:${serial}`;
+  let avatar = remotePlayers.get(key);
+
+  if (!avatar) {
+    avatar = spawnRemote(playerLike);
+  }
+  if (!avatar) return null;
+
+  avatar.userData.playerId = playerLike.id ?? avatar.userData.playerId ?? null;
+  avatar.userData.serial = serial;
+  avatar.userData.presenceType =
+    playerLike.presenceType ?? (playerLike.id ? "online" : "offline");
+
+  if (playerLike.pos) {
+    avatar.position.set(playerLike.pos.x, playerLike.pos.y, playerLike.pos.z);
+  }
+  avatar.rotation.y = playerLike.rotY || 0;
+  avatar.visible = true;
+
+  console.log("[syncRemoteAvatar final]", {
+    serial,
+    presenceType: avatar.userData.presenceType,
+    pos: avatar.position.toArray(),
+    rotY: avatar.rotation.y,
+    visible: avatar.visible,
+  });
+
+  avatar.rotation.y = playerLike.rotY || 0;
+  avatar.visible = true;
+
+  if (playerLike.profile) {
+    applyProfileToAvatar(avatar, playerLike.profile);
+  }
+
+  return avatar;
+}
+
+function spawnRemote(playerLike) {
+  const key = getRemoteKeyFromPlayerLike(playerLike);
+  if (!key) return null;
+
+  const serial = getSerialFromPlayerLike(playerLike);
+  if (!serial) return null;
+  if (serial === currentProfile?.serial) return null;
+
+  if (remotePlayers.has(key)) {
+    return remotePlayers.get(key);
+  }
+
+  const avatar = makeRemoteAvatar(playerLike);
+  if (!avatar) return null;
+
+  avatar.rotation.y = playerLike.rotY || 0;
+
+  if (playerLike.pos) {
+    avatar.position.set(playerLike.pos.x, playerLike.pos.y, playerLike.pos.z);
+  } else {
+    avatar.position.set(0, -9999, 0);
+  }
+
+  avatar.userData.playerId = playerLike.id ?? null;
+  avatar.userData.serial = serial;
+  avatar.userData.profile = playerLike.profile || {};
+  avatar.userData.presenceType =
+    playerLike.presenceType ?? (playerLike.id ? "online" : "offline");
 
   scene.add(avatar);
-  remotePlayers.set(player.id, avatar);
+  remotePlayers.set(key, avatar);
 
-  console.log("[remote spawn]", player.id, {
-    pos: player.pos,
-    rotY: player.rotY,
-    profile: player.profile,
+  applyProfileToAvatar(avatar, playerLike.profile || null);
+
+  console.log("[remote scene add]", key, {
+    inScene: scene.children.includes(avatar),
+    pos: avatar.position.toArray(),
+    presenceType: avatar.userData.presenceType,
   });
+
+  console.log("[remote spawn]", key, {
+    pos: playerLike.pos,
+    rotY: playerLike.rotY,
+    profile: playerLike.profile,
+  });
+
+  return avatar;
 }
-function despawnRemote(id) {
-  const avatar = remotePlayers.get(id);
+function despawnRemote(key) {
+  const avatar = remotePlayers.get(key);
   if (!avatar) return;
 
   scene.remove(avatar);
@@ -421,45 +698,71 @@ function despawnRemote(id) {
       obj.material?.dispose?.();
     }
   });
+  if (avatar.userData?.avatarTexture) {
+    avatar.userData.avatarTexture.dispose?.();
+    avatar.userData.avatarTexture = null;
+  }
 
-  remotePlayers.delete(id);
-  console.log("[remote despawn]", id);
+  remotePlayers.delete(key);
+  console.log("[remote despawn]", key);
 }
 
 
 socket.on("player:join", (p) => {
-  spawnRemote(p);
+  const serial = p?.profile?.serial;
+  if (!serial) return;
+  if (serial === currentProfile?.serial) return;
+
+  syncRemoteAvatar({
+    ...p,
+    serial,
+    presenceType: "online",
+  });
 });
 
 socket.on("player:leave", ({ id }) => {
-  despawnRemote(id);
+  const found = findRemoteByPlayerId(id);
+  if (!found) return;
+
+  const serial = found.obj?.userData?.serial;
+  despawnRemote(found.key);
+
+  console.log("[player:leave] removed avatar", id, "serial=", serial);
+
+  // 離線 avatar 之後仍然靠下一次 snapshot 補回
 });
 
 socket.on("player:move", ({ id, pos, rotY, profile }) => {
   if (!id || id === localPlayerId) return;
 
-  let obj = remotePlayers.get(id);
+  const serial = profile?.serial ?? null;
+  if (!serial) return;
+  if (serial === currentProfile?.serial) return;
 
-  if (!obj) {
-    spawnRemote({
-      id,
-      pos,
-      rotY,
-      profile: profile || {},
-    });
-    obj = remotePlayers.get(id);
-  }
+  const obj = syncRemoteAvatar({
+    id,
+    serial,
+    pos,
+    rotY,
+    profile: profile || {},
+    presenceType: "online",
+  });
 
   if (!obj) return;
 
-  obj.visible = true;
-  obj.position.set(pos.x, pos.y, pos.z);
-  obj.rotation.y = rotY || 0;
+  if (Math.random() < 0.02) {
+    console.log("[remote applied pos]", serial, {
+      pos,
+      visible: obj.visible,
+      world: obj.position.toArray(),
+    });
+  }
 
   if (Math.random() < 0.02) {
-    console.log("[RECV pos]", id, pos);
+    console.log("[RECV pos]", serial, pos);
   }
 });
+
 socket.on("pot:updated", (pot) => {
   console.log("[socket] pot:updated", pot);
   applyPotStateToTable(pot);
@@ -569,7 +872,6 @@ controls.lock = () => {
   console.trace("[TRACE] controls.lock called");
   return __lock();
 };
-
 
 
 
@@ -894,6 +1196,42 @@ function distanceToTable(entry, playerPos){
 
 
 const tableRegistry = new Map();
+
+function getOfflineAvatarPoseForTable(tableId, serial) {
+  const info = tableRegistry.get(tableId);
+  if (!info) return null;
+
+  const size = new THREE.Vector3();
+  info.bbox.getSize(size);
+
+  const center = info.center.clone();
+
+  const serialNum = parseInt(String(serial || "").replace(/^P/i, ""), 10);
+  const angleSeed = Number.isFinite(serialNum) ? serialNum : 1;
+  const angle = ((angleSeed - 1) % 8) / 8 * Math.PI * 2;
+
+  const radius = Math.max(size.x, size.z) * 0.55 + 0.8;
+
+  const x = center.x + Math.cos(angle) * radius;
+  const z = center.z + Math.sin(angle) * radius;
+
+  // 優先抓同桌第一個 seat 的 y，沒有就用 bbox.min.y
+  let y = info.bbox.min.y;
+  for (const [key, anchor] of seatAnchorByKey.entries()) {
+    if (key.startsWith(`${tableId}_`)) {
+      y = anchor.pos.y;
+      break;
+    }
+  }
+
+  // 面向桌中心
+  const rotY = Math.atan2(center.x - x, center.z - z);
+
+  return {
+    pos: { x, y, z },
+    rotY,
+  };
+}
 
 
 function findPotRef(tableRoot) {
@@ -2304,7 +2642,26 @@ function updateSeatHover() {
   }
 }
 
+function getAvatarWorldPos() {
+  if (state === FSM.SEATED && seated) {
+    const key = `${seated.tableId}_${seated.seatId}`;
+    const anchor = seatAnchorByKey.get(key);
 
+    if (anchor) {
+      return {
+        x: anchor.pos.x,
+        y: anchor.pos.y,
+        z: anchor.pos.z,
+      };
+    }
+  }
+
+  return {
+    x: player.position.x,
+    y: player.position.y - EYE_HEIGHT,
+    z: player.position.z,
+  };
+}
 
 
 
@@ -2532,13 +2889,8 @@ if (socket.connected && now - lastNetSend > 50) {
   }
 
   socket.emit("player:move", {
-    pos: {
-      x: player.position.x,
-      y: player.position.y,
-      z: player.position.z,
-    },
+    pos: getAvatarWorldPos(),
     rotY: getYawFromCamera(),
-    profile: currentProfile,
   });
 }
 
