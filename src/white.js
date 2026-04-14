@@ -866,7 +866,7 @@ function sigLoadFromProfile(profile) {
   img.src = profile.signature;
 }
 
-// draw behavior: "覆蓋"（pointerdown 先清空）
+// draw behavior: 可多次續畫
 let sigDrawing = false;
 let sigLast = { x: 0, y: 0 };
 
@@ -881,9 +881,6 @@ function sigBegin(e) {
   if (idCardState !== "EDIT") return;
   e.preventDefault();
   e.stopPropagation();
-
-  // 覆蓋：每次開始畫都先清空
-  sigClearCanvas();
 
   sigDrawing = true;
   const p = sigGetLocalPoint(e);
@@ -927,7 +924,11 @@ signatureCanvas.addEventListener("pointercancel", sigEnd);
 sigClearBtn.addEventListener("click", (e) => {
   e.preventDefault();
   e.stopPropagation();
+
   if (idCardState !== "EDIT") return;
+
+  sigClearCanvas();
+
   const profile = loadProfileLocal();
   if (profile) {
     profile.signature = null;
@@ -1055,6 +1056,7 @@ previewWrap.style.overflow = "hidden";
 previewWrap.style.background = "#f3f3f3";
 avatarPanel.appendChild(previewWrap);
 
+
 const side = document.createElement("div");
 side.style.display = "flex";
 side.style.flexDirection = "column";
@@ -1069,18 +1071,48 @@ fileInput.accept = "image/*";
 fileInput.style.display = "none";
 avatarOverlay.appendChild(fileInput);
 
+function stylePrimaryBtn(btn){
+  btn.type = "button";
+  btn.style.border = "0";
+  btn.style.cursor = "pointer";
+  btn.style.height = "52px";
+  btn.style.borderRadius = "999px";
+  btn.style.background = "#fd6fff";
+  btn.style.color = "white";
+  btn.style.fontWeight = "900";
+  btn.style.boxShadow = "0 10px 26px rgba(0,0,0,0.16)";
+}
+
+function styleSecondaryBtn(btn){
+  btn.type = "button";
+  btn.style.border = "0";
+  btn.style.cursor = "pointer";
+  btn.style.height = "52px";
+  btn.style.borderRadius = "999px";
+  btn.style.background = "#eeeeee";
+  btn.style.color = "#333333";
+  btn.style.fontWeight = "900";
+  btn.style.boxShadow = "0 10px 26px rgba(0,0,0,0.06)";
+}
+
+const actionRow = document.createElement("div");
+actionRow.style.display = "flex";
+actionRow.style.gap = "10px";
+side.appendChild(actionRow);
+
 const uploadBtn = document.createElement("button");
-uploadBtn.type = "button";
 uploadBtn.textContent = "上傳圖片";
-uploadBtn.style.border = "0";
-uploadBtn.style.cursor = "pointer";
-uploadBtn.style.height = "52px";
-uploadBtn.style.borderRadius = "999px";
-uploadBtn.style.background = "#fd6fff";
-uploadBtn.style.color = "white";
-uploadBtn.style.fontWeight = "900";
-uploadBtn.style.boxShadow = "0 10px 26px rgba(0,0,0,0.16)";
-side.appendChild(uploadBtn);
+stylePrimaryBtn(uploadBtn);
+uploadBtn.style.flex = "1";
+actionRow.appendChild(uploadBtn);
+
+const drawBtn = document.createElement("button");
+drawBtn.textContent = "繪製角色";
+styleSecondaryBtn(drawBtn);
+drawBtn.style.flex = "1";
+actionRow.appendChild(drawBtn);
+
+
 
 const confirmBtn = document.createElement("button");
 confirmBtn.type = "button";
@@ -1105,6 +1137,413 @@ cancelBtn.style.background = "rgba(0,0,0,0.06)";
 cancelBtn.style.color = "#333";
 cancelBtn.style.fontWeight = "800";
 side.appendChild(cancelBtn);
+
+// =========================
+// AVATAR DRAW OVERLAY
+// =========================
+
+const avatarDrawOverlay = document.createElement("div");
+avatarDrawOverlay.style.position = "fixed";
+avatarDrawOverlay.style.inset = "0";
+avatarDrawOverlay.style.zIndex = "30004";
+avatarDrawOverlay.style.display = "none";
+avatarDrawOverlay.style.pointerEvents = "auto";
+uiRoot.appendChild(avatarDrawOverlay);
+
+const avatarDrawDim = document.createElement("div");
+avatarDrawDim.style.position = "absolute";
+avatarDrawDim.style.inset = "0";
+avatarDrawDim.style.background = "rgba(0,0,0,0.25)";
+avatarDrawOverlay.appendChild(avatarDrawDim);
+
+const avatarDrawPanel = document.createElement("div");
+avatarDrawPanel.style.position = "absolute";
+avatarDrawPanel.style.left = "50%";
+avatarDrawPanel.style.top = "50%";
+avatarDrawPanel.style.transform = "translate(-50%, -50%)";
+avatarDrawPanel.style.width = "860px";
+avatarDrawPanel.style.height = "420px";
+avatarDrawPanel.style.background = "white";
+avatarDrawPanel.style.borderRadius = "28px";
+avatarDrawPanel.style.boxShadow = "0 18px 60px rgba(0,0,0,0.20)";
+avatarDrawPanel.style.padding = "22px";
+avatarDrawPanel.style.boxSizing = "border-box";
+avatarDrawPanel.style.fontFamily = "system-ui, -apple-system, Segoe UI, Roboto, sans-serif";
+avatarDrawOverlay.appendChild(avatarDrawPanel);
+
+// 左側工作區
+const drawPreviewWrap = document.createElement("div");
+drawPreviewWrap.style.position = "absolute";
+drawPreviewWrap.style.left = "22px";
+drawPreviewWrap.style.top = "20px";
+drawPreviewWrap.style.width = "520px";
+drawPreviewWrap.style.height = "380px";
+drawPreviewWrap.style.borderRadius = "22px";
+drawPreviewWrap.style.overflow = "hidden";
+drawPreviewWrap.style.background = "#D9D9D9";
+avatarDrawPanel.appendChild(drawPreviewWrap);
+
+const drawCanvasWrap = document.createElement("div");
+drawCanvasWrap.style.position = "absolute";
+drawCanvasWrap.style.inset = "0";
+drawCanvasWrap.style.width = "100%";
+drawCanvasWrap.style.height = "100%";
+drawPreviewWrap.appendChild(drawCanvasWrap);
+
+// 右側上方 action buttons
+const drawTopRow = document.createElement("div");
+drawTopRow.style.position = "absolute";
+drawTopRow.style.left = "575px";
+drawTopRow.style.top = "60px";
+drawTopRow.style.width = "265px";
+drawTopRow.style.display = "flex";
+drawTopRow.style.gap = "14px";
+avatarDrawPanel.appendChild(drawTopRow);
+
+const drawUploadBtn = document.createElement("button");
+drawUploadBtn.textContent = "上傳圖片";
+styleSecondaryBtn(drawUploadBtn);
+drawUploadBtn.style.flex = "1";
+drawTopRow.appendChild(drawUploadBtn);
+
+const drawModeBtn = document.createElement("button");
+drawModeBtn.textContent = "繪製角色";
+stylePrimaryBtn(drawModeBtn);
+drawModeBtn.style.flex = "1";
+drawTopRow.appendChild(drawModeBtn);
+
+// 右側工具列
+const drawToolRow = document.createElement("div");
+drawToolRow.style.position = "absolute";
+drawToolRow.style.width = "265px";
+drawToolRow.style.left = "575px";
+drawToolRow.style.top = "170px";
+drawToolRow.style.display = "flex";
+drawToolRow.style.gap = "11px";
+drawToolRow.style.justifyContent = "space-between";
+avatarDrawPanel.appendChild(drawToolRow);
+
+function makeRoundToolButton() {
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.style.width = "58px";
+  btn.style.height = "58px";
+  btn.style.borderRadius = "999px";
+  btn.style.border = "0";
+  btn.style.background = "#FFFFFF";
+  btn.style.cursor = "pointer";
+  btn.style.padding = "0";
+  btn.style.display = "grid";
+  btn.style.placeItems = "center";
+  btn.style.boxShadow = "0 10px 24px rgba(0,0,0,0.08)";
+  return btn;
+}
+
+// color
+const avatarColorBtn = document.createElement("button");
+avatarColorBtn.type = "button";
+avatarColorBtn.style.width = "58px";
+avatarColorBtn.style.height = "58px";
+avatarColorBtn.style.borderRadius = "999px";
+avatarColorBtn.style.border = "0";
+avatarColorBtn.style.background = "#FD6FFF";
+avatarColorBtn.style.cursor = "pointer";
+avatarColorBtn.style.padding = "0";
+avatarColorBtn.style.boxShadow = "0 10px 24px rgba(0,0,0,0.08)";
+drawToolRow.appendChild(avatarColorBtn);
+
+// brush
+const avatarBrushBtn = makeRoundToolButton();
+const avatarBrushImg = document.createElement("img");
+avatarBrushImg.src = "/pencilBtn.png";
+avatarBrushImg.alt = "brush";
+avatarBrushImg.style.width = "58px";
+avatarBrushImg.style.height = "58px";
+avatarBrushImg.style.objectFit = "contain";
+avatarBrushBtn.appendChild(avatarBrushImg);
+drawToolRow.appendChild(avatarBrushBtn);
+
+// eraser
+const avatarEraserBtn = makeRoundToolButton();
+const avatarEraserImg = document.createElement("img");
+avatarEraserImg.src = "/eraserBtn.png";
+avatarEraserImg.alt = "eraser";
+avatarEraserImg.style.width = "58px";
+avatarEraserImg.style.height = "58px";
+avatarEraserImg.style.objectFit = "contain";
+avatarEraserBtn.appendChild(avatarEraserImg);
+drawToolRow.appendChild(avatarEraserBtn);
+
+// confirm
+const avatarDrawConfirmBtn = makeRoundToolButton();
+const avatarDrawConfirmImg = document.createElement("img");
+avatarDrawConfirmImg.src = "/confirmBtn.png";
+avatarDrawConfirmImg.alt = "confirm";
+avatarDrawConfirmImg.style.width = "58px";
+avatarDrawConfirmImg.style.height = "58px";
+avatarDrawConfirmImg.style.objectFit = "contain";
+avatarDrawConfirmBtn.appendChild(avatarDrawConfirmImg);
+drawToolRow.appendChild(avatarDrawConfirmBtn);
+
+// hidden native inputs
+const avatarColorInput = document.createElement("input");
+avatarColorInput.type = "color";
+avatarColorInput.value = "#fd6fff";
+avatarColorInput.style.display = "none";
+avatarDrawOverlay.appendChild(avatarColorInput);
+
+const avatarBrushPopup = document.createElement("div");
+avatarBrushPopup.style.position = "absolute";
+avatarBrushPopup.style.left = "645px";
+avatarBrushPopup.style.top = "250px";
+avatarBrushPopup.style.width = "220px";
+avatarBrushPopup.style.background = "#1a1a1a";
+avatarBrushPopup.style.borderRadius = "999px";
+avatarBrushPopup.style.padding = "10px 16px";
+avatarBrushPopup.style.display = "none";
+avatarBrushPopup.style.alignItems = "center";
+avatarBrushPopup.style.gap = "10px";
+avatarBrushPopup.style.zIndex = "10";
+avatarBrushPopup.style.boxShadow = "0 4px 16px rgba(0,0,0,0.3)";
+avatarDrawPanel.appendChild(avatarBrushPopup);
+
+const avatarBrushSlider = document.createElement("input");
+avatarBrushSlider.type = "range";
+avatarBrushSlider.min = "1";
+avatarBrushSlider.max = "80";
+avatarBrushSlider.step = "1";
+avatarBrushSlider.value = "10";
+avatarBrushSlider.style.flex = "1";
+avatarBrushSlider.style.accentColor = "#FD6FFF";
+avatarBrushSlider.style.cursor = "pointer";
+avatarBrushPopup.appendChild(avatarBrushSlider);
+
+const avatarBrushValue = document.createElement("div");
+avatarBrushValue.textContent = "10";
+avatarBrushValue.style.color = "#fff";
+avatarBrushValue.style.fontFamily = '"zpix", ui-sans-serif, system-ui';
+avatarBrushValue.style.fontSize = "14px";
+avatarBrushValue.style.minWidth = "28px";
+avatarBrushValue.style.textAlign = "right";
+avatarBrushPopup.appendChild(avatarBrushValue);
+
+// draw state
+let avatarPaintCanvas = null;
+let avatarPaintCtx = null;
+let avatarGuideCanvas = null;
+let avatarGuideCtx = null;
+let avatarGuideImg = null;
+let avatarDrawColor = "#FD6FFF";
+let avatarBrushSize = 10;
+let avatarToolMode = "draw";
+let avatarDrawing = false;
+
+function initAvatarDrawCanvas() {
+  drawCanvasWrap.innerHTML = "";
+
+  avatarPaintCanvas = document.createElement("canvas");
+  avatarPaintCanvas.width = 1024;
+  avatarPaintCanvas.height = 1024;
+  avatarPaintCanvas.style.position = "absolute";
+  avatarPaintCanvas.style.inset = "0";
+  avatarPaintCanvas.style.width = "100%";
+  avatarPaintCanvas.style.height = "100%";
+  avatarPaintCanvas.style.display = "block";
+  avatarPaintCanvas.style.touchAction = "none";
+  drawCanvasWrap.appendChild(avatarPaintCanvas);
+
+  avatarGuideCanvas = document.createElement("canvas");
+  avatarGuideCanvas.width = 1024;
+  avatarGuideCanvas.height = 1024;
+  avatarGuideCanvas.style.position = "absolute";
+  avatarGuideCanvas.style.inset = "0";
+  avatarGuideCanvas.style.width = "100%";
+  avatarGuideCanvas.style.height = "100%";
+  avatarGuideCanvas.style.display = "block";
+  avatarGuideCanvas.style.pointerEvents = "none";
+  drawCanvasWrap.appendChild(avatarGuideCanvas);
+
+  avatarPaintCtx = avatarPaintCanvas.getContext("2d");
+  avatarGuideCtx = avatarGuideCanvas.getContext("2d");
+
+  avatarPaintCtx.clearRect(0, 0, 1024, 1024);
+  avatarPaintCtx.fillStyle = "#D9D9D9";
+  avatarPaintCtx.fillRect(0, 0, 1024, 1024);
+
+  avatarGuideImg = new Image();
+  avatarGuideImg.onload = () => {
+    redrawAvatarGuideCanvas();
+  };
+  avatarGuideImg.src = "/model_unfold.png";
+
+  bindAvatarDrawEvents();
+}
+
+function redrawAvatarGuideCanvas() {
+  if (!avatarGuideCtx || !avatarGuideCanvas) return;
+  avatarGuideCtx.clearRect(0, 0, 1024, 1024);
+
+  if (avatarGuideImg?.complete) {
+    avatarGuideCtx.drawImage(avatarGuideImg, 0, 0, 1024, 1024);
+  }
+}
+function avatarDrawPoint(e) {
+  if (!avatarPaintCanvas) return { x: 0, y: 0 };
+
+  const rect = avatarPaintCanvas.getBoundingClientRect();
+  return {
+    x: (e.clientX - rect.left) * (avatarPaintCanvas.width / rect.width),
+    y: (e.clientY - rect.top) * (avatarPaintCanvas.height / rect.height),
+  };
+}
+
+function avatarDrawStart(e) {
+  if (!avatarPaintCanvas || !avatarPaintCtx) return;
+  e.preventDefault();
+
+  const p = avatarDrawPoint(e);
+  avatarDrawing = true;
+
+  avatarPaintCtx.beginPath();
+  avatarPaintCtx.moveTo(p.x, p.y);
+}
+
+function avatarDrawMove(e) {
+  if (!avatarDrawing || !avatarPaintCtx) return;
+  e.preventDefault();
+
+  const p = avatarDrawPoint(e);
+
+  avatarPaintCtx.lineCap = "round";
+  avatarPaintCtx.lineJoin = "round";
+  avatarPaintCtx.lineWidth = avatarBrushSize;
+  avatarPaintCtx.globalCompositeOperation = "source-over";
+
+  if (avatarToolMode === "erase") {
+    avatarPaintCtx.strokeStyle = "#D9D9D9";
+  } else {
+    avatarPaintCtx.strokeStyle = avatarDrawColor;
+  }
+
+  avatarPaintCtx.lineTo(p.x, p.y);
+  avatarPaintCtx.stroke();
+}
+
+function avatarDrawEnd() {
+  if (!avatarDrawing || !avatarPaintCtx) return;
+  avatarDrawing = false;
+  avatarPaintCtx.closePath();
+}
+
+function bindAvatarDrawEvents() {
+  if (!avatarPaintCanvas) return;
+
+  avatarPaintCanvas.onpointerdown = avatarDrawStart;
+  avatarPaintCanvas.onpointermove = avatarDrawMove;
+  avatarPaintCanvas.onpointerup = avatarDrawEnd;
+  avatarPaintCanvas.onpointerleave = avatarDrawEnd;
+  avatarPaintCanvas.onpointercancel = avatarDrawEnd;
+}
+
+function exportAvatarDrawDataUrl() {
+  if (!avatarPaintCanvas) return null;
+  return avatarPaintCanvas.toDataURL("image/png");
+}
+
+function openAvatarDrawEditor() {
+  avatarOverlay.style.display = "none";
+  avatarDrawOverlay.style.display = "block";
+  initAvatarDrawCanvas();
+}
+
+function closeAvatarDrawEditor() {
+  avatarDrawOverlay.style.display = "none";
+  avatarBrushPopup.style.display = "none";
+  avatarOverlay.style.display = "block";
+}
+
+avatarDrawDim.addEventListener("click", () => {
+  closeAvatarDrawEditor();
+});
+
+drawBtn.addEventListener("click", () => {
+  openAvatarDrawEditor();
+});
+
+drawUploadBtn.addEventListener("click", () => {
+  closeAvatarDrawEditor();
+  fileInput.click();
+});
+
+avatarColorBtn.addEventListener("click", () => {
+  avatarColorInput.click();
+});
+
+avatarColorInput.addEventListener("input", (e) => {
+  avatarDrawColor = e.target.value;
+  avatarColorBtn.style.background = avatarDrawColor;
+});
+
+avatarBrushBtn.addEventListener("click", (e) => {
+  e.stopPropagation();
+  avatarBrushPopup.style.display =
+    avatarBrushPopup.style.display === "flex" ? "none" : "flex";
+});
+
+avatarBrushSlider.addEventListener("input", (e) => {
+  avatarBrushSize = Number(e.target.value);
+  avatarBrushValue.textContent = String(avatarBrushSize);
+});
+
+avatarEraserBtn.addEventListener("click", () => {
+  avatarToolMode = avatarToolMode === "erase" ? "draw" : "erase";
+  avatarEraserBtn.style.outline =
+    avatarToolMode === "erase" ? "3px solid #FD6FFF" : "none";
+});
+
+avatarDrawConfirmBtn.addEventListener("click", () => {
+  const dataUrl = exportAvatarDrawDataUrl();
+  if (!dataUrl) return;
+
+  pendingAvatarPhoto = dataUrl;
+
+  const img = new Image();
+  img.onload = () => {
+    const tex = new THREE.Texture(img);
+    tex.needsUpdate = true;
+    applyTextureToAvatar(tex);
+  };
+  img.src = dataUrl;
+
+  avatarOverlay.style.display = "block";
+  avatarDrawOverlay.style.display = "none";
+  avatarBrushPopup.style.display = "none";
+});
+
+confirmBtn.addEventListener("click", () => {
+  if (!pendingAvatarPhoto) return;
+
+  photoImg.src = pendingAvatarPhoto;
+  photoImg.style.display = "block";
+
+  const profile = loadProfileLocal();
+  if (profile) {
+    profile.avatarPhoto = pendingAvatarPhoto;
+    saveProfileLocal(profile);
+  }
+
+  closeAvatarEditor();
+});
+
+document.addEventListener("pointerdown", (e) => {
+  if (
+    avatarBrushPopup.style.display === "flex" &&
+    !avatarBrushPopup.contains(e.target) &&
+    !avatarBrushBtn.contains(e.target)
+  ) {
+    avatarBrushPopup.style.display = "none";
+  }
+});
 
 
 // =========================
@@ -1618,6 +2057,7 @@ function enqueueAction(type) {
     npcHideAll?.();
     doorHidePrompt?.();
     hideIdCard?.();
+    closeAvatarDrawEditor?.();
     closeAvatarEditor?.();
   }
 }
@@ -1894,7 +2334,6 @@ function applyTextureToAvatar(texture){
         });
     }
 }
-uploadBtn.addEventListener("click", () => fileInput.click());
 
 let pendingAvatarPhoto = null;
 
@@ -2052,16 +2491,18 @@ function captureIDPhotoFromAvatarPreview() {
   return cvs.toDataURL("image/png");
 }
 confirmBtn.addEventListener("click", () => {
-    if (!pendingAvatarPhoto) return;
+  if (!pendingAvatarPhoto) return;
 
-    photoImg.src = pendingAvatarPhoto;
+  photoImg.src = pendingAvatarPhoto;
+  photoImg.style.display = "block";
 
-    const profile = loadProfileLocal();
-    if (profile) {
+  const profile = loadProfileLocal();
+  if (profile) {
     profile.avatarPhoto = pendingAvatarPhoto;
     saveProfileLocal(profile);
-    }
-    closeAvatarEditor();
+  }
+
+  closeAvatarEditor();
 });
 cancelBtn.addEventListener("click", () => closeAvatarEditor());
 avatarDim.addEventListener("click", () => closeAvatarEditor());
@@ -2161,27 +2602,33 @@ submitBtn.addEventListener("click", async () => {
 
 
 function openAvatarEditor () {
-    enterUiMode();
-    avatarOverlay.style.display = "block";
-    initAvatarPreview();
+  enterUiMode();
+  avatarOverlay.style.display = "block";
+  initAvatarPreview();
 
-    const profile = loadProfileLocal();
-    if (profile?.avatarPhoto){
-        photoImg.src = profile.avatarPhoto;
-        photoImg.style.display = "block";
-    }
+  const profile = loadProfileLocal();
+  if (profile?.avatarPhoto){
+    pendingAvatarPhoto = profile.avatarPhoto;
+    photoImg.src = profile.avatarPhoto;
+    photoImg.style.display = "block";
+  }
 }
-function closeAvatarEditor() {
-    avatarOverlay.style.display = "none";
-    fileInput.value = "";
 
-    if (
-      idOverlay.style.display === "none" &&
-      !doorUiActive &&
-      npcState === NPC_STATE.HIDDEN
-    ) {
-      exitUiMode();
-    }
+function closeAvatarEditor() {
+  avatarOverlay.style.display = "none";
+  fileInput.value = "";
+
+  if (avatarDrawOverlay.style.display !== "none") {
+    closeAvatarDrawEditor();
+  }
+
+  if (
+    idOverlay.style.display === "none" &&
+    !doorUiActive &&
+    npcState === NPC_STATE.HIDDEN
+  ) {
+    exitUiMode();
+  }
 }
 editBtn.addEventListener("click", (e) => {
     e.preventDefault();
