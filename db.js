@@ -13,12 +13,36 @@ const db = new Database(dbPath);
 db.pragma("journal_mode = WAL");
 
 // --------------------
-// schema
+// shared serial helpers
+// --------------------
+function parseSerialNumber(serial) {
+  const num = parseInt(String(serial).replace(/^P/i, ""), 10);
+  if (!Number.isFinite(num) || num <= 0) return null;
+  return num;
+}
+
+function mapSerialToRoom(serial, roomSize = 8) {
+  const num = parseSerialNumber(serial);
+  if (!num) return null;
+  const roomIndex = Math.floor((num - 1) / roomSize) + 1;
+  return `room${roomIndex}`;
+}
+
+function mapSerialToTable(serial, tableCount = 8) {
+  const num = parseSerialNumber(serial);
+  if (!num) return null;
+  const tableIndex = ((num - 1) % tableCount) + 1;
+  return `table${tableIndex}`;
+}
+
+// --------------------
+// schema bootstrap
 // --------------------
 db.exec(`
   CREATE TABLE IF NOT EXISTS profiles (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     serial TEXT NOT NULL UNIQUE,
+    room_id TEXT,
     assigned_table_id TEXT,
     name TEXT,
     message TEXT,
@@ -28,19 +52,9 @@ db.exec(`
     updated_at INTEGER NOT NULL
   );
 
-  CREATE TABLE IF NOT EXISTS table_pots (
-    table_id TEXT PRIMARY KEY,
-    table_state_json TEXT,
-    final_pot_texture_url TEXT,
-    chair_count INTEGER,
-    chair_color TEXT,
-    pot_body_color TEXT,
-    pot_handle_color TEXT,
-    updated_at INTEGER NOT NULL
-  );
-
   CREATE TABLE IF NOT EXISTS avatar_presences (
     serial TEXT PRIMARY KEY,
+    room_id TEXT,
     assigned_table_id TEXT,
     last_pos_x REAL,
     last_pos_y REAL,
@@ -51,13 +65,241 @@ db.exec(`
     updated_at INTEGER NOT NULL
   );
 `);
+
+// --------------------
+// legacy column migration
+// --------------------
+function getTableColumns(tableName) {
+  return db.prepare(`PRAGMA table_info(${tableName})`).all();
+}
+
+function hasColumn(tableName, columnName) {
+  return getTableColumns(tableName).some((col) => col.name === columnName);
+}
+
 try {
-  db.exec(`ALTER TABLE table_pots ADD COLUMN pot_body_color TEXT`);
+  if (!hasColumn("profiles", "room_id")) {
+    db.exec(`ALTER TABLE profiles ADD COLUMN room_id TEXT`);
+  }
 } catch (err) {}
 
 try {
-  db.exec(`ALTER TABLE table_pots ADD COLUMN pot_handle_color TEXT`);
+  if (!hasColumn("avatar_presences", "room_id")) {
+    db.exec(`ALTER TABLE avatar_presences ADD COLUMN room_id TEXT`);
+  }
 } catch (err) {}
+
+try {
+  if (!hasColumn("table_pots", "pot_body_color")) {
+    db.exec(`ALTER TABLE table_pots ADD COLUMN pot_body_color TEXT`);
+  }
+} catch (err) {}
+
+try {
+  if (!hasColumn("table_pots", "pot_handle_color")) {
+    db.exec(`ALTER TABLE table_pots ADD COLUMN pot_handle_color TEXT`);
+  }
+} catch (err) {}
+
+// --------------------
+// table_pots migration
+// old: PRIMARY KEY(table_id)
+// new: PRIMARY KEY(room_id, table_id)
+// --------------------
+function ensureTablePotsV2() {
+  const tableExists = db
+    .prepare(`
+      SELECT name
+      FROM sqlite_master
+      WHERE type = 'table' AND name = 'table_pots'
+    `)
+    .get();
+
+  if (!tableExists) {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS table_pots (
+        room_id TEXT NOT NULL,
+        table_id TEXT NOT NULL,
+        table_state_json TEXT,
+        final_pot_texture_url TEXT,
+        chair_count INTEGER,
+        chair_color TEXT,
+        pot_body_color TEXT,
+        pot_handle_color TEXT,
+        updated_at INTEGER NOT NULL,
+        PRIMARY KEY (room_id, table_id)
+      );
+    `);
+    return;
+  }
+
+  const columns = getTableColumns("table_pots");
+  const hasRoomId = columns.some((c) => c.name === "room_id");
+
+  if (hasRoomId) {
+    return;
+  }
+
+  console.warn("[db] migrating legacy table_pots -> room-aware table_pots");
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS table_pots_v2 (
+      room_id TEXT NOT NULL,
+      table_id TEXT NOT NULL,
+      table_state_json TEXT,
+      final_pot_texture_url TEXT,
+      chair_count INTEGER,
+      chair_color TEXT,
+      pot_body_color TEXT,
+      pot_handle_color TEXT,
+      updated_at INTEGER NOT NULL,
+      PRIMARY KEY (room_id, table_id)
+    );
+  `);
+
+  const legacyRows = db.prepare(`
+    SELECT
+      table_id as tableId,
+      table_state_json as tableStateJson,
+      final_pot_texture_url as finalPotTextureUrl,
+      chair_count as chairCount,
+      chair_color as chairColor,
+      pot_body_color as potBodyColor,
+      pot_handle_color as potHandleColor,
+      updated_at as updatedAt
+    FROM table_pots
+  `).all();
+
+  const insertV2 = db.prepare(`
+    INSERT OR REPLACE INTO table_pots_v2 (
+      room_id,
+      table_id,
+      table_state_json,
+      final_pot_texture_url,
+      chair_count,
+      chair_color,
+      pot_body_color,
+      pot_handle_color,
+      updated_at
+    )
+    VALUES (
+      @roomId,
+      @tableId,
+      @tableStateJson,
+      @finalPotTextureUrl,
+      @chairCount,
+      @chairColor,
+      @potBodyColor,
+      @potHandleColor,
+      @updatedAt
+    )
+  `);
+
+  const tx = db.transaction(() => {
+    for (const row of legacyRows) {
+      insertV2.run({
+        roomId: "room1",
+        tableId: row.tableId,
+        tableStateJson: row.tableStateJson,
+        finalPotTextureUrl: row.finalPotTextureUrl,
+        chairCount: row.chairCount,
+        chairColor: row.chairColor,
+        potBodyColor: row.potBodyColor ?? "#FD6FFF",
+        potHandleColor: row.potHandleColor ?? "#E8F25A",
+        updatedAt: row.updatedAt ?? Date.now(),
+      });
+    }
+
+    db.exec(`DROP TABLE table_pots`);
+    db.exec(`ALTER TABLE table_pots_v2 RENAME TO table_pots`);
+  });
+
+  tx();
+}
+
+ensureTablePotsV2();
+
+// --------------------
+// backfill room_id / assigned_table_id from serial
+// --------------------
+function backfillProfilesRoomAndTable() {
+  const rows = db.prepare(`
+    SELECT serial, room_id as roomId, assigned_table_id as assignedTableId
+    FROM profiles
+  `).all();
+
+  const stmt = db.prepare(`
+    UPDATE profiles
+    SET room_id = @roomId,
+        assigned_table_id = @assignedTableId
+    WHERE serial = @serial
+  `);
+
+  const tx = db.transaction(() => {
+    for (const row of rows) {
+      const roomId = row.roomId || mapSerialToRoom(row.serial);
+      const assignedTableId = row.assignedTableId || mapSerialToTable(row.serial);
+
+      if (roomId !== row.roomId || assignedTableId !== row.assignedTableId) {
+        stmt.run({
+          serial: row.serial,
+          roomId,
+          assignedTableId,
+        });
+      }
+    }
+  });
+
+  tx();
+}
+
+function backfillAvatarPresenceRoomAndTable() {
+  const rows = db.prepare(`
+    SELECT
+      ap.serial as serial,
+      ap.room_id as roomId,
+      ap.assigned_table_id as assignedTableId,
+      p.room_id as profileRoomId,
+      p.assigned_table_id as profileAssignedTableId
+    FROM avatar_presences ap
+    LEFT JOIN profiles p
+      ON p.serial = ap.serial
+  `).all();
+
+  const stmt = db.prepare(`
+    UPDATE avatar_presences
+    SET room_id = @roomId,
+        assigned_table_id = @assignedTableId
+    WHERE serial = @serial
+  `);
+
+  const tx = db.transaction(() => {
+    for (const row of rows) {
+      const roomId =
+        row.roomId ||
+        row.profileRoomId ||
+        mapSerialToRoom(row.serial);
+
+      const assignedTableId =
+        row.assignedTableId ||
+        row.profileAssignedTableId ||
+        mapSerialToTable(row.serial);
+
+      if (roomId !== row.roomId || assignedTableId !== row.assignedTableId) {
+        stmt.run({
+          serial: row.serial,
+          roomId,
+          assignedTableId,
+        });
+      }
+    }
+  });
+
+  tx();
+}
+
+backfillProfilesRoomAndTable();
+backfillAvatarPresenceRoomAndTable();
 
 // --------------------
 // shared helpers
@@ -110,6 +352,7 @@ function sanitizeFinalPotTextureUrl(url) {
 const getProfileBySerialStmt = db.prepare(`
   SELECT
     serial,
+    room_id as roomId,
     assigned_table_id as assignedTableId,
     name,
     message,
@@ -124,6 +367,7 @@ const getProfileBySerialStmt = db.prepare(`
 const upsertProfileStmt = db.prepare(`
   INSERT INTO profiles (
     serial,
+    room_id,
     assigned_table_id,
     name,
     message,
@@ -134,6 +378,7 @@ const upsertProfileStmt = db.prepare(`
   )
   VALUES (
     @serial,
+    @roomId,
     @assignedTableId,
     @name,
     @message,
@@ -143,6 +388,7 @@ const upsertProfileStmt = db.prepare(`
     @updatedAt
   )
   ON CONFLICT(serial) DO UPDATE SET
+    room_id = excluded.room_id,
     assigned_table_id = excluded.assigned_table_id,
     name = excluded.name,
     message = excluded.message,
@@ -161,7 +407,14 @@ export function saveProfile(profile) {
 
   const row = {
     serial: profile.serial,
-    assignedTableId: profile.assignedTableId ?? null,
+    roomId:
+      profile.roomId ??
+      existing?.roomId ??
+      mapSerialToRoom(profile.serial),
+    assignedTableId:
+      profile.assignedTableId ??
+      existing?.assignedTableId ??
+      mapSerialToTable(profile.serial),
     name: profile.name ?? "",
     message: profile.message ?? "",
     avatarPhoto: profile.avatarPhoto ?? "",
@@ -186,8 +439,9 @@ export function getNextSerialNumberFallback() {
 // --------------------
 // pot helpers
 // --------------------
-const getPotByTableIdStmt = db.prepare(`
+const getPotByRoomAndTableIdStmt = db.prepare(`
   SELECT
+    room_id as roomId,
     table_id as tableId,
     table_state_json as tableStateJson,
     final_pot_texture_url as finalPotTextureUrl,
@@ -197,11 +451,27 @@ const getPotByTableIdStmt = db.prepare(`
     pot_handle_color as potHandleColor,
     updated_at as updatedAt
   FROM table_pots
-  WHERE table_id = ?
+  WHERE room_id = ? AND table_id = ?
+`);
+
+const listAllPotsByRoomStmt = db.prepare(`
+  SELECT
+    room_id as roomId,
+    table_id as tableId,
+    table_state_json as tableStateJson,
+    final_pot_texture_url as finalPotTextureUrl,
+    chair_count as chairCount,
+    chair_color as chairColor,
+    pot_body_color as potBodyColor,
+    pot_handle_color as potHandleColor,
+    updated_at as updatedAt
+  FROM table_pots
+  WHERE room_id = ?
 `);
 
 const listAllPotsStmt = db.prepare(`
   SELECT
+    room_id as roomId,
     table_id as tableId,
     table_state_json as tableStateJson,
     final_pot_texture_url as finalPotTextureUrl,
@@ -215,6 +485,7 @@ const listAllPotsStmt = db.prepare(`
 
 const upsertPotStmt = db.prepare(`
   INSERT INTO table_pots (
+    room_id,
     table_id,
     table_state_json,
     final_pot_texture_url,
@@ -225,6 +496,7 @@ const upsertPotStmt = db.prepare(`
     updated_at
   )
   VALUES (
+    @roomId,
     @tableId,
     @tableStateJson,
     @finalPotTextureUrl,
@@ -234,7 +506,7 @@ const upsertPotStmt = db.prepare(`
     @potHandleColor,
     @updatedAt
   )
-  ON CONFLICT(table_id) DO UPDATE SET
+  ON CONFLICT(room_id, table_id) DO UPDATE SET
     table_state_json = excluded.table_state_json,
     final_pot_texture_url = excluded.final_pot_texture_url,
     chair_count = excluded.chair_count,
@@ -255,6 +527,7 @@ function parsePotRow(row) {
   const sanitizedState = sanitizeTableState(parsedState);
 
   return {
+    roomId: row.roomId,
     tableId: row.tableId,
     tableState: sanitizedState,
     finalPotTextureUrl: sanitizeFinalPotTextureUrl(row.finalPotTextureUrl),
@@ -266,10 +539,15 @@ function parsePotRow(row) {
   };
 }
 
-export function getPotByTableId(tableId) {
-  return parsePotRow(getPotByTableIdStmt.get(tableId));
+export function getPotByRoomAndTableId(roomId, tableId) {
+  return parsePotRow(getPotByRoomAndTableIdStmt.get(roomId, tableId));
 }
 
+export function listAllPotsByRoom(roomId) {
+  return listAllPotsByRoomStmt.all(roomId).map(parsePotRow);
+}
+
+// 保留舊接口，方便之後 debug
 export function listAllPots() {
   return listAllPotsStmt.all().map(parsePotRow);
 }
@@ -280,19 +558,27 @@ export function saveTablePot(pot) {
     pot.finalPotTextureUrl
   );
 
+  const resolvedRoomId =
+    pot.roomId ||
+    safeTableState?.roomId ||
+    "room1";
+
   const row = {
+    roomId: resolvedRoomId,
     tableId: pot.tableId,
     tableStateJson: JSON.stringify(safeTableState),
     finalPotTextureUrl: safeFinalPotTextureUrl,
     chairCount: pot.chairCount ?? 0,
     chairColor: pot.chairColor ?? null,
-    potBodyColor: pot.potBodyColor ?? pot.tableState?.potBodyColor ?? "#FD6FFF",
-    potHandleColor: pot.potHandleColor ?? pot.tableState?.potHandleColor ?? "#E8F25A",
+    potBodyColor:
+      pot.potBodyColor ?? pot.tableState?.potBodyColor ?? "#FD6FFF",
+    potHandleColor:
+      pot.potHandleColor ?? pot.tableState?.potHandleColor ?? "#E8F25A",
     updatedAt: Date.now(),
   };
 
   upsertPotStmt.run(row);
-  return getPotByTableId(pot.tableId);
+  return getPotByRoomAndTableId(row.roomId, row.tableId);
 }
 
 // --------------------
@@ -301,6 +587,7 @@ export function saveTablePot(pot) {
 const getAvatarPresenceBySerialStmt = db.prepare(`
   SELECT
     serial,
+    room_id as roomId,
     assigned_table_id as assignedTableId,
     last_pos_x as lastPosX,
     last_pos_y as lastPosY,
@@ -313,9 +600,27 @@ const getAvatarPresenceBySerialStmt = db.prepare(`
   WHERE serial = ?
 `);
 
+const listAllAvatarPresencesByRoomStmt = db.prepare(`
+  SELECT
+    serial,
+    room_id as roomId,
+    assigned_table_id as assignedTableId,
+    last_pos_x as lastPosX,
+    last_pos_y as lastPosY,
+    last_pos_z as lastPosZ,
+    last_rot_y as lastRotY,
+    is_online as isOnline,
+    mode,
+    updated_at as updatedAt
+  FROM avatar_presences
+  WHERE room_id = ?
+  ORDER BY updated_at DESC
+`);
+
 const listAllAvatarPresencesStmt = db.prepare(`
   SELECT
     serial,
+    room_id as roomId,
     assigned_table_id as assignedTableId,
     last_pos_x as lastPosX,
     last_pos_y as lastPosY,
@@ -331,6 +636,7 @@ const listAllAvatarPresencesStmt = db.prepare(`
 const upsertAvatarPresenceStmt = db.prepare(`
   INSERT INTO avatar_presences (
     serial,
+    room_id,
     assigned_table_id,
     last_pos_x,
     last_pos_y,
@@ -342,6 +648,7 @@ const upsertAvatarPresenceStmt = db.prepare(`
   )
   VALUES (
     @serial,
+    @roomId,
     @assignedTableId,
     @lastPosX,
     @lastPosY,
@@ -352,6 +659,7 @@ const upsertAvatarPresenceStmt = db.prepare(`
     @updatedAt
   )
   ON CONFLICT(serial) DO UPDATE SET
+    room_id = excluded.room_id,
     assigned_table_id = excluded.assigned_table_id,
     last_pos_x = excluded.last_pos_x,
     last_pos_y = excluded.last_pos_y,
@@ -367,6 +675,7 @@ function parseAvatarPresenceRow(row) {
 
   return {
     serial: row.serial,
+    roomId: row.roomId ?? null,
     assignedTableId: row.assignedTableId ?? null,
     pos:
       row.lastPosX == null || row.lastPosY == null || row.lastPosZ == null
@@ -387,6 +696,11 @@ export function getAvatarPresenceBySerial(serial) {
   return parseAvatarPresenceRow(getAvatarPresenceBySerialStmt.get(serial));
 }
 
+export function listAllAvatarPresencesByRoom(roomId) {
+  return listAllAvatarPresencesByRoomStmt.all(roomId).map(parseAvatarPresenceRow);
+}
+
+// 保留舊接口，方便之後 debug
 export function listAllAvatarPresences() {
   return listAllAvatarPresencesStmt.all().map(parseAvatarPresenceRow);
 }
@@ -400,10 +714,14 @@ export function saveAvatarPresence(input) {
 
   const row = {
     serial: input.serial,
+    roomId:
+      input.roomId ??
+      profile?.roomId ??
+      mapSerialToRoom(input.serial),
     assignedTableId:
       input.assignedTableId ??
       profile?.assignedTableId ??
-      null,
+      mapSerialToTable(input.serial),
     lastPosX:
       typeof input.pos?.x === "number" ? input.pos.x : null,
     lastPosY:
@@ -427,6 +745,7 @@ export function setAvatarPresenceOnline(serial, isOnline) {
 
   return saveAvatarPresence({
     serial,
+    roomId: existing.roomId,
     assignedTableId: existing.assignedTableId,
     pos: existing.pos,
     rotY: existing.rotY,

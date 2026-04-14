@@ -5,10 +5,10 @@ import { Server } from "socket.io";
 import {
   getProfileBySerial,
   saveProfile,
-  listAllPots,
   saveTablePot,
   getNextSerialNumberFallback,
-  listAllAvatarPresences,
+  listAllPotsByRoom,
+  listAllAvatarPresencesByRoom,
   saveAvatarPresence,
   setAvatarPresenceOnline,
 } from "./db.js";
@@ -26,10 +26,12 @@ const allowedOrigins = [
   process.env.CLIENT_ORIGIN,
 ].filter(Boolean);
 
-app.use(cors({
-  origin: allowedOrigins,
-  methods: ["GET", "POST"],
-}));
+app.use(
+  cors({
+    origin: allowedOrigins,
+    methods: ["GET", "POST"],
+  })
+);
 
 const io = new Server(server, {
   cors: {
@@ -39,6 +41,7 @@ const io = new Server(server, {
 });
 
 app.get("/health", (_, res) => res.send("ok"));
+
 app.get("/profiles/:serial", (req, res) => {
   try {
     const rawSerial =
@@ -73,24 +76,19 @@ app.get("/profiles/:serial", (req, res) => {
   }
 });
 
-const room = {
-  players: new Map(),          // socket.id -> player
-  seats: new Map(),            // seatKey -> { seatKey, occupiedBy }
+// -------------------------
+// state
+// -------------------------
+const state = {
   serialBySocketId: new Map(), // socket.id -> serial
-  tablePots: new Map(),        // tableId -> saved pot state (memory cache)
+  socketRoomId: new Map(),     // socket.id -> roomId
+  rooms: new Map(),            // roomId -> { players, seats, tablePots, hydrated }
   nextSerialId: 1,
 };
 
-// -------------------------
-// bootstrap DB cache
-// -------------------------
-for (const pot of listAllPots()) {
-  room.tablePots.set(pot.tableId, pot);
-}
-room.nextSerialId = getNextSerialNumberFallback();
+state.nextSerialId = getNextSerialNumberFallback();
 
-console.log("[server] loaded pots from DB:", room.tablePots.size);
-console.log("[server] nextSerialId:", room.nextSerialId);
+console.log("[server] nextSerialId:", state.nextSerialId);
 
 // -------------------------
 // helpers
@@ -103,22 +101,69 @@ function formatSerial(id) {
   return `P${pad(id, 6)}`;
 }
 
-function mapSerialToTable(serial, tableCount = 8) {
+function parseSerialNumber(serial) {
   const num = parseInt(String(serial).replace(/^P/i, ""), 10);
   if (!Number.isFinite(num) || num <= 0) return null;
+  return num;
+}
+
+function mapSerialToRoom(serial, roomSize = 8) {
+  const num = parseSerialNumber(serial);
+  if (!num) return null;
+  const roomIndex = Math.floor((num - 1) / roomSize) + 1;
+  return `room${roomIndex}`;
+}
+
+function mapSerialToTable(serial, tableCount = 8) {
+  const num = parseSerialNumber(serial);
+  if (!num) return null;
   const tableIndex = ((num - 1) % tableCount) + 1;
   return `table${tableIndex}`;
 }
 
 function allocateSerial() {
-  const id = room.nextSerialId++;
+  const id = state.nextSerialId++;
   return {
     id,
     serial: formatSerial(id),
   };
 }
 
-function getSeat(seatKey) {
+function ensureRoom(roomId) {
+  if (!roomId) throw new Error("ensureRoom: roomId is required");
+
+  if (!state.rooms.has(roomId)) {
+    state.rooms.set(roomId, {
+      players: new Map(),   // socket.id -> player
+      seats: new Map(),     // seatKey -> { seatKey, occupiedBy }
+      tablePots: new Map(), // tableId -> pot
+      hydrated: false,
+    });
+  }
+
+  return state.rooms.get(roomId);
+}
+
+function hydrateRoomFromDb(roomId) {
+  const room = ensureRoom(roomId);
+  if (room.hydrated) return room;
+
+  try {
+    const pots = listAllPotsByRoom(roomId);
+    for (const pot of pots) {
+      room.tablePots.set(pot.tableId, pot);
+    }
+    console.log(`[room hydrate] ${roomId} loaded pots:`, pots.length);
+  } catch (err) {
+    console.error(`[room hydrate] failed for ${roomId}:`, err);
+  }
+
+  room.hydrated = true;
+  return room;
+}
+
+function getSeat(roomId, seatKey) {
+  const room = ensureRoom(roomId);
   if (!room.seats.has(seatKey)) {
     room.seats.set(seatKey, { seatKey, occupiedBy: null });
   }
@@ -128,6 +173,7 @@ function getSeat(seatKey) {
 function sanitizeProfileInput(input = {}) {
   return {
     serial: typeof input.serial === "string" ? input.serial.trim() : "",
+    roomId: typeof input.roomId === "string" ? input.roomId.trim() : "",
     name: typeof input.name === "string" ? input.name.trim().slice(0, 40) : "",
     message: typeof input.message === "string" ? input.message.slice(0, 300) : "",
     avatarPhoto: typeof input.avatarPhoto === "string" ? input.avatarPhoto : null,
@@ -140,10 +186,13 @@ function sanitizeProfileInput(input = {}) {
 function buildNewProfile(input = {}) {
   const clean = sanitizeProfileInput(input);
   const { serial } = allocateSerial();
+
+  const roomId = mapSerialToRoom(serial);
   const assignedTableId = mapSerialToTable(serial);
 
   return {
     serial,
+    roomId,
     assignedTableId,
     name: clean.name || "anon",
     message: clean.message || "",
@@ -157,23 +206,22 @@ function mergeProfile(existing, input = {}) {
 
   return {
     serial: existing.serial,
+    roomId: clean.roomId || existing.roomId || mapSerialToRoom(existing.serial),
     assignedTableId:
-      clean.assignedTableId || existing.assignedTableId || mapSerialToTable(existing.serial),
-    name:
-      clean.name !== "" ? clean.name : (existing.name || "anon"),
-    message:
-      clean.message !== "" ? clean.message : (existing.message || ""),
+      clean.assignedTableId ||
+      existing.assignedTableId ||
+      mapSerialToTable(existing.serial),
+    name: clean.name !== "" ? clean.name : existing.name || "anon",
+    message: clean.message !== "" ? clean.message : existing.message || "",
     avatarPhoto:
-      clean.avatarPhoto !== null ? clean.avatarPhoto : (existing.avatarPhoto ?? null),
+      clean.avatarPhoto !== null
+        ? clean.avatarPhoto
+        : (existing.avatarPhoto ?? null),
     signature:
-      clean.signature !== null ? clean.signature : (existing.signature ?? null),
+      clean.signature !== null
+        ? clean.signature
+        : (existing.signature ?? null),
   };
-}
-
-function getSocketProfile(socketId) {
-  const serial = room.serialBySocketId.get(socketId);
-  if (!serial) return null;
-  return getProfileBySerial(serial);
 }
 
 function sanitizePotPayload(input = {}) {
@@ -183,6 +231,7 @@ function sanitizePotPayload(input = {}) {
       : null;
 
   return {
+    roomId: typeof input.roomId === "string" ? input.roomId : null,
     tableId: typeof input.tableId === "string" ? input.tableId : null,
     tableState,
     finalPotTextureUrl:
@@ -198,14 +247,12 @@ function sanitizePotPayload(input = {}) {
         : (typeof tableState?.chairColor === "string"
             ? tableState.chairColor
             : "#e8f25a"),
-
     potBodyColor:
       typeof input.potBodyColor === "string"
         ? input.potBodyColor
         : (typeof tableState?.potBodyColor === "string"
             ? tableState.potBodyColor
             : "#FD6FFF"),
-
     potHandleColor:
       typeof input.potHandleColor === "string"
         ? input.potHandleColor
@@ -215,19 +262,44 @@ function sanitizePotPayload(input = {}) {
   };
 }
 
-function buildSnapshot() {
+function getSocketProfile(socketId) {
+  const serial = state.serialBySocketId.get(socketId);
+  if (!serial) return null;
+  return getProfileBySerial(serial);
+}
+
+function getSocketRoomId(socketId) {
+  return state.socketRoomId.get(socketId) || null;
+}
+
+function updateRoomPlayerProfile(socketId, profile) {
+  const roomId = getSocketRoomId(socketId);
+  if (!roomId) return;
+
+  const room = ensureRoom(roomId);
+  const p = room.players.get(socketId);
+  if (!p) return;
+
+  p.profile = profile;
+  p.name = profile?.name ?? p.name ?? "anon";
+}
+
+function buildSnapshot(roomId) {
+  const room = ensureRoom(roomId);
+
   const onlineSerials = new Set(
     Array.from(room.players.values())
       .map((p) => p.profile?.serial)
       .filter(Boolean)
   );
 
-  const offlineAvatars = listAllAvatarPresences()
+  const offlineAvatars = listAllAvatarPresencesByRoom(roomId)
     .filter((a) => !onlineSerials.has(a.serial))
     .map((a) => {
       const profile = getProfileBySerial(a.serial);
       return {
         serial: a.serial,
+        roomId: a.roomId,
         assignedTableId: a.assignedTableId,
         pos: a.pos,
         rotY: a.rotY ?? 0,
@@ -239,19 +311,12 @@ function buildSnapshot() {
     .filter((a) => !!a.profile);
 
   return {
-    roomId: "lobby",
+    roomId,
     players: Array.from(room.players.values()),
     seats: Array.from(room.seats.values()),
     pots: Array.from(room.tablePots.values()),
     offlineAvatars,
   };
-}
-
-function updateRoomPlayerProfile(socketId, profile) {
-  const p = room.players.get(socketId);
-  if (!p) return;
-  p.profile = profile;
-  p.name = profile?.name ?? p.name ?? "anon";
 }
 
 // -------------------------
@@ -273,7 +338,6 @@ io.on("connection", (socket) => {
       const clean = sanitizeProfileInput(profileInput);
       let profile = null;
 
-      // 有 serial -> 更新既有
       if (clean.serial) {
         const existing = getProfileBySerial(clean.serial);
         if (existing) {
@@ -281,12 +345,11 @@ io.on("connection", (socket) => {
         }
       }
 
-      // 沒 serial 或查無資料 -> 建新身份
       if (!profile) {
         profile = saveProfile(buildNewProfile(clean));
       }
 
-      room.serialBySocketId.set(socket.id, profile.serial);
+      state.serialBySocketId.set(socket.id, profile.serial);
       updateRoomPlayerProfile(socket.id, profile);
 
       console.log(
@@ -294,6 +357,7 @@ io.on("connection", (socket) => {
         socket.id,
         profile.name,
         profile.serial,
+        profile.roomId,
         profile.assignedTableId
       );
 
@@ -327,7 +391,6 @@ io.on("connection", (socket) => {
         return ack?.({ ok: false, error: "profile not found" });
       }
 
-      // 純查詢：不要改 socket 身份，也不要改 room player profile
       ack?.({
         ok: true,
         profile,
@@ -349,32 +412,46 @@ io.on("connection", (socket) => {
       const clean = sanitizeProfileInput(profileInput);
       let finalProfile = null;
 
-      // a. 優先從 serial 取 DB 完整資料
       if (clean.serial) {
         finalProfile = getProfileBySerial(clean.serial);
       }
 
-      // b. 沒 serial 再看 socket 之前是否已綁定
       if (!finalProfile) {
         finalProfile = getSocketProfile(socket.id);
       }
 
-      // c. 都沒有才建立新 profile
       if (!finalProfile) {
         finalProfile = saveProfile(buildNewProfile(clean));
         console.warn("[join] auto-registered fallback profile for", socket.id);
       }
 
-      room.serialBySocketId.set(socket.id, finalProfile.serial);
+      const resolvedRoomId =
+        finalProfile.roomId || mapSerialToRoom(finalProfile.serial);
+      const resolvedTableId =
+        finalProfile.assignedTableId || mapSerialToTable(finalProfile.serial);
 
-      console.log(
-        "[join]",
-        socket.id,
-        finalProfile.name,
-        finalProfile.serial,
-        finalProfile.assignedTableId
-      );
+      if (
+        finalProfile.roomId !== resolvedRoomId ||
+        finalProfile.assignedTableId !== resolvedTableId
+      ) {
+        finalProfile = saveProfile({
+          ...finalProfile,
+          roomId: resolvedRoomId,
+          assignedTableId: resolvedTableId,
+        });
+      }
 
+      const previousRoomId = getSocketRoomId(socket.id);
+      if (previousRoomId && previousRoomId !== resolvedRoomId) {
+        socket.leave(previousRoomId);
+      }
+
+      state.serialBySocketId.set(socket.id, finalProfile.serial);
+      state.socketRoomId.set(socket.id, resolvedRoomId);
+
+      socket.join(resolvedRoomId);
+
+      const room = hydrateRoomFromDb(resolvedRoomId);
       const existingPlayer = room.players.get(socket.id);
 
       const player = {
@@ -389,12 +466,22 @@ io.on("connection", (socket) => {
 
       saveAvatarPresence({
         serial: finalProfile.serial,
+        roomId: resolvedRoomId,
         assignedTableId: finalProfile.assignedTableId,
         pos: player.pos,
         rotY: player.rotY,
         isOnline: true,
         mode: "static",
       });
+
+      console.log(
+        "[join]",
+        socket.id,
+        finalProfile.name,
+        finalProfile.serial,
+        finalProfile.roomId,
+        finalProfile.assignedTableId
+      );
 
       ack?.({
         ok: true,
@@ -405,9 +492,9 @@ io.on("connection", (socket) => {
         other: Array.from(room.players.values()).filter((p) => p.id !== socket.id),
       });
 
-      socket.emit("snapshot", buildSnapshot());
+      socket.emit("snapshot", buildSnapshot(resolvedRoomId));
 
-      socket.broadcast.emit("player:join", {
+      socket.to(resolvedRoomId).emit("player:join", {
         id: player.id,
         pos: player.pos,
         rotY: player.rotY,
@@ -423,6 +510,10 @@ io.on("connection", (socket) => {
   });
 
   socket.on("player:move", (payload = {}) => {
+    const roomId = getSocketRoomId(socket.id);
+    if (!roomId) return;
+
+    const room = ensureRoom(roomId);
     const p = room.players.get(socket.id);
     if (!p) return;
     if (!payload?.pos) return;
@@ -438,6 +529,7 @@ io.on("connection", (socket) => {
     if (p.profile?.serial) {
       saveAvatarPresence({
         serial: p.profile.serial,
+        roomId,
         assignedTableId: p.profile.assignedTableId,
         pos: p.pos,
         rotY: p.rotY,
@@ -446,7 +538,7 @@ io.on("connection", (socket) => {
       });
     }
 
-    socket.broadcast.emit("player:move", {
+    socket.to(roomId).emit("player:move", {
       id: socket.id,
       pos: p.pos,
       rotY: p.rotY,
@@ -455,10 +547,14 @@ io.on("connection", (socket) => {
   });
 
   socket.on("requestSitSeat", ({ seatKey }) => {
-    const p = room.players.get(socket.id);
-    if (!p || !seatKey) return;
+    const roomId = getSocketRoomId(socket.id);
+    if (!roomId || !seatKey) return;
 
-    const seat = getSeat(seatKey);
+    const room = ensureRoom(roomId);
+    const p = room.players.get(socket.id);
+    if (!p) return;
+
+    const seat = getSeat(roomId, seatKey);
 
     if (seat.occupiedBy && seat.occupiedBy !== socket.id) {
       socket.emit("sitDenied", {
@@ -472,13 +568,17 @@ io.on("connection", (socket) => {
     seat.occupiedBy = socket.id;
     room.seats.set(seatKey, seat);
 
-    io.emit("seatUpdated", seat);
-    console.log("[seat] occupied", seatKey, "by", socket.id);
+    io.to(roomId).emit("seatUpdated", seat);
+    console.log("[seat] occupied", roomId, seatKey, "by", socket.id);
   });
 
   socket.on("requestUnseat", ({ seatKey }) => {
+    const roomId = getSocketRoomId(socket.id);
+    if (!roomId || !seatKey) return;
+
+    const room = ensureRoom(roomId);
     const p = room.players.get(socket.id);
-    if (!p || !seatKey) return;
+    if (!p) return;
 
     const seat = room.seats.get(seatKey);
     if (!seat) return;
@@ -487,8 +587,8 @@ io.on("connection", (socket) => {
     seat.occupiedBy = null;
     room.seats.set(seatKey, seat);
 
-    io.emit("seatUpdated", seat);
-    console.log("[seat] released", seatKey, "by", socket.id);
+    io.to(roomId).emit("seatUpdated", seat);
+    console.log("[seat] released", roomId, seatKey, "by", socket.id);
   });
 
   // =========================
@@ -496,6 +596,12 @@ io.on("connection", (socket) => {
   // =========================
   socket.on("pot:save", (payload = {}, ack) => {
     try {
+      const roomId = getSocketRoomId(socket.id);
+      if (!roomId) {
+        ack?.({ ok: false, error: "missing roomId" });
+        return;
+      }
+
       const clean = sanitizePotPayload(payload);
 
       if (!clean.tableId) {
@@ -503,10 +609,15 @@ io.on("connection", (socket) => {
         return;
       }
 
-      const saved = saveTablePot(clean);
+      const saved = saveTablePot({
+        ...clean,
+        roomId,
+      });
+
+      const room = ensureRoom(roomId);
       room.tablePots.set(saved.tableId, saved);
 
-      console.log("[pot:save]", saved.tableId, {
+      console.log("[pot:save]", roomId, saved.tableId, {
         chairCount: saved.chairCount,
         chairColor: saved.chairColor,
         potBodyColor: saved.potBodyColor,
@@ -515,7 +626,7 @@ io.on("connection", (socket) => {
         initialized: !!saved.tableState?.initialized,
       });
 
-      io.emit("pot:updated", saved);
+      io.to(roomId).emit("pot:updated", saved);
 
       ack?.({ ok: true, pot: saved });
     } catch (err) {
@@ -524,15 +635,23 @@ io.on("connection", (socket) => {
     }
   });
 
-    socket.on("disconnect", () => {
-    const p = room.players.get(socket.id);
-    const serial = room.serialBySocketId.get(socket.id);
+  socket.on("disconnect", () => {
+    const roomId = getSocketRoomId(socket.id);
+    const room = roomId ? ensureRoom(roomId) : null;
+
+    const p = room?.players.get(socket.id);
+    const serial = state.serialBySocketId.get(socket.id);
 
     let offlinePayload = null;
 
-    if (p?.profile?.serial || serial) {
+    if ((p?.profile?.serial || serial) && roomId) {
       const finalSerial = p?.profile?.serial || serial;
       const dbProfile = getProfileBySerial(finalSerial);
+
+      const finalRoomId =
+        p?.profile?.roomId ||
+        dbProfile?.roomId ||
+        roomId;
 
       const finalAssignedTableId =
         p?.profile?.assignedTableId ||
@@ -546,6 +665,7 @@ io.on("connection", (socket) => {
 
       saveAvatarPresence({
         serial: finalSerial,
+        roomId: finalRoomId,
         assignedTableId: finalAssignedTableId,
         pos: finalPos,
         rotY: finalRotY,
@@ -557,6 +677,7 @@ io.on("connection", (socket) => {
 
       offlinePayload = {
         serial: finalSerial,
+        roomId: finalRoomId,
         assignedTableId: finalAssignedTableId,
         pos: finalPos,
         rotY: finalRotY,
@@ -566,24 +687,36 @@ io.on("connection", (socket) => {
       };
     }
 
-    room.players.delete(socket.id);
+    if (room) {
+      room.players.delete(socket.id);
 
-    for (const [k, seat] of room.seats.entries()) {
-      if (seat.occupiedBy === socket.id) {
-        seat.occupiedBy = null;
-        room.seats.set(k, seat);
-        io.emit("seatUpdated", seat);
+      for (const [k, seat] of room.seats.entries()) {
+        if (seat.occupiedBy === socket.id) {
+          seat.occupiedBy = null;
+          room.seats.set(k, seat);
+          io.to(roomId).emit("seatUpdated", seat);
+        }
       }
     }
 
-    room.serialBySocketId.delete(socket.id);
+    if (roomId) {
+      socket.to(roomId).emit("player:leave", { id: socket.id });
 
-    socket.broadcast.emit("player:leave", { id: socket.id });
+      if (offlinePayload) {
+        socket.to(roomId).emit("avatar:offline", offlinePayload);
+        console.log(
+          "[disconnect -> avatar:offline]",
+          offlinePayload.serial,
+          offlinePayload.roomId,
+          offlinePayload.assignedTableId
+        );
+      }
 
-    if (offlinePayload) {
-      socket.broadcast.emit("avatar:offline", offlinePayload);
-      console.log("[disconnect -> avatar:offline]", offlinePayload.serial, offlinePayload.assignedTableId);
+      socket.leave(roomId);
     }
+
+    state.serialBySocketId.delete(socket.id);
+    state.socketRoomId.delete(socket.id);
 
     console.log("socket disconnected:", socket.id);
   });
