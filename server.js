@@ -177,12 +177,14 @@ function getSocketProfile(socketId) {
 }
 
 function sanitizePotPayload(input = {}) {
+  const tableState =
+    input.tableState && typeof input.tableState === "object"
+      ? input.tableState
+      : null;
+
   return {
     tableId: typeof input.tableId === "string" ? input.tableId : null,
-    tableState:
-      input.tableState && typeof input.tableState === "object"
-        ? input.tableState
-        : null,
+    tableState,
     finalPotTextureUrl:
       typeof input.finalPotTextureUrl === "string"
         ? input.finalPotTextureUrl
@@ -193,7 +195,23 @@ function sanitizePotPayload(input = {}) {
     chairColor:
       typeof input.chairColor === "string"
         ? input.chairColor
-        : "#e8f25a",
+        : (typeof tableState?.chairColor === "string"
+            ? tableState.chairColor
+            : "#e8f25a"),
+
+    potBodyColor:
+      typeof input.potBodyColor === "string"
+        ? input.potBodyColor
+        : (typeof tableState?.potBodyColor === "string"
+            ? tableState.potBodyColor
+            : "#FD6FFF"),
+
+    potHandleColor:
+      typeof input.potHandleColor === "string"
+        ? input.potHandleColor
+        : (typeof tableState?.potHandleColor === "string"
+            ? tableState.potHandleColor
+            : "#E8F25A"),
   };
 }
 
@@ -490,6 +508,9 @@ io.on("connection", (socket) => {
 
       console.log("[pot:save]", saved.tableId, {
         chairCount: saved.chairCount,
+        chairColor: saved.chairColor,
+        potBodyColor: saved.potBodyColor,
+        potHandleColor: saved.potHandleColor,
         hasTexture: !!saved.finalPotTextureUrl,
         initialized: !!saved.tableState?.initialized,
       });

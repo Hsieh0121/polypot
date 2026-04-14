@@ -78,6 +78,8 @@ export function createPotController({ appEl, onClose, onRequestClose, onFinalize
   let step5AnimFrame = 0;
   let chairCount = 1;
   let chairColor = "#e8f25a";
+  let potBodyColor = "#FD6FFF";
+  let potHandleColor = "#E8F25A";
   let finalPotTextureUrl = null;
   let currentTableState = null;
   let viewOnly = false;
@@ -388,7 +390,7 @@ export function createPotController({ appEl, onClose, onRequestClose, onFinalize
       transformOrigin: "center center",
       width: `${UI.overlayW}px`,
       height: `${UI.overlayH}px`,
-      pointerEvents: "none",
+      pointerEvents: "auto",
     });
 
     overlayEl.appendChild(scaleWrapEl);
@@ -744,7 +746,7 @@ async function storeIngredient(name) {
     Object.assign(pop.style, {
       position: "absolute",
       left: `${anchorRect.x + anchorRect.w + 12}px`,
-      top: `${anchorRect.y + 12}px`,
+      top: `${anchorRect.y - 70}px`,
       width: "210px",
       background: "#1a1a1a",
       borderRadius: "18px",
@@ -756,7 +758,7 @@ async function storeIngredient(name) {
       boxShadow: "0 6px 20px rgba(0,0,0,0.28)",
       boxSizing: "border-box",
     });
-    panelEl.appendChild(pop);
+    scaleWrapEl.appendChild(pop);
 
     const presetWrap = document.createElement("div");
     Object.assign(presetWrap.style, {
@@ -1099,7 +1101,7 @@ async function storeIngredient(name) {
     panelEl.appendChild(img);
     return img;
   }
-    function createEmptyTableState(tableId = null) {
+  function createEmptyTableState(tableId = null) {
     return {
       tableId,
       initialized: false,
@@ -1110,6 +1112,8 @@ async function storeIngredient(name) {
       activeIngredientId: null,
       chairCount: 1,
       chairColor: "#e8f25a",
+      potBodyColor: "#FD6FFF",
+      potHandleColor: "#E8F25A",
       finalPotTextureUrl: null,
     };
   }
@@ -1139,8 +1143,9 @@ async function storeIngredient(name) {
 
     chairCount = state.chairCount ?? 1;
     chairColor = state.chairColor ?? "#e8f25a";
+    potBodyColor = state.potBodyColor ?? "#FD6FFF";
+    potHandleColor = state.potHandleColor ?? "#E8F25A";
     finalPotTextureUrl = state.finalPotTextureUrl ?? null;
-
     // reset transient ui/editor state
     composeMode = null;
 
@@ -1158,7 +1163,7 @@ async function storeIngredient(name) {
     ballNextScale.clear();
     ingredientNextScale.clear();
   }
-    function buildOutputTableState() {
+  function buildOutputTableState() {
     return {
       tableId: activeTableId,
       initialized: true,
@@ -1169,6 +1174,8 @@ async function storeIngredient(name) {
       activeIngredientId,
       chairCount,
       chairColor,
+      potBodyColor,
+      potHandleColor,
       finalPotTextureUrl,
     };
   }
@@ -2896,6 +2903,45 @@ function renderVerticalList({
       step4Model = null;
     }
 
+    function updateStep4PotColorMaterials() {
+      if (!step4Model) return;
+
+      let potBodyMesh = null;
+      let potHandleMesh = null;
+
+      step4Model.traverse((obj) => {
+        if (!obj.isMesh) return;
+        if (obj.name === "potbody_1") potBodyMesh = obj;
+        if (obj.name === "pothandle_1") potHandleMesh = obj;
+      });
+
+      if (potBodyMesh) {
+        const oldMat = potBodyMesh.material;
+        potBodyMesh.material = new THREE.MeshStandardMaterial({
+          color: potBodyColor,
+          roughness: 0.35,
+          metalness: 0.02,
+          transparent: false,
+          opacity: 1,
+          side: THREE.FrontSide,
+          depthWrite: true,
+        });
+        oldMat?.dispose?.();
+      }
+
+      if (potHandleMesh) {
+        const oldMat = potHandleMesh.material;
+        potHandleMesh.material = new THREE.MeshStandardMaterial({
+          color: potHandleColor,
+          roughness: 0.28,
+          metalness: 0.18,
+        });
+        oldMat?.dispose?.();
+      }
+
+      step4Renderer?.render(step4Scene, step4Camera);
+    }
+
     function applyStep4PotMaterials(root) {
       if (!root) return;
 
@@ -2918,20 +2964,22 @@ function renderVerticalList({
       });
 
       // 鍋身
-      potBodyMesh.material = new THREE.MeshStandardMaterial({
-        color: 0xff7cf6,
-        roughness: 0.35,
-        metalness: 0.02,
-        transparent: false,
-        opacity: 1,
-        side: THREE.FrontSide,
-        depthWrite: true,
-      });
+      if (potBodyMesh) {
+        potBodyMesh.material = new THREE.MeshStandardMaterial({
+          color: potBodyColor,
+          roughness: 0.35,
+          metalness: 0.02,
+          transparent: false,
+          opacity: 1,
+          side: THREE.FrontSide,
+          depthWrite: true,
+        });
+      }
 
       // 把手
       if (potHandleMesh) {
         potHandleMesh.material = new THREE.MeshStandardMaterial({
-          color: 0xf0df2a,
+          color: potHandleColor,
           roughness: 0.28,
           metalness: 0.18,
         });
@@ -3123,102 +3171,215 @@ function renderVerticalList({
       tick();
     }
 
-  function renderStep4() {
-    const s = UI.step4;
-    const prevRect = { x: 35, y: 551, w: 199, h: 63 };
-    const prevIconRect = { x: 173, y: 562, w: 42, h: 42 };
-    const nextRect = { x: 1074, y: 551, w: 199, h: 63 };
-    const nextIconRect = { x: 1095, y: 562, w: 42, h: 42 };
+    
 
-    addFrameBox({
-      x: s.soupList.x,
-      y: s.soupList.y,
-      w: s.soupList.w,
-      h: s.soupList.h,
-      bg: "#FFFFFF",
-      border: "0",
-      radius: 0,
-      z: 1
-    });
+    function renderStep4() {
+      const s = UI.step4;
+      const prevRect = { x: 35, y: 551, w: 199, h: 63 };
+      const prevIconRect = { x: 173, y: 562, w: 42, h: 42 };
+      const nextRect = { x: 1074, y: 551, w: 199, h: 63 };
+      const nextIconRect = { x: 1095, y: 562, w: 42, h: 42 };
 
-    addFrameBox({
-      x: s.ingList.x,
-      y: s.ingList.y,
-      w: s.ingList.w,
-      h: s.ingList.h,
-      bg: "#FFFFFF",
-      border: "0",
-      radius: 0,
-      z: 1
-    });
+      addFrameBox({
+        x: s.soupList.x,
+        y: s.soupList.y,
+        w: s.soupList.w,
+        h: s.soupList.h,
+        bg: "#FFFFFF",
+        border: "0",
+        radius: 0,
+        z: 1
+      });
 
-    renderPreviewListInBox({
-      box: s.soupList,
-      items: balls,
-      activeId: activeBallId,
-      getPreviewUrl: (x) => x.previewUrl
-    });
+      addFrameBox({
+        x: s.ingList.x,
+        y: s.ingList.y,
+        w: s.ingList.w,
+        h: s.ingList.h,
+        bg: "#FFFFFF",
+        border: "0",
+        radius: 0,
+        z: 1
+      });
 
-    renderPreviewListInBox({
-      box: s.ingList,
-      items: ingredients,
-      activeId: activeIngredientId,
-      getPreviewUrl: (x) => x.previewUrl
-    });
+      renderPreviewListInBox({
+        box: s.soupList,
+        items: balls,
+        activeId: activeBallId,
+        getPreviewUrl: (x) => x.previewUrl,
+        onRename: (id, nextName) => {
+          const target = balls.find((x) => x.id === id);
+          if (!target) return;
+          target.name = nextName;
+          renderStep();
+        },
+      });
 
-    step4PreviewEl = document.createElement("div");
-    Object.assign(step4PreviewEl.style, {
-      position: "absolute",
-      left: `${s.preview.x}px`,
-      top: `${s.preview.y}px`,
-      width: `${s.preview.w}px`,
-      height: `${s.preview.h}px`,
-      zIndex: "2",
-      borderRadius: "18px",
-      overflow: "hidden",
-      background: "#fff",
-    });
-    panelEl.appendChild(step4PreviewEl);
+      renderPreviewListInBox({
+        box: s.ingList,
+        items: ingredients,
+        activeId: activeIngredientId,
+        getPreviewUrl: (x) => x.previewUrl,
+        onRename: (id, nextName) => {
+          const target = ingredients.find((x) => x.id === id);
+          if (!target) return;
+          target.name = nextName;
+          renderStep();
+        },
+      });
 
-    mountStep4Preview();
+      step4PreviewEl = document.createElement("div");
+      Object.assign(step4PreviewEl.style, {
+        position: "absolute",
+        left: `${s.preview.x}px`,
+        top: `${s.preview.y}px`,
+        width: `${s.preview.w}px`,
+        height: `${s.preview.h}px`,
+        zIndex: "2",
+        borderRadius: "18px",
+        overflow: "hidden",
+        background: "#fff",
+      });
+      panelEl.appendChild(step4PreviewEl);
 
-  if (!viewOnly) {
-    addActionButton({
-      rect: prevRect,
-      label: "繼續製作",
-      iconSrc: ASSETS.leftArrow,
-      iconRect: prevIconRect,
-      textOffsetX: -16,
-      onClick: () => {
-        step = 3;
-        renderStep();
-      },
-    });
+      mountStep4Preview();
 
-    addActionButton({
-      rect: nextRect,
-      label: "安排座位",
-      iconSrc: ASSETS.rightArrow,
-      iconRect: nextIconRect,
-      textOffsetX: 12,
-      onClick: () => {
-        step = 5;
-        renderStep();
-      },
+      const potBodyColorWrap = document.createElement("div");
+      Object.assign(potBodyColorWrap.style, {
+        position: "absolute",
+        left: "470px",
+        top: "560px",
+        width: "220px",
+        height: "54px",
+        zIndex: "3",
+        display: "flex",
+        alignItems: "center",
+        gap: "12px",
+      });
+      panelEl.appendChild(potBodyColorWrap);
+
+      const potBodyColorLabel = document.createElement("div");
+      potBodyColorLabel.textContent = "鍋子顏色";
+      Object.assign(potBodyColorLabel.style, {
+        fontFamily: '"zpix", ui-sans-serif, system-ui',
+        fontSize: "20px",
+        color: "#FD6FFF",
+      });
+      potBodyColorWrap.appendChild(potBodyColorLabel);
+
+      const potBodyColorBtn = document.createElement("button");
+      Object.assign(potBodyColorBtn.style, {
+        width: "54px",
+        height: "54px",
+        borderRadius: "999px",
+        border: "transparent",
+        background: potBodyColor,
+        cursor: "pointer",
+      });
+      potBodyColorWrap.appendChild(potBodyColorBtn);
+
+      const potBodyPopover = createColorPopover({
+        panelEl,
+        anchorRect: { x: 616, y: 510, w: 54, h: 54 },
+        initialColor: potBodyColor,
+        onChange: (c) => {
+          potBodyColor = c;
+          potBodyColorBtn.style.background = c;
+          updateStep4PotColorMaterials();
+        },
+      });
+
+      potBodyColorBtn.onclick = (e) => {
+        e.stopPropagation();
+        potBodyPopover.toggle();
+      };
+      const potHandleColorWrap = document.createElement("div");
+      Object.assign(potHandleColorWrap.style, {
+        position: "absolute",
+        left: "690px",
+        top: "560px",
+        width: "220px",
+        height: "54px",
+        zIndex: "3",
+        display: "flex",
+        alignItems: "center",
+        gap: "12px",
+      });
+      panelEl.appendChild(potHandleColorWrap);
+
+      const potHandleColorLabel = document.createElement("div");
+      potHandleColorLabel.textContent = "握把顏色";
+      Object.assign(potHandleColorLabel.style, {
+        fontFamily: '"zpix", ui-sans-serif, system-ui',
+        fontSize: "20px",
+        color: "#FD6FFF",
+      });
+      potHandleColorWrap.appendChild(potHandleColorLabel);
+
+      const potHandleColorBtn = document.createElement("button");
+      Object.assign(potHandleColorBtn.style, {
+        width: "54px",
+        height: "54px",
+        borderRadius: "999px",
+        border: "transparent",
+        background: potHandleColor,
+        cursor: "pointer",
+      });
+      potHandleColorWrap.appendChild(potHandleColorBtn);
+
+      const potHandlePopover = createColorPopover({
+        panelEl,
+        anchorRect: { x: 836, y: 510, w: 54, h: 54 },
+        initialColor: potHandleColor,
+        onChange: (c) => {
+          potHandleColor = c;
+          potHandleColorBtn.style.background = c;
+          updateStep4PotColorMaterials();
+        },
+      });
+
+      potHandleColorBtn.onclick = (e) => {
+        e.stopPropagation();
+        potHandlePopover.toggle();
+      };
+
+      if (!viewOnly) {
+        addActionButton({
+          rect: prevRect,
+          label: "繼續製作",
+          iconSrc: ASSETS.leftArrow,
+          iconRect: prevIconRect,
+          textOffsetX: -16,
+          onClick: () => {
+            step = 3;
+            renderStep();
+          },
+        });
+
+      addActionButton({
+        rect: nextRect,
+        label: "安排座位",
+        iconSrc: ASSETS.rightArrow,
+        iconRect: nextIconRect,
+        textOffsetX: 12,
+        onClick: () => {
+          step = 5;
+          renderStep();
+        },
+      });
+    }
+    if (viewOnly) {
+    addTopRightCloseButton({
+      x: UI.overlayW - 90,
+      y: 24,
+      w: 50,
+      h: 50,
+      onClick: () => requestClose(),
     });
   }
-  if (viewOnly) {
-  addTopRightCloseButton({
-    x: UI.overlayW - 90,
-    y: 24,
-    w: 50,
-    h: 50,
-    onClick: () => requestClose(),
-  });
-}
   }
 
-  function renderPreviewListInBox({ box, items, activeId, getPreviewUrl }) {
+  function renderPreviewListInBox({ box, items, activeId, getPreviewUrl, onRename }) {
     const wrap = document.createElement("div");
     Object.assign(wrap.style, {
       position: "absolute",
@@ -3271,17 +3432,81 @@ function renderVerticalList({
         borderRadius: "8px",
       });
 
+      const labelWrap = document.createElement("div");
+      Object.assign(labelWrap.style, {
+        flex: "1",
+        minWidth: "0",
+        display: "flex",
+        alignItems: "center",
+      });
+
       const label = document.createElement("div");
       label.textContent = item.name || "未命名";
       Object.assign(label.style, {
         fontFamily: '"zpix", ui-sans-serif, system-ui',
         fontSize: "18px",
         color: "#FD6FFF",
+        whiteSpace: "nowrap",
+        overflow: "hidden",
+        textOverflow: "ellipsis",
+        cursor: "text",
       });
 
-      row.appendChild(img);
-      row.appendChild(label);
-      wrap.appendChild(row);
+      label.addEventListener("dblclick", (e) => {
+        e.stopPropagation();
+
+        const input = document.createElement("input");
+        input.type = "text";
+        input.value = item.name || "";
+        Object.assign(input.style, {
+          width: "100%",
+          border: "1px solid #FD6FFF",
+          borderRadius: "8px",
+          background: "#fff",
+          color: "#FD6FFF",
+          fontFamily: '"zpix", ui-sans-serif, system-ui',
+          fontSize: "18px",
+          padding: "4px 8px",
+          boxSizing: "border-box",
+          outline: "none",
+        });
+
+        const commit = () => {
+          const nextName = input.value.trim() || "未命名";
+          onRename?.(item.id, nextName);
+        };
+
+        const cancel = () => {
+          labelWrap.innerHTML = "";
+          labelWrap.appendChild(label);
+        };
+
+        input.addEventListener("keydown", (ev) => {
+          if (ev.key === "Enter") {
+            ev.preventDefault();
+            commit();
+          }
+          if (ev.key === "Escape") {
+            ev.preventDefault();
+            cancel();
+          }
+      });
+
+      input.addEventListener("blur", () => {
+        commit();
+      });
+
+      labelWrap.innerHTML = "";
+      labelWrap.appendChild(input);
+      input.focus();
+      input.select();
+    });
+
+    labelWrap.appendChild(label);
+
+    row.appendChild(img);
+    row.appendChild(labelWrap);
+    wrap.appendChild(row);
     });
 
     return wrap;
@@ -3610,6 +3835,8 @@ function renderVerticalList({
           placements: [...composePlacements],
           chairCount,
           chairColor,
+          potBodyColor,
+          potHandleColor,
         });
       } else {
         requestClose();

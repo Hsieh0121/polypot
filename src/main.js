@@ -242,6 +242,8 @@ function createEmptyTablePotState(tableId) {
     activeIngredientId: null,
     chairCount: 1,
     chairColor: "#e8f25a",
+    potBodyColor: "#FD6FFF",
+    potHandleColor: "#E8F25A",
     finalPotTextureUrl: null,
   };
 }
@@ -475,7 +477,9 @@ function makeRemoteAvatar(playerLike) {
   group.add(modelAnchor);
   group.userData.modelAnchor = modelAnchor;
 
-  loader.load("/avatar.glb", (gltf) => {
+  const avatarLoader = new GLTFLoader();
+
+  avatarLoader.load("/avatar.glb", (gltf) => {
     if (group.userData.__avatarInitialized) return;
     group.userData.__avatarInitialized = true;
 
@@ -1241,7 +1245,16 @@ const pot = createPotController({
     pot.close({ reason: "normal" });
   },
 
-  onFinalizePot: ({ tableId, tableState, finalPotTextureUrl, placements, chairCount, chairColor }) => {
+  onFinalizePot: ({
+    tableId,
+    tableState,
+    finalPotTextureUrl,
+    placements,
+    chairCount,
+    chairColor,
+    potBodyColor,
+    potHandleColor,
+  }) => {
     console.log("[pot finalized]", {
       tableId,
       tableState,
@@ -1249,6 +1262,8 @@ const pot = createPotController({
       placements,
       chairCount,
       chairColor,
+      potBodyColor,
+      potHandleColor,
     });
 
     const potPayload = {
@@ -1257,6 +1272,8 @@ const pot = createPotController({
       finalPotTextureUrl,
       chairCount,
       chairColor,
+      potBodyColor,
+      potHandleColor,
     };
 
     console.log("[before pot:save] connected=", socket.connected, potPayload);
@@ -1448,7 +1465,12 @@ function buildTableInfo(tableRoot){
   };
 }
 
-function applyPotTextureToRoot(potRoot, textureUrl) {
+function applyPotTextureToRoot(
+  potRoot,
+  textureUrl,
+  potBodyColor = "#FD6FFF",
+  potHandleColor = "#E8F25A"
+) {
   if (!potRoot || !textureUrl) {
     console.warn("[applyPotTextureToRoot] missing potRoot or textureUrl", {
       hasPotRoot: !!potRoot,
@@ -1472,8 +1494,9 @@ function applyPotTextureToRoot(potRoot, textureUrl) {
   });
 
   if (potBodyMesh) {
+    const oldMat = potBodyMesh.material;
     potBodyMesh.material = new THREE.MeshStandardMaterial({
-      color: 0xff7cf6,
+      color: potBodyColor,
       roughness: 0.35,
       metalness: 0.02,
       transparent: false,
@@ -1481,14 +1504,17 @@ function applyPotTextureToRoot(potRoot, textureUrl) {
       side: THREE.FrontSide,
       depthWrite: true,
     });
+    oldMat?.dispose?.();
   }
 
   if (potHandleMesh) {
+    const oldMat = potHandleMesh.material;
     potHandleMesh.material = new THREE.MeshStandardMaterial({
-      color: 0xf0df2a,
+      color: potHandleColor,
       roughness: 0.28,
       metalness: 0.18,
     });
+    oldMat?.dispose?.();
   }
 
   const loader = new THREE.TextureLoader();
@@ -1535,24 +1561,46 @@ function applyPotStateToTable(pot) {
     tablePotStateMap.set(pot.tableId, pot.tableState);
   }
 
+  const resolvedChairCount =
+    pot.chairCount ?? pot.tableState?.chairCount ?? 1;
+
+  const resolvedChairColor =
+    pot.chairColor ?? pot.tableState?.chairColor ?? "#e8f25a";
+
+  const resolvedPotBodyColor =
+    pot.potBodyColor ?? pot.tableState?.potBodyColor ?? "#FD6FFF";
+
+  const resolvedPotHandleColor =
+    pot.potHandleColor ?? pot.tableState?.potHandleColor ?? "#E8F25A";
+
+  const resolvedTexture =
+    pot.finalPotTextureUrl ?? pot.tableState?.finalPotTextureUrl ?? null;
+
   applyChairCountToTable(
     pot.tableId,
-    pot.chairCount ?? 1,
-    pot.chairColor ?? "#e8f25a"
+    resolvedChairCount,
+    resolvedChairColor
   );
 
   const info = tableRegistry.get(pot.tableId);
   const potRoot = info?.potRoot ?? null;
 
-  if (potRoot && pot.finalPotTextureUrl) {
-    applyPotTextureToRoot(potRoot, pot.finalPotTextureUrl);
+  if (potRoot && resolvedTexture) {
+    applyPotTextureToRoot(
+      potRoot,
+      resolvedTexture,
+      resolvedPotBodyColor,
+      resolvedPotHandleColor
+    );
   }
 
   console.log("[applyPotStateToTable]", pot.tableId, {
     hasTableState: !!pot.tableState,
-    chairCount: pot.chairCount,
-    chairColor: pot.chairColor,
-    hasTexture: !!pot.finalPotTextureUrl,
+    chairCount: resolvedChairCount,
+    chairColor: resolvedChairColor,
+    potBodyColor: resolvedPotBodyColor,
+    potHandleColor: resolvedPotHandleColor,
+    hasTexture: !!resolvedTexture,
   });
 }
 

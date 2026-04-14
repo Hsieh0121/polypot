@@ -34,6 +34,8 @@ db.exec(`
     final_pot_texture_url TEXT,
     chair_count INTEGER,
     chair_color TEXT,
+    pot_body_color TEXT,
+    pot_handle_color TEXT,
     updated_at INTEGER NOT NULL
   );
 
@@ -49,6 +51,13 @@ db.exec(`
     updated_at INTEGER NOT NULL
   );
 `);
+try {
+  db.exec(`ALTER TABLE table_pots ADD COLUMN pot_body_color TEXT`);
+} catch (err) {}
+
+try {
+  db.exec(`ALTER TABLE table_pots ADD COLUMN pot_handle_color TEXT`);
+} catch (err) {}
 
 // --------------------
 // shared helpers
@@ -184,6 +193,8 @@ const getPotByTableIdStmt = db.prepare(`
     final_pot_texture_url as finalPotTextureUrl,
     chair_count as chairCount,
     chair_color as chairColor,
+    pot_body_color as potBodyColor,
+    pot_handle_color as potHandleColor,
     updated_at as updatedAt
   FROM table_pots
   WHERE table_id = ?
@@ -196,6 +207,8 @@ const listAllPotsStmt = db.prepare(`
     final_pot_texture_url as finalPotTextureUrl,
     chair_count as chairCount,
     chair_color as chairColor,
+    pot_body_color as potBodyColor,
+    pot_handle_color as potHandleColor,
     updated_at as updatedAt
   FROM table_pots
 `);
@@ -207,6 +220,8 @@ const upsertPotStmt = db.prepare(`
     final_pot_texture_url,
     chair_count,
     chair_color,
+    pot_body_color,
+    pot_handle_color,
     updated_at
   )
   VALUES (
@@ -215,6 +230,8 @@ const upsertPotStmt = db.prepare(`
     @finalPotTextureUrl,
     @chairCount,
     @chairColor,
+    @potBodyColor,
+    @potHandleColor,
     @updatedAt
   )
   ON CONFLICT(table_id) DO UPDATE SET
@@ -222,6 +239,8 @@ const upsertPotStmt = db.prepare(`
     final_pot_texture_url = excluded.final_pot_texture_url,
     chair_count = excluded.chair_count,
     chair_color = excluded.chair_color,
+    pot_body_color = excluded.pot_body_color,
+    pot_handle_color = excluded.pot_handle_color,
     updated_at = excluded.updated_at
 `);
 
@@ -241,6 +260,8 @@ function parsePotRow(row) {
     finalPotTextureUrl: sanitizeFinalPotTextureUrl(row.finalPotTextureUrl),
     chairCount: row.chairCount ?? 0,
     chairColor: row.chairColor ?? null,
+    potBodyColor: row.potBodyColor ?? "#FD6FFF",
+    potHandleColor: row.potHandleColor ?? "#E8F25A",
     updatedAt: row.updatedAt,
   };
 }
@@ -265,6 +286,8 @@ export function saveTablePot(pot) {
     finalPotTextureUrl: safeFinalPotTextureUrl,
     chairCount: pot.chairCount ?? 0,
     chairColor: pot.chairColor ?? null,
+    potBodyColor: pot.potBodyColor ?? pot.tableState?.potBodyColor ?? "#FD6FFF",
+    potHandleColor: pot.potHandleColor ?? pot.tableState?.potHandleColor ?? "#E8F25A",
     updatedAt: Date.now(),
   };
 
