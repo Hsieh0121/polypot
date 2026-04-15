@@ -48,6 +48,7 @@ db.exec(`
     message TEXT,
     avatar_photo TEXT,
     signature TEXT,
+    id_card_snapshot TEXT,
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL
   );
@@ -80,6 +81,11 @@ function hasColumn(tableName, columnName) {
 try {
   if (!hasColumn("profiles", "room_id")) {
     db.exec(`ALTER TABLE profiles ADD COLUMN room_id TEXT`);
+  }
+} catch (err) {}
+try {
+  if (!hasColumn("profiles", "id_card_snapshot")) {
+    db.exec(`ALTER TABLE profiles ADD COLUMN id_card_snapshot TEXT`);
   }
 } catch (err) {}
 
@@ -358,6 +364,7 @@ const getProfileBySerialStmt = db.prepare(`
     message,
     avatar_photo as avatarPhoto,
     signature,
+    id_card_snapshot as idCardSnapshot,
     created_at as createdAt,
     updated_at as updatedAt
   FROM profiles
@@ -373,6 +380,7 @@ const upsertProfileStmt = db.prepare(`
     message,
     avatar_photo,
     signature,
+    id_card_snapshot,
     created_at,
     updated_at
   )
@@ -384,6 +392,7 @@ const upsertProfileStmt = db.prepare(`
     @message,
     @avatarPhoto,
     @signature,
+    @idCardSnapshot,
     @createdAt,
     @updatedAt
   )
@@ -394,6 +403,7 @@ const upsertProfileStmt = db.prepare(`
     message = excluded.message,
     avatar_photo = excluded.avatar_photo,
     signature = excluded.signature,
+    id_card_snapshot = excluded.id_card_snapshot,
     updated_at = excluded.updated_at
 `);
 
@@ -419,6 +429,7 @@ export function saveProfile(profile) {
     message: profile.message ?? "",
     avatarPhoto: profile.avatarPhoto ?? "",
     signature: profile.signature ?? "",
+    idCardSnapshot: profile.idCardSnapshot ?? "",
     createdAt: existing?.createdAt ?? now,
     updatedAt: now,
   };

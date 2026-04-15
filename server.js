@@ -178,6 +178,8 @@ function sanitizeProfileInput(input = {}) {
     message: typeof input.message === "string" ? input.message.slice(0, 300) : "",
     avatarPhoto: typeof input.avatarPhoto === "string" ? input.avatarPhoto : null,
     signature: typeof input.signature === "string" ? input.signature : null,
+    idCardSnapshot:
+      typeof input.idCardSnapshot === "string" ? input.idCardSnapshot : null,
     assignedTableId:
       typeof input.assignedTableId === "string" ? input.assignedTableId : null,
   };
@@ -198,6 +200,7 @@ function buildNewProfile(input = {}) {
     message: clean.message || "",
     avatarPhoto: clean.avatarPhoto || null,
     signature: clean.signature || null,
+    idCardSnapshot: clean.idCardSnapshot || null,
   };
 }
 
@@ -221,6 +224,10 @@ function mergeProfile(existing, input = {}) {
       clean.signature !== null
         ? clean.signature
         : (existing.signature ?? null),
+    idCardSnapshot:
+      clean.idCardSnapshot !== null
+        ? clean.idCardSnapshot
+        : (existing.idCardSnapshot ?? null),
   };
 }
 

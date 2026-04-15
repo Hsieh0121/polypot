@@ -1762,7 +1762,8 @@ async function ensureFullProfileLocal() {
     typeof profile.name === "string" ||
     typeof profile.message === "string" ||
     typeof profile.avatarPhoto === "string" ||
-    typeof profile.signature === "string";
+    typeof profile.signature === "string" ||
+    typeof profile.idCardSnapshot === "string";
 
   if (hasFullData) {
     return profile;
@@ -1909,6 +1910,7 @@ async function submitName() {
       message: "",
       avatarPhoto: null,
       signature: null,
+      idCardSnapshot: null,
     });
 
     saveProfileLocal(registeredProfile);
@@ -1942,6 +1944,7 @@ async function syncCurrentProfileToServer() {
     message: profile.message ?? "",
     avatarPhoto: profile.avatarPhoto ?? null,
     signature: profile.signature ?? null,
+    idCardSnapshot: profile.idCardSnapshot ?? null,
   });
 
   saveProfileLocal(latestProfile);
@@ -2490,6 +2493,169 @@ function captureIDPhotoFromAvatarPreview() {
   ctx.putImageData(imgData, 0, 0);
   return cvs.toDataURL("image/png");
 }
+function loadImageSafe(src) {
+  return new Promise((resolve) => {
+    if (!src) return resolve(null);
+
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => resolve(null);
+    img.src = src;
+  });
+}
+
+function drawRoundRectPath(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
+}
+
+function drawWrappedText(ctx, text, x, y, maxWidth, lineHeight, maxLines = 4) {
+  if (!text) return;
+
+  const chars = [...String(text)];
+  let line = "";
+  let lineCount = 0;
+
+  for (let i = 0; i < chars.length; i++) {
+    const test = line + chars[i];
+    const width = ctx.measureText(test).width;
+
+    if (width > maxWidth && line) {
+      ctx.fillText(line, x, y + lineCount * lineHeight);
+      line = chars[i];
+      lineCount += 1;
+
+      if (lineCount >= maxLines - 1) break;
+    } else {
+      line = test;
+    }
+  }
+
+  if (lineCount < maxLines && line) {
+    ctx.fillText(line, x, y + lineCount * lineHeight);
+  }
+}
+
+async function captureIdCardSnapshot(profileInput) {
+  const profile = profileInput ?? loadProfileLocal();
+  if (!profile?.serial) return null;
+
+  const W = 700;
+  const H = 455;
+
+  const canvas = document.createElement("canvas");
+  canvas.width = W;
+  canvas.height = H;
+  const ctx = canvas.getContext("2d");
+
+  // 白底卡片
+  ctx.clearRect(0, 0, W, H);
+  ctx.fillStyle = "#00000000";
+  ctx.fillRect(0, 0, W, H);
+
+  drawRoundRectPath(ctx, 0, 0, W, H, 28);
+  ctx.fillStyle = "#FFFFFF";
+  ctx.fill();
+
+  // 載圖
+  const [avatarImg, signatureImg, titleImg, barcodeImg] = await Promise.all([
+    loadImageSafe(profile.avatarPhoto),
+    loadImageSafe(profile.signature),
+    loadImageSafe("/title.png"),
+    loadImageSafe("/barcode.png"),
+  ]);
+
+  // avatar 區
+  if (avatarImg) {
+    ctx.drawImage(
+      avatarImg,
+      POS.photoLeft,
+      POS.photoTop,
+      POS.photoW,
+      POS.photoH
+    );
+  } else {
+    ctx.fillStyle = "#F6F6F6";
+    ctx.fillRect(POS.photoLeft, POS.photoTop, POS.photoW, POS.photoH);
+  }
+
+  // title
+  if (titleImg) {
+    ctx.drawImage(
+      titleImg,
+      POS.titleLeft,
+      POS.titleTop,
+      POS.titleW,
+      POS.titleH
+    );
+  }
+
+  // labels + values
+  ctx.textBaseline = "top";
+
+  ctx.fillStyle = "#1248FF";
+  ctx.font = '600 20px "Pixelify Sans", "zpix", system-ui, sans-serif';
+  ctx.fillText("Name", POS.nameLabelLeft, POS.nameTop);
+  ctx.fillText("Info", POS.infoLabelLeft, POS.infoTop);
+
+  ctx.fillStyle = "#1248FF";
+  ctx.font = '600 20px "Pixelify Sans", "zpix", system-ui, sans-serif';
+  ctx.fillText(profile.name ?? "", POS.nameValueLeft, POS.nameTop);
+
+  ctx.font = '600 16px "Pixelify Sans", "zpix", system-ui, sans-serif';
+  drawWrappedText(
+    ctx,
+    profile.message ?? "",
+    POS.infoBoxLeft,
+    POS.infoTop + 2,
+    POS.infoBoxW,
+    22,
+    4
+  );
+
+  // signature label
+  ctx.fillStyle = "#FD6FFF";
+  ctx.font = '600 20px "Pixelify Sans", "zpix", system-ui, sans-serif';
+  ctx.fillText("Signature", POS.sigLabelLeft, POS.sigLabelTop);
+
+  // signature image
+  if (signatureImg) {
+    ctx.drawImage(
+      signatureImg,
+      POS.sigBoxLeft,
+      POS.sigBoxTop,
+      POS.sigBoxW,
+      POS.sigBoxH
+    );
+  }
+
+  // barcode
+  if (barcodeImg) {
+    ctx.drawImage(
+      barcodeImg,
+      POS.barcodeLeft,
+      POS.barcodeTop,
+      POS.barcodeW,
+      POS.barcodeH
+    );
+  }
+
+  ctx.fillStyle = "#FD6FFF";
+  ctx.font = '600 16px "Pixelify Sans", "zpix", system-ui, sans-serif';
+  ctx.fillText("ID code", POS.idCodeLeft, POS.idCodeTop);
+  ctx.fillText(profile.serial ?? "", POS.serialLeft, POS.serialTop);
+
+  return canvas.toDataURL("image/png");
+}
 confirmBtn.addEventListener("click", () => {
   if (!pendingAvatarPhoto) return;
 
@@ -2577,6 +2743,22 @@ continueEditBtn.addEventListener("click", () => {
 });
 submitBtn.addEventListener("click", async () => {
   try {
+    const profile = loadProfileLocal();
+    if (!profile?.serial) {
+      throw new Error("missing profile");
+    }
+
+    // 先同步目前畫面上的最新資料
+    profile.message = infoBox.value ?? "";
+    profile.avatarPhoto = profile.avatarPhoto ?? pendingAvatarPhoto ?? null;
+    profile.signature = profile.signature ?? null;
+
+    // 產生整張 ID card snapshot
+    const snapshot = await captureIdCardSnapshot(profile);
+    profile.idCardSnapshot = snapshot ?? null;
+
+    saveProfileLocal(profile);
+
     await syncCurrentProfileToServer();
 
     idVerified = true;
