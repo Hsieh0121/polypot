@@ -1,0 +1,472 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Polypot Print Admin</title>
+
+  <style>
+    @font-face {
+      font-family: "zpix";
+      src: url("/zpix.ttf") format("truetype");
+      font-display: swap;
+    }
+
+    :root {
+      --bg: #FD6FFF;
+      --blue: #1248FF;
+      --white: #FFFFFF;
+      --card: #F7F7F7;
+      --radius-lg: 28px;
+      --radius-md: 20px;
+      --radius-sm: 14px;
+      --radius-pill: 999px;
+    }
+
+    * {
+      box-sizing: border-box;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    html, body {
+      margin: 0;
+      width: 100%;
+      min-height: 100%;
+      background: var(--bg);
+      font-family: "zpix", system-ui, sans-serif;
+    }
+
+    body {
+      padding: 32px 24px 40px;
+      color: var(--blue);
+    }
+
+    .page {
+      max-width: 1280px;
+      margin: 0 auto;
+    }
+
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 24px;
+      flex-wrap: wrap;
+    }
+
+    .title {
+      font-size: 28px;
+      line-height: 1.1;
+      color: var(--white);
+    }
+
+    .top-actions {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .btn {
+      height: 46px;
+      min-width: 120px;
+      padding: 0 18px;
+      border: 3px solid var(--blue);
+      border-radius: var(--radius-pill);
+      background: var(--white);
+      color: var(--blue);
+      font-family: "zpix", system-ui, sans-serif;
+      font-size: 16px;
+      cursor: pointer;
+    }
+
+    .btn:active {
+      transform: scale(0.985);
+    }
+
+    .status {
+      margin-bottom: 18px;
+      min-height: 20px;
+      color: var(--white);
+      font-size: 14px;
+      line-height: 1.4;
+    }
+
+    .meta {
+      margin-bottom: 20px;
+      color: var(--white);
+      font-size: 14px;
+      line-height: 1.4;
+    }
+
+    .jobs-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+      gap: 18px;
+    }
+
+    .job-card {
+      background: var(--card);
+      border: 3px solid var(--blue);
+      border-radius: var(--radius-lg);
+      overflow: hidden;
+      box-shadow: 0 10px 24px rgba(0,0,0,0.08);
+    }
+
+    .job-head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 16px 16px 12px;
+    }
+
+    .job-info {
+      min-width: 0;
+    }
+
+    .job-serial {
+      font-size: 18px;
+      line-height: 1.2;
+      color: var(--blue);
+      margin-bottom: 8px;
+    }
+
+    .job-sub {
+      font-size: 13px;
+      line-height: 1.5;
+      color: var(--blue);
+      opacity: 0.9;
+      word-break: break-word;
+    }
+
+    .job-type {
+      flex-shrink: 0;
+      min-width: 84px;
+      height: 36px;
+      padding: 0 12px;
+      border: 3px solid var(--blue);
+      border-radius: var(--radius-pill);
+      background: var(--white);
+      color: var(--blue);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 14px;
+      line-height: 1;
+    }
+
+    .job-preview-wrap {
+      padding: 0 16px 16px;
+    }
+
+    .job-preview {
+      width: 100%;
+      aspect-ratio: 778 / 519;
+      object-fit: contain;
+      display: block;
+      background: #fff;
+      border-radius: var(--radius-md);
+      border: 2px solid rgba(18, 72, 255, 0.12);
+    }
+
+    .job-actions {
+      display: flex;
+      gap: 10px;
+      padding: 0 16px 16px;
+      flex-wrap: wrap;
+    }
+
+    .job-actions .btn {
+      flex: 1 1 140px;
+      min-width: 0;
+      height: 42px;
+      font-size: 14px;
+    }
+
+    .btn.secondary {
+      background: rgba(255,255,255,0.92);
+    }
+
+    .btn.success {
+      background: #E8F25A;
+    }
+
+    .empty {
+      padding: 48px 24px;
+      border: 3px solid var(--blue);
+      border-radius: var(--radius-lg);
+      background: rgba(255,255,255,0.18);
+      color: var(--white);
+      text-align: center;
+      font-size: 16px;
+      line-height: 1.5;
+    }
+
+    @media (max-width: 640px) {
+      body {
+        padding: 20px 14px 28px;
+      }
+
+      .title {
+        font-size: 22px;
+      }
+
+      .job-head {
+        flex-direction: column;
+      }
+
+      .job-type {
+        min-width: 0;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="topbar">
+      <div class="title">Polypot 列印端</div>
+
+      <div class="top-actions">
+        <button id="refreshBtn" class="btn" type="button">重新整理</button>
+        <button id="toggleAutoBtn" class="btn" type="button">自動更新：開</button>
+      </div>
+    </div>
+
+    <div id="statusText" class="status"></div>
+    <div id="metaText" class="meta"></div>
+
+    <div id="jobsRoot">
+      <div class="empty">載入中...</div>
+    </div>
+  </div>
+
+  <script>
+    const API_BASE = "http://localhost:3001";
+
+    const refreshBtn = document.getElementById("refreshBtn");
+    const toggleAutoBtn = document.getElementById("toggleAutoBtn");
+    const statusText = document.getElementById("statusText");
+    const metaText = document.getElementById("metaText");
+    const jobsRoot = document.getElementById("jobsRoot");
+
+    let autoRefresh = true;
+    let autoTimer = null;
+    let isLoading = false;
+
+    function setStatus(text) {
+      statusText.textContent = text || "";
+    }
+
+    function formatType(type) {
+      if (type === "id") return "身份卡";
+      if (type === "pot") return "火鍋卡";
+      return type || "未知";
+    }
+
+    function formatTime(ts) {
+      if (!ts) return "-";
+      const d = new Date(ts);
+      if (Number.isNaN(d.getTime())) return String(ts);
+      const yyyy = d.getFullYear();
+      const mm = String(d.getMonth() + 1).padStart(2, "0");
+      const dd = String(d.getDate()).padStart(2, "0");
+      const hh = String(d.getHours()).padStart(2, "0");
+      const mi = String(d.getMinutes()).padStart(2, "0");
+      const ss = String(d.getSeconds()).padStart(2, "0");
+      return `${yyyy}-${mm}-${dd} ${hh}:${mi}:${ss}`;
+    }
+
+    async function fetchJobs() {
+      const res = await fetch(`${API_BASE}/print-jobs`);
+      const data = await res.json();
+      if (!res.ok || !data?.ok) {
+        throw new Error(data?.error || "fetch print jobs failed");
+      }
+      return data.jobs || [];
+    }
+
+    async function markPrinted(id) {
+      const res = await fetch(`${API_BASE}/print-jobs/${id}/printed`, {
+        method: "POST",
+      });
+      const data = await res.json();
+      if (!res.ok || !data?.ok) {
+        throw new Error(data?.error || "mark printed failed");
+      }
+      return data.job;
+    }
+
+    function downloadImage(job) {
+      const a = document.createElement("a");
+      const ext = "png";
+      const typeLabel = job.type === "id" ? "id-card" : "pot-card";
+      a.href = job.imageData;
+      a.download = `${job.serial}-${typeLabel}-${job.id}.${ext}`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    }
+
+    function renderEmpty(text) {
+      jobsRoot.innerHTML = `<div class="empty">${text}</div>`;
+    }
+
+    function createJobCard(job) {
+      const card = document.createElement("article");
+      card.className = "job-card";
+
+      const head = document.createElement("div");
+      head.className = "job-head";
+
+      const info = document.createElement("div");
+      info.className = "job-info";
+
+      const serial = document.createElement("div");
+      serial.className = "job-serial";
+      serial.textContent = job.serial || "未知 serial";
+
+      const sub = document.createElement("div");
+      sub.className = "job-sub";
+      sub.innerHTML = [
+        `Job ID：${job.id}`,
+        `建立時間：${formatTime(job.createdAt)}`,
+        `room：${job.roomId || "-"}`,
+      ].join("<br>");
+
+      info.appendChild(serial);
+      info.appendChild(sub);
+
+      const type = document.createElement("div");
+      type.className = "job-type";
+      type.textContent = formatType(job.type);
+
+      head.appendChild(info);
+      head.appendChild(type);
+
+      const previewWrap = document.createElement("div");
+      previewWrap.className = "job-preview-wrap";
+
+      const img = document.createElement("img");
+      img.className = "job-preview";
+      img.src = job.imageData || "";
+      img.alt = `${job.serial} ${formatType(job.type)}`;
+      img.loading = "lazy";
+
+      previewWrap.appendChild(img);
+
+      const actions = document.createElement("div");
+      actions.className = "job-actions";
+
+      const downloadBtn = document.createElement("button");
+      downloadBtn.className = "btn secondary";
+      downloadBtn.type = "button";
+      downloadBtn.textContent = "下載圖片";
+      downloadBtn.addEventListener("click", () => {
+        downloadImage(job);
+      });
+
+      const printedBtn = document.createElement("button");
+      printedBtn.className = "btn success";
+      printedBtn.type = "button";
+      printedBtn.textContent = "標記已印";
+      printedBtn.addEventListener("click", async () => {
+        try {
+          printedBtn.disabled = true;
+          printedBtn.textContent = "處理中...";
+          setStatus(`正在標記 job ${job.id} 為已印...`);
+          await markPrinted(job.id);
+          setStatus(`job ${job.id} 已標記為已印`);
+          await loadJobs();
+        } catch (err) {
+          console.error("[print-admin] mark printed failed", err);
+          printedBtn.disabled = false;
+          printedBtn.textContent = "標記已印";
+          setStatus(`標記失敗：${err.message || err}`);
+        }
+      });
+
+      actions.appendChild(downloadBtn);
+      actions.appendChild(printedBtn);
+
+      card.appendChild(head);
+      card.appendChild(previewWrap);
+      card.appendChild(actions);
+
+      return card;
+    }
+
+    function renderJobs(jobs) {
+      if (!jobs.length) {
+        renderEmpty("目前沒有待印工作。");
+        return;
+      }
+
+      const grid = document.createElement("div");
+      grid.className = "jobs-grid";
+
+      jobs.forEach((job) => {
+        grid.appendChild(createJobCard(job));
+      });
+
+      jobsRoot.innerHTML = "";
+      jobsRoot.appendChild(grid);
+    }
+
+    async function loadJobs() {
+      if (isLoading) return;
+      isLoading = true;
+
+      try {
+        setStatus("讀取待印佇列中...");
+        const jobs = await fetchJobs();
+        metaText.textContent = `待印數量：${jobs.length} 筆`;
+        renderJobs(jobs);
+        setStatus(`已更新待印佇列（${jobs.length} 筆）`);
+      } catch (err) {
+        console.error("[print-admin] load jobs failed", err);
+        metaText.textContent = "";
+        renderEmpty(`載入失敗：${err.message || err}`);
+        setStatus(`載入失敗：${err.message || err}`);
+      } finally {
+        isLoading = false;
+      }
+    }
+
+    function startAutoRefresh() {
+      stopAutoRefresh();
+      autoTimer = setInterval(() => {
+        loadJobs();
+      }, 5000);
+    }
+
+    function stopAutoRefresh() {
+      if (autoTimer) {
+        clearInterval(autoTimer);
+        autoTimer = null;
+      }
+    }
+
+    function applyAutoRefreshUi() {
+      toggleAutoBtn.textContent = `自動更新：${autoRefresh ? "開" : "關"}`;
+      if (autoRefresh) {
+        startAutoRefresh();
+      } else {
+        stopAutoRefresh();
+      }
+    }
+
+    refreshBtn.addEventListener("click", () => {
+      loadJobs();
+    });
+
+    toggleAutoBtn.addEventListener("click", () => {
+      autoRefresh = !autoRefresh;
+      applyAutoRefreshUi();
+    });
+
+    applyAutoRefreshUi();
+    loadJobs();
+  </script>
+</body>
+</html>

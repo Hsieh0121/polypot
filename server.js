@@ -4,6 +4,7 @@ import cors from "cors";
 import { Server } from "socket.io";
 import {
   getProfileBySerial,
+  getPotByRoomAndTableId,
   saveProfile,
   saveTablePot,
   getNextSerialNumberFallback,
@@ -11,6 +12,9 @@ import {
   listAllAvatarPresencesByRoom,
   saveAvatarPresence,
   setAvatarPresenceOnline,
+  createPrintJob,
+  listPendingPrintJobs,
+  markPrintJobPrinted,
 } from "./db.js";
 
 console.log("[server] boot", new Date().toISOString());
@@ -32,6 +36,7 @@ app.use(
     methods: ["GET", "POST"],
   })
 );
+app.use(express.json({ limit: "15mb" }));
 
 const io = new Server(server, {
   cors: {
@@ -72,6 +77,138 @@ app.get("/profiles/:serial", (req, res) => {
     return res.status(500).json({
       ok: false,
       error: "get profile failed",
+    });
+  }
+});
+app.get("/print-data/:serial", (req, res) => {
+  try {
+    const rawSerial =
+      typeof req.params.serial === "string" ? req.params.serial.trim() : "";
+
+    if (!rawSerial) {
+      return res.status(400).json({
+        ok: false,
+        error: "missing serial",
+      });
+    }
+
+    const profile = getProfileBySerial(rawSerial);
+
+    if (!profile) {
+      return res.status(404).json({
+        ok: false,
+        error: "profile not found",
+      });
+    }
+
+    const roomId = profile.roomId;
+    const tableId = profile.assignedTableId;
+
+    const pot =
+      roomId && tableId
+        ? getPotByRoomAndTableId(roomId, tableId)
+        : null;
+
+    return res.json({
+      ok: true,
+      profile,
+      pot,
+    });
+  } catch (err) {
+    console.error("[GET /print-data/:serial] failed:", err);
+    return res.status(500).json({
+      ok: false,
+      error: "get print-data failed",
+    });
+  }
+});
+app.post("/print-jobs", (req, res) => {
+  try {
+    const serial =
+      typeof req.body?.serial === "string" ? req.body.serial.trim() : "";
+    const type =
+      typeof req.body?.type === "string" ? req.body.type.trim() : "";
+    const imageData =
+      typeof req.body?.imageData === "string" ? req.body.imageData : "";
+
+    if (!serial || !type || !imageData) {
+      return res.status(400).json({
+        ok: false,
+        error: "missing fields",
+      });
+    }
+
+    if (type !== "id" && type !== "pot") {
+      return res.status(400).json({
+        ok: false,
+        error: "invalid print type",
+      });
+    }
+
+    const profile = getProfileBySerial(serial);
+    if (!profile) {
+      return res.status(404).json({
+        ok: false,
+        error: "profile not found",
+      });
+    }
+
+    const job = createPrintJob({
+      serial,
+      roomId: profile.roomId ?? null,
+      type,
+      imageData,
+    });
+
+    return res.json({
+      ok: true,
+      job,
+    });
+  } catch (err) {
+    console.error("[POST /print-jobs] failed:", err);
+    return res.status(500).json({
+      ok: false,
+      error: "create print job failed",
+    });
+  }
+});
+app.get("/print-jobs", (_, res) => {
+  try {
+    const jobs = listPendingPrintJobs();
+    return res.json({
+      ok: true,
+      jobs,
+    });
+  } catch (err) {
+    console.error("[GET /print-jobs] failed:", err);
+    return res.status(500).json({
+      ok: false,
+      error: "list print jobs failed",
+    });
+  }
+});
+app.post("/print-jobs/:id/printed", (req, res) => {
+  try {
+    const id = Number(req.params.id);
+
+    if (!Number.isFinite(id) || id <= 0) {
+      return res.status(400).json({
+        ok: false,
+        error: "invalid id",
+      });
+    }
+
+    const job = markPrintJobPrinted(id);
+
+    return res.json({
+      ok: true,
+      job,
+    });
+  } catch (err) {
+    console.error("[POST /print-jobs/:id/printed] failed:", err);
+    return res.status(500).json({
+      ok: false,
+      error: "mark print job printed failed",
     });
   }
 });

@@ -1,0 +1,1034 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Polypot Print</title>
+
+  <style>
+    @font-face {
+      font-family: "zpix";
+      src: url("/zpix.ttf") format("truetype");
+      font-display: swap;
+    }
+
+    :root {
+      --bg: #FD6FFF;
+      --blue: #1248FF;
+      --white: #FFFFFF;
+      --radius-lg: 28px;
+      --radius-md: 22px;
+      --radius-sm: 16px;
+      --radius-pill: 999px;
+    }
+
+    * {
+      box-sizing: border-box;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    html, body {
+      margin: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: var(--bg);
+      font-family: "zpix", system-ui, sans-serif;
+    }
+
+    body {
+      position: relative;
+    }
+
+    .print-root {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      width: 1920px;
+      height: 1080px;
+      background: var(--bg);
+      transform: translate(-50%, -50%) scale(1);
+      transform-origin: center center;
+      overflow: hidden;
+    }
+
+    .chip-title {
+      position: absolute;
+      width: 180px;
+      height: 75px;
+      border: 3px solid var(--blue);
+      border-radius: var(--radius-pill);
+      background: var(--white);
+      color: var(--blue);
+      font-size: 30pt;
+      line-height: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      user-select: none;
+      cursor: pointer;
+    }
+
+    .card-shell {
+      position: absolute;
+      width: 778px;
+      height: 519px;
+      background: transparent;
+      border-radius: var(--radius-lg);
+      user-select: none;
+      cursor: pointer;
+    }
+
+    .card-shell.selected::after {
+      content: "";
+      position: absolute;
+      inset: -4px;
+      border: 3px solid rgba(18, 72, 255, 0.95);
+      border-radius: calc(var(--radius-lg) + 4px);
+      pointer-events: none;
+    }
+
+    .save-frame {
+      position: absolute;
+      inset: 0;
+      width: 778px;
+      height: 519px;
+      overflow: hidden;
+      background: #fff;
+      border-radius: var(--radius-lg);
+    }
+
+    .save-frame img {
+      display: none;
+      width: 778px;
+      height: 519px;
+      object-fit: cover;
+      user-select: none;
+      -webkit-user-drag: none;
+      touch-action: manipulation;
+      background: #fff;
+      border-radius: var(--radius-lg);
+    }
+
+    .save-hint {
+      position: absolute;
+      left: 50%;
+      bottom: -38px;
+      transform: translateX(-50%);
+      color: var(--white);
+      font-size: 12pt;
+      white-space: nowrap;
+      opacity: 0.95;
+      pointer-events: none;
+    }
+
+    .pot-export-stage {
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: 778px;
+      height: 519px;
+      background: #fff;
+      overflow: hidden;
+      border-radius: var(--radius-lg);
+    }
+
+    .pot-list {
+      position: absolute;
+      top: 74px;
+      width: 172px;
+      height: 371px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      overflow: hidden;
+      border-radius: var(--radius-md);
+    }
+
+    .pot-list.left {
+      left: 22px;
+    }
+
+    .pot-list.right {
+      right: 22px;
+    }
+
+    .pot-list-inner {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      border-radius: var(--radius-md);
+    }
+
+    .pot-list-item {
+    min-height: 46px;
+    height: 46px;
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 5px 7px;
+    background: rgba(18, 72, 255, 0.08);
+    border-radius: var(--radius-sm);
+    overflow: hidden;
+    }
+
+    .pot-list-item img {
+    width: 34px;
+    height: 34px;
+    object-fit: cover;
+    border-radius: 10px;
+    flex-shrink: 0;
+    background: #fff;
+    }
+
+    .pot-list-item span {
+    display: block;
+    min-width: 0;
+    color: #FD6FFF;
+    font-size: 10pt;
+    line-height: 1.15;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    }
+
+    .pot-preview-wrap {
+    position: absolute;
+    left: 211px;
+    top: 42px;
+    width: 356px;
+    height: 305px;
+    background: #fff;
+    overflow: hidden;
+    border-radius: var(--radius-md);
+    }
+
+    .pot-preview-3d {
+      position: absolute;
+      inset: 0;
+      background: #fff;
+      overflow: hidden;
+      touch-action: none;
+      border-radius: var(--radius-md);
+    }
+
+    .pot-name {
+    position: absolute;
+    left: 50%;
+    top: 364px;
+    transform: translateX(-50%);
+    width: 356px;
+    max-width: 356px;
+    color: var(--blue);
+    font-size: 20pt;
+    line-height: 1.2;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    text-align: center;
+    }
+
+    .pot-mini-actions {
+    position: absolute;
+    left: 50%;
+    top: 414px;
+    transform: translateX(-50%);
+    display: flex;
+    gap: 8px;
+    z-index: 8;
+    }
+
+    .pot-mini-btn {
+    height: 30px;
+    min-width: 84px;
+    padding: 0 10px;
+    border: 2px solid var(--blue);
+    border-radius: var(--radius-pill);
+    background: rgba(255,255,255,0.94);
+    color: var(--blue);
+    font-family: "zpix", system-ui, sans-serif;
+    font-size: 10pt;
+    line-height: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    white-space: nowrap;
+    }
+
+    .pot-mini-btn:active {
+      transform: scale(0.985);
+    }
+
+    .print-btn {
+      position: absolute;
+      left: 50%;
+      top: 907px;
+      transform: translateX(-50%);
+      width: 207px;
+      height: 75px;
+      border: 3px solid var(--blue);
+      border-radius: var(--radius-pill);
+      background: var(--white);
+      color: var(--blue);
+      font-family: "zpix", system-ui, sans-serif;
+      font-size: 30pt;
+      line-height: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      padding: 0;
+    }
+
+    .print-btn:active {
+      transform: translateX(-50%) scale(0.985);
+    }
+
+    .status-text {
+      position: absolute;
+      left: 50%;
+      top: 992px;
+      transform: translateX(-50%);
+      color: #FFFFFF;
+      font-size: 12pt;
+      white-space: nowrap;
+      opacity: 0.95;
+      max-width: 1200px;
+      text-align: center;
+    }
+
+    .loading-overlay {
+      position: absolute;
+      inset: 0;
+      background: rgba(255,255,255,0.9);
+      color: var(--blue);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 18pt;
+      z-index: 20;
+      border-radius: var(--radius-lg);
+    }
+  </style>
+</head>
+<body>
+  <div id="printRoot" class="print-root">
+    <div
+      id="idCardTitle"
+      class="chip-title"
+      style="left: 423px; top: 174px;"
+    >
+      身份卡
+    </div>
+
+    <div
+      id="potCardTitle"
+      class="chip-title"
+      style="left: 1331px; top: 174px;"
+    >
+      火鍋卡
+    </div>
+
+    <section
+      id="idCardShell"
+      class="card-shell selected"
+      style="left: 126px; top: 303px;"
+      aria-label="身份卡區塊"
+    >
+      <div class="save-frame">
+        <img
+          id="idCardImage"
+          src=""
+          alt="身份卡"
+          draggable="false"
+        />
+      </div>
+      <div class="save-hint">長按圖片可儲存</div>
+    </section>
+
+    <section
+      id="potCardShell"
+      class="card-shell"
+      style="left: 1032px; top: 303px;"
+      aria-label="火鍋卡區塊"
+    >
+      <div id="potCardExportStage" class="pot-export-stage">
+        <div class="pot-list left">
+          <div id="ballList" class="pot-list-inner"></div>
+        </div>
+
+        <div class="pot-preview-wrap">
+          <div id="potPreview3D" class="pot-preview-3d"></div>
+        </div>
+
+        <div class="pot-list right">
+          <div id="ingredientList" class="pot-list-inner"></div>
+        </div>
+
+        <div id="potName" class="pot-name">anon 的火鍋</div>
+
+        <div class="pot-mini-actions">
+          <button id="adjustViewBtn" class="pot-mini-btn" type="button">調整視角</button>
+          <button id="refreshPotCardBtn" class="pot-mini-btn" type="button">更新圖卡</button>
+        </div>
+
+        <div id="potStageLoading" class="loading-overlay">載入中</div>
+      </div>
+
+      <div class="save-frame" id="potSavedFrame" style="display: none;">
+        <img
+          id="potCardImage"
+          src=""
+          alt="火鍋卡"
+          draggable="false"
+        />
+      </div>
+
+      <div class="save-hint">長按圖片可儲存</div>
+    </section>
+
+    <button id="printBtn" class="print-btn" type="button">
+      現場列印
+    </button>
+
+    <div id="statusText" class="status-text"></div>
+  </div>
+
+  <!-- 先獨立處理縮放，不依賴 module -->
+  <script>
+    (function () {
+      const root = document.getElementById("printRoot");
+      if (!root) return;
+
+      function fitRoot() {
+        const baseW = 1920;
+        const baseH = 1080;
+        const scale = Math.min(
+          window.innerWidth / baseW,
+          window.innerHeight / baseH
+        );
+
+        root.style.transform = `translate(-50%, -50%) scale(${scale})`;
+      }
+
+      window.addEventListener("resize", fitRoot);
+      fitRoot();
+      window.__fitPrintRoot = fitRoot;
+    })();
+  </script>
+
+  <script type="module">
+    import * as THREE from "three";
+    import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
+    import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
+    import html2canvas from "html2canvas";
+
+    console.log("[print] module boot");
+
+    const idCardShell = document.getElementById("idCardShell");
+    const potCardShell = document.getElementById("potCardShell");
+    const idCardTitle = document.getElementById("idCardTitle");
+    const potCardTitle = document.getElementById("potCardTitle");
+    const idCardImage = document.getElementById("idCardImage");
+    const ballList = document.getElementById("ballList");
+    const ingredientList = document.getElementById("ingredientList");
+    const potName = document.getElementById("potName");
+    const potPreview3D = document.getElementById("potPreview3D");
+    const potCardExportStage = document.getElementById("potCardExportStage");
+    const potSavedFrame = document.getElementById("potSavedFrame");
+    const potCardImage = document.getElementById("potCardImage");
+    const potStageLoading = document.getElementById("potStageLoading");
+    const adjustViewBtn = document.getElementById("adjustViewBtn");
+    const refreshPotCardBtn = document.getElementById("refreshPotCardBtn");
+    const potMiniActions = document.querySelector(".pot-mini-actions");
+    const printBtn = document.getElementById("printBtn");
+    const statusText = document.getElementById("statusText");
+
+    const API_BASE =
+      (typeof import.meta !== "undefined" && import.meta.env && import.meta.env.VITE_API_BASE)
+        ? import.meta.env.VITE_API_BASE
+        : "http://localhost:3001";
+
+    let selectedCardType = "id";
+    let profile = null;
+    let pot = null;
+
+    let stageMode = "image"; // image | preview
+
+    let renderer = null;
+    let scene = null;
+    let camera = null;
+    let controls = null;
+    let model = null;
+    let texture = null;
+    let rafId = 0;
+
+    function setStatus(text) {
+      statusText.textContent = text || "";
+    }
+
+    function setSelectedCard(type) {
+      selectedCardType = type;
+      idCardShell.classList.toggle("selected", type === "id");
+      potCardShell.classList.toggle("selected", type === "pot");
+    }
+
+    idCardShell.addEventListener("click", () => setSelectedCard("id"));
+    potCardShell.addEventListener("click", () => setSelectedCard("pot"));
+    idCardTitle.addEventListener("click", () => setSelectedCard("id"));
+    potCardTitle.addEventListener("click", () => setSelectedCard("pot"));
+
+    function getSerialFromUrlOrStorage() {
+      const params = new URLSearchParams(window.location.search);
+      const urlSerial = params.get("serial");
+      if (urlSerial) return urlSerial.trim();
+
+      try {
+        const raw = localStorage.getItem("polypot_profile");
+        if (!raw) return "";
+        const parsed = JSON.parse(raw);
+        if (typeof parsed === "string") return parsed.trim();
+        if (parsed && typeof parsed.serial === "string") return parsed.serial.trim();
+      } catch (err) {
+        console.warn("[print] local profile parse failed", err);
+      }
+
+      return "";
+    }
+
+    async function fetchPrintData(serial) {
+      const res = await fetch(`${API_BASE}/print-data/${encodeURIComponent(serial)}`);
+      const data = await res.json();
+      if (!res.ok || !data?.ok) {
+        throw new Error(data?.error || "fetch print-data failed");
+      }
+      return data;
+    }
+
+    function renderIdCard(nextProfile) {
+      const src = nextProfile?.idCardSnapshot || "";
+      if (src) {
+        idCardImage.src = src;
+        idCardImage.style.display = "block";
+      } else {
+        idCardImage.removeAttribute("src");
+        idCardImage.style.display = "none";
+      }
+    }
+
+    function createListItem(item, type = "ball") {
+      const row = document.createElement("div");
+      row.className = `pot-list-item ${type}`;
+
+      const img = document.createElement("img");
+      const src = item?.previewUrl || "";
+      if (src) img.src = src;
+      img.alt = item?.name || "";
+
+      const text = document.createElement("span");
+      text.textContent = item?.name || "未命名";
+
+      row.appendChild(img);
+      row.appendChild(text);
+      return row;
+    }
+
+    function renderPotLists(nextPot) {
+      ballList.innerHTML = "";
+      ingredientList.innerHTML = "";
+
+      const balls = nextPot?.tableState?.balls || [];
+      const ingredients = nextPot?.tableState?.ingredients || [];
+
+      balls.slice(0, 6).forEach((item) => {
+        ballList.appendChild(createListItem(item, "ball"));
+      });
+
+      ingredients.slice(0, 6).forEach((item) => {
+        ingredientList.appendChild(createListItem(item, "ingredient"));
+      });
+    }
+
+    function renderPotName(nextProfile) {
+      potName.textContent = `${nextProfile?.name || "anon"} 的火鍋`;
+    }
+
+    function disposePreview() {
+      if (rafId) {
+        cancelAnimationFrame(rafId);
+        rafId = 0;
+      }
+
+      if (controls) {
+        controls.dispose();
+        controls = null;
+      }
+
+      if (scene) {
+        scene.traverse((obj) => {
+          if (!obj.isMesh) return;
+          obj.geometry?.dispose?.();
+          if (Array.isArray(obj.material)) {
+            obj.material.forEach((m) => m?.dispose?.());
+          } else {
+            obj.material?.dispose?.();
+          }
+        });
+      }
+
+      if (texture) {
+        texture.dispose();
+        texture = null;
+      }
+
+      if (renderer) {
+        renderer.dispose();
+        renderer.forceContextLoss?.();
+        if (renderer.domElement?.parentNode) {
+          renderer.domElement.parentNode.removeChild(renderer.domElement);
+        }
+      }
+
+      renderer = null;
+      scene = null;
+      camera = null;
+      model = null;
+    }
+
+    function frameObjectToCamera(nextCamera, object, nextControls) {
+    const box = new THREE.Box3().setFromObject(object);
+    const size = box.getSize(new THREE.Vector3());
+    const center = box.getCenter(new THREE.Vector3());
+
+    const maxSize = Math.max(size.x, size.y, size.z);
+    const fov = nextCamera.fov * (Math.PI / 180);
+    let cameraZ = Math.abs(maxSize / 2 / Math.tan(fov / 2));
+    cameraZ *= 1.0;
+
+    nextCamera.position.set(
+        center.x,
+        center.y + maxSize * 0.14,
+        center.z + cameraZ
+    );
+
+    nextCamera.near = Math.max(0.01, cameraZ / 100);
+    nextCamera.far = cameraZ * 100;
+    nextCamera.updateProjectionMatrix();
+
+    if (nextControls) {
+        nextControls.target.set(
+        center.x,
+        center.y + maxSize * 0.02,
+        center.z
+        );
+        nextControls.update();
+    }
+    }
+
+    function applyPotMaterials(root, nextPot) {
+      if (!root) return;
+
+      let soupBaseMesh = null;
+      let soupTransparentMesh = null;
+      let potBodyMesh = null;
+      let potHandleMesh = null;
+
+      root.traverse((obj) => {
+        if (!obj.isMesh) return;
+        if (obj.name === "soupBase_1") soupBaseMesh = obj;
+        if (obj.name === "soupTransparent_1") soupTransparentMesh = obj;
+        if (obj.name === "potbody_1") potBodyMesh = obj;
+        if (obj.name === "pothandle_1") potHandleMesh = obj;
+      });
+
+      if (potBodyMesh) {
+        potBodyMesh.material = new THREE.MeshStandardMaterial({
+          color: nextPot?.potBodyColor || "#FD6FFF",
+          roughness: 0.35,
+          metalness: 0.02,
+          transparent: false,
+          opacity: 1,
+          side: THREE.FrontSide,
+          depthWrite: true,
+        });
+      }
+
+      if (potHandleMesh) {
+        potHandleMesh.material = new THREE.MeshStandardMaterial({
+          color: nextPot?.potHandleColor || "#E8F25A",
+          roughness: 0.28,
+          metalness: 0.18,
+        });
+      }
+
+      if (soupBaseMesh && nextPot?.finalPotTextureUrl) {
+        const loader = new THREE.TextureLoader();
+
+        texture = loader.load(nextPot.finalPotTextureUrl, () => {
+          renderOnce();
+        });
+
+        texture.colorSpace = THREE.SRGBColorSpace;
+        texture.flipY = false;
+        texture.wrapS = THREE.ClampToEdgeWrapping;
+        texture.wrapT = THREE.ClampToEdgeWrapping;
+        texture.center.set(0.5, 0.5);
+        texture.rotation = 0;
+        texture.repeat.set(1, 1);
+        texture.offset.set(0, 0);
+
+
+        soupBaseMesh.visible = true;
+        soupBaseMesh.renderOrder = 10;
+        soupBaseMesh.material = new THREE.MeshBasicMaterial({
+          map: texture,
+          transparent: true,
+          side: THREE.DoubleSide,
+          toneMapped: false,
+        });
+        soupBaseMesh.material.needsUpdate = true;
+      }
+
+      if (soupTransparentMesh) {
+        soupTransparentMesh.material = new THREE.MeshStandardMaterial({
+          color: 0xffd6ff,
+          transparent: true,
+          opacity: 0.28,
+          roughness: 0.08,
+          metalness: 0.0,
+          side: THREE.DoubleSide,
+          depthWrite: false,
+        });
+        soupTransparentMesh.material.needsUpdate = true;
+        soupTransparentMesh.renderOrder = 2;
+      }
+    }
+
+    function renderOnce() {
+      if (renderer && scene && camera) {
+        renderer.render(scene, camera);
+      }
+    }
+    async function exportElementToPng(element, { width, height }) {
+    const host = document.createElement("div");
+    Object.assign(host.style, {
+        position: "fixed",
+        left: "-10000px",
+        top: "0",
+        width: `${width}px`,
+        height: `${height}px`,
+        overflow: "hidden",
+        pointerEvents: "none",
+        zIndex: "-1",
+        background: "#ffffff",
+    });
+
+    const clone = element.cloneNode(true);
+    Object.assign(clone.style, {
+        width: `${width}px`,
+        height: `${height}px`,
+        transform: "none",
+    });
+
+    // 把 clone 裡的 WebGL 預覽改成普通圖片，避免 html2canvas 抓不到 WebGL 畫面
+    const clonePreview = clone.querySelector("#potPreview3D");
+    if (clonePreview) {
+        clonePreview.innerHTML = "";
+
+        const snapshotImg = document.createElement("img");
+        snapshotImg.src =
+        renderer?.domElement?.toDataURL?.("image/png") || "";
+        Object.assign(snapshotImg.style, {
+        width: "100%",
+        height: "100%",
+        objectFit: "contain",
+        display: "block",
+        background: "#fff",
+        borderRadius: "inherit",
+        });
+
+        clonePreview.appendChild(snapshotImg);
+    }
+
+    // 確保 loading 不被截進去
+    const cloneLoading = clone.querySelector("#potStageLoading");
+    if (cloneLoading) {
+        cloneLoading.style.display = "none";
+    }
+
+    host.appendChild(clone);
+    document.body.appendChild(host);
+
+    try {
+        const canvas = await html2canvas(clone, {
+        backgroundColor: "#ffffff",
+        width,
+        height,
+        scale: 1,
+        useCORS: true,
+        allowTaint: true,
+        });
+
+        return canvas.toDataURL("image/png");
+    } finally {
+        host.remove();
+    }
+    }
+
+    function showStagePreview() {
+    stageMode = "preview";
+    potSavedFrame.style.display = "none";
+    potCardExportStage.style.display = "block";
+    potStageLoading.style.display = "none";
+    setSelectedCard("pot");
+    setStatus("拖曳鍋子調整視角，按「更新圖卡」後可長按儲存。");
+    }
+
+    function showStageImage() {
+      stageMode = "image";
+      potCardExportStage.style.display = "none";
+      potSavedFrame.style.display = "block";
+      setSelectedCard("pot");
+      setStatus("火鍋卡已更新，長按右側圖片可儲存。");
+    }
+
+    function startLoop() {
+      const tick = () => {
+        rafId = requestAnimationFrame(tick);
+        controls?.update();
+        renderer?.render(scene, camera);
+      };
+      tick();
+    }
+
+    async function mountPotPreview(nextPot) {
+      disposePreview();
+
+      potPreview3D.innerHTML = "";
+      potStageLoading.style.display = "flex";
+
+      const w = potPreview3D.clientWidth || 356;
+      const h = potPreview3D.clientHeight || 305;
+
+      scene = new THREE.Scene();
+      scene.background = new THREE.Color(0xffffff);
+
+      camera = new THREE.PerspectiveCamera(45, w / h, 0.1, 100);
+      camera.position.set(0, 0.8, 2.5);
+
+      renderer = new THREE.WebGLRenderer({
+        antialias: true,
+        alpha: true,
+        preserveDrawingBuffer: true,
+      });
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      renderer.setSize(w, h);
+      renderer.outputColorSpace = THREE.SRGBColorSpace;
+      potPreview3D.appendChild(renderer.domElement);
+
+      controls = new OrbitControls(camera, renderer.domElement);
+      controls.enableDamping = true;
+      controls.enablePan = false;
+      controls.minDistance = 1.2;
+      controls.maxDistance = 6;
+      controls.addEventListener("change", () => {
+        if (stageMode !== "preview") return;
+        setStatus("視角已變更，按「更新圖卡」儲存目前視角。");
+      });
+
+      const ambient = new THREE.AmbientLight(0xffffff, 2.2);
+      scene.add(ambient);
+
+      const dir1 = new THREE.DirectionalLight(0xffffff, 1.8);
+      dir1.position.set(2, 3, 4);
+      scene.add(dir1);
+
+      const dir2 = new THREE.DirectionalLight(0xffffff, 1.2);
+      dir2.position.set(-2, 2, -3);
+      scene.add(dir2);
+
+      const loader = new GLTFLoader();
+
+      await new Promise((resolve, reject) => {
+        
+        loader.load(
+          "/pott.glb",
+          (gltf) => {
+            console.log("[print] pott.glb loaded");
+            console.log("[print] finalPotTextureUrl =", nextPot?.finalPotTextureUrl);
+            model = gltf.scene;
+            scene.add(model);
+            applyPotMaterials(model, nextPot);
+            frameObjectToCamera(camera, model, controls);
+            renderOnce();
+            potStageLoading.style.display = "none";
+            startLoop();
+            resolve();
+          },
+          undefined,
+          reject
+        );
+      });
+    }
+
+    async function exportPotCardImage() {
+    potStageLoading.style.display = "none";
+
+    const prevActionsDisplay = potMiniActions?.style.display ?? "";
+    if (potMiniActions) {
+        potMiniActions.style.display = "none";
+    }
+
+    renderOnce();
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+    await new Promise((resolve) => setTimeout(resolve, 120));
+
+    const dataUrl = await exportElementToPng(potCardExportStage, {
+        width: 778,
+        height: 519,
+    });
+
+    if (potMiniActions) {
+        potMiniActions.style.display = prevActionsDisplay || "flex";
+    }
+
+    if (dataUrl) {
+        potCardImage.src = dataUrl;
+        potCardImage.style.display = "block";
+    } else {
+        potCardImage.removeAttribute("src");
+        potCardImage.style.display = "none";
+    }
+
+    showStageImage();
+    return dataUrl;
+    }
+
+    async function loadAll() {
+      try {
+        setStatus("讀取列印資料中...");
+        const serial = getSerialFromUrlOrStorage();
+
+        if (!serial) {
+          throw new Error("找不到 serial");
+        }
+
+        const data = await fetchPrintData(serial);
+        profile = data.profile || null;
+        pot = data.pot || null;
+        console.log("[print] profile =", profile);
+        console.log("[print] pot =", pot);
+
+        renderIdCard(profile);
+        renderPotLists(pot);
+        renderPotName(profile);
+
+        if (pot) {
+          await mountPotPreview(pot);
+          await new Promise((resolve) => setTimeout(resolve, 250));
+          await exportPotCardImage();
+        } else {
+          potCardExportStage.style.display = "none";
+          potSavedFrame.style.display = "block";
+          potCardImage.removeAttribute("src");
+          potCardImage.style.display = "none";
+          setStatus("目前沒有火鍋資料，只能列印身份卡。");
+        }
+
+        if (!profile?.idCardSnapshot) {
+          setStatus("沒有找到身份卡 snapshot。");
+        } else if (pot) {
+          setStatus("資料已載入，點選要列印的卡片後按「現場列印」。");
+        }
+      } catch (err) {
+        console.error("[print] load failed", err);
+        setStatus(`載入失敗：${err.message || err}`);
+      }
+    }
+
+    async function submitPrintJob(type, imageData) {
+      const serial = profile?.serial;
+      if (!serial) throw new Error("missing serial");
+      if (!imageData) throw new Error("missing image data");
+
+      const res = await fetch(`${API_BASE}/print-jobs`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          serial,
+          type,
+          imageData,
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok || !data?.ok) {
+        throw new Error(data?.error || "submit print job failed");
+      }
+      return data.job;
+    }
+
+    adjustViewBtn.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      showStagePreview();
+    });
+
+    refreshPotCardBtn.addEventListener("click", async (e) => {
+      e.stopPropagation();
+
+      try {
+        setStatus("正在更新火鍋卡 png...");
+        const dataUrl = await exportPotCardImage();
+        if (!dataUrl) throw new Error("pot export failed");
+      } catch (err) {
+        console.error("[print] export pot failed", err);
+        setStatus(`更新火鍋卡失敗：${err.message || err}`);
+      }
+    });
+
+    printBtn.addEventListener("click", async () => {
+      try {
+        if (!profile?.serial) {
+          throw new Error("找不到使用者資料");
+        }
+
+        if (selectedCardType === "id") {
+          const imageData = idCardImage.src;
+          if (!imageData) throw new Error("身份卡尚未載入");
+          setStatus("正在送出身份卡列印...");
+          await submitPrintJob("id", imageData);
+          setStatus("身份卡已送至現場列印台。");
+          return;
+        }
+
+        if (stageMode !== "image") {
+          setStatus("請先按「更新圖卡」，再送出列印。");
+          return;
+        }
+
+        const imageData = potCardImage.src;
+        if (!imageData) throw new Error("火鍋卡尚未產生");
+        setStatus("正在送出火鍋卡列印...");
+        await submitPrintJob("pot", imageData);
+        setStatus("火鍋卡已送至現場列印台。");
+      } catch (err) {
+        console.error("[print] submit failed", err);
+        setStatus(`送印失敗：${err.message || err}`);
+      }
+    });
+
+    window.addEventListener("beforeunload", () => {
+      disposePreview();
+    });
+
+    loadAll();
+  </script>
+</body>
+</html>

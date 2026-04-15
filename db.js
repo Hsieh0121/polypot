@@ -65,6 +65,17 @@ db.exec(`
     mode TEXT NOT NULL DEFAULT 'static',
     updated_at INTEGER NOT NULL
   );
+
+  CREATE TABLE IF NOT EXISTS print_jobs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    serial TEXT NOT NULL,
+    room_id TEXT,
+    type TEXT NOT NULL,
+    image_data TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending',
+    created_at INTEGER NOT NULL,
+    printed_at INTEGER
+  );
 `);
 
 // --------------------
@@ -83,6 +94,13 @@ try {
     db.exec(`ALTER TABLE profiles ADD COLUMN room_id TEXT`);
   }
 } catch (err) {}
+
+try {
+  if (!hasColumn("profiles", "assigned_table_id")) {
+    db.exec(`ALTER TABLE profiles ADD COLUMN assigned_table_id TEXT`);
+  }
+} catch (err) {}
+
 try {
   if (!hasColumn("profiles", "id_card_snapshot")) {
     db.exec(`ALTER TABLE profiles ADD COLUMN id_card_snapshot TEXT`);
@@ -92,6 +110,12 @@ try {
 try {
   if (!hasColumn("avatar_presences", "room_id")) {
     db.exec(`ALTER TABLE avatar_presences ADD COLUMN room_id TEXT`);
+  }
+} catch (err) {}
+
+try {
+  if (!hasColumn("avatar_presences", "assigned_table_id")) {
+    db.exec(`ALTER TABLE avatar_presences ADD COLUMN assigned_table_id TEXT`);
   }
 } catch (err) {}
 
@@ -763,6 +787,118 @@ export function setAvatarPresenceOnline(serial, isOnline) {
     isOnline,
     mode: existing.mode,
   });
+}
+// --------------------
+// print job helpers
+// --------------------
+const insertPrintJobStmt = db.prepare(`
+  INSERT INTO print_jobs (
+    serial,
+    room_id,
+    type,
+    image_data,
+    status,
+    created_at,
+    printed_at
+  )
+  VALUES (
+    @serial,
+    @roomId,
+    @type,
+    @imageData,
+    @status,
+    @createdAt,
+    @printedAt
+  )
+`);
+
+const listPendingPrintJobsStmt = db.prepare(`
+  SELECT
+    id,
+    serial,
+    room_id as roomId,
+    type,
+    image_data as imageData,
+    status,
+    created_at as createdAt,
+    printed_at as printedAt
+  FROM print_jobs
+  WHERE status = 'pending'
+  ORDER BY created_at ASC
+`);
+
+const getPrintJobByIdStmt = db.prepare(`
+  SELECT
+    id,
+    serial,
+    room_id as roomId,
+    type,
+    image_data as imageData,
+    status,
+    created_at as createdAt,
+    printed_at as printedAt
+  FROM print_jobs
+  WHERE id = ?
+`);
+
+const markPrintJobPrintedStmt = db.prepare(`
+  UPDATE print_jobs
+  SET status = 'printed',
+      printed_at = @printedAt
+  WHERE id = @id
+`);
+
+function parsePrintJobRow(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    serial: row.serial,
+    roomId: row.roomId ?? null,
+    type: row.type,
+    imageData: row.imageData,
+    status: row.status,
+    createdAt: row.createdAt,
+    printedAt: row.printedAt ?? null,
+  };
+}
+
+export function createPrintJob(input) {
+  if (!input?.serial) {
+    throw new Error("createPrintJob: serial is required");
+  }
+  if (!input?.type) {
+    throw new Error("createPrintJob: type is required");
+  }
+  if (!input?.imageData) {
+    throw new Error("createPrintJob: imageData is required");
+  }
+
+  const row = {
+    serial: input.serial,
+    roomId: input.roomId ?? null,
+    type: input.type,
+    imageData: input.imageData,
+    status: "pending",
+    createdAt: Date.now(),
+    printedAt: null,
+  };
+
+  const result = insertPrintJobStmt.run(row);
+  return getPrintJobById(result.lastInsertRowid);
+}
+
+export function getPrintJobById(id) {
+  return parsePrintJobRow(getPrintJobByIdStmt.get(id));
+}
+
+export function listPendingPrintJobs() {
+  return listPendingPrintJobsStmt.all().map(parsePrintJobRow);
+}
+
+export function markPrintJobPrinted(id) {
+  const printedAt = Date.now();
+  markPrintJobPrintedStmt.run({ id, printedAt });
+  return getPrintJobById(id);
 }
 
 export default db;
