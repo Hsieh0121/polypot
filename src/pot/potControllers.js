@@ -10,7 +10,13 @@ import {
   revokePreviewUrl,
 } from "./ingredientInflate.js";
 
-export function createPotController({ appEl, onClose, onRequestClose, onFinalizePot } = {}) {
+export function createPotController({
+  appEl,
+  onClose,
+  onRequestClose,
+  onFinalizePot,
+  onSubmitComment,
+} = {}) {
   if (!appEl) throw new Error("[pot] createPotController: appEl is required");
 
   // ---------- state ----------
@@ -22,6 +28,16 @@ export function createPotController({ appEl, onClose, onRequestClose, onFinalize
 
   let activeTableId = null;
   let step = 0;
+
+  // viewOnly 專用子頁
+  let viewOnlyPage = "preview"; // "preview" | "comments"
+  let overlayMode = "potFlow"; // "potFlow" | "commentBoard"
+
+  // 留言 / 留言板資料
+  let commentInputValue = "";
+  let commentBoardInputValue = "";
+  let comments = [];
+  let tableOwnerProfile = null;
 
   const balls = [];
   let activeBallId = null;
@@ -230,25 +246,59 @@ export function createPotController({ appEl, onClose, onRequestClose, onFinalize
     finger: "/finger.png",
     inflate: "/inflate.png",
     toClose: "/toClose.png",
+    card: "/card.png",
+    potIcon: "/poticon.png",
   };
+    function getCommentBoardTitle() {
+    const name =
+      tableOwnerProfile?.name ||
+      tableOwnerProfile?.nickname ||
+      tableOwnerProfile?.displayName ||
+      "未命名";
+    return `${name}的留言區`;
+  }
+
+  function getOwnerAvatarSrc() {
+    return (
+      tableOwnerProfile?.avatarPhoto ||
+      tableOwnerProfile?.profilePhoto ||
+      ""
+    );
+  }
+
+  function getOwnerIdCardSnapshotSrc() {
+    return tableOwnerProfile?.idCardSnapshot || "";
+  }
 
   function isOpen() {
     return openFlag;
   }
 
-  function open({
-    tableId,
-    tableState,
-    viewOnly: nextViewOnly = false,
-    ownerTableId: nextOwnerTableId = null,
-    mobileDebug = false,
-  } = {}) {
+    function open({
+      tableId,
+      tableState,
+      viewOnly: nextViewOnly = false,
+      ownerTableId: nextOwnerTableId = null,
+      mobileDebug = false,
+
+      // 留言 / 桌主資料
+      comments: nextComments = [],
+      tableOwnerProfile: nextTableOwnerProfile = null,
+    } = {}) {
     if (openFlag) return;
     openFlag = true;
     openedAt = performance.now();
     activeTableId = tableId ?? null;
     viewOnly = !!nextViewOnly;
     ownerTableId = nextOwnerTableId ?? null;
+    viewOnlyPage = "preview";
+    overlayMode = "potFlow";
+
+    comments = Array.isArray(nextComments) ? nextComments : [];
+    tableOwnerProfile = nextTableOwnerProfile ?? null;
+
+    commentInputValue = "";
+    commentBoardInputValue = "";
 
     loadStateFromTableState(tableState);
 
@@ -264,6 +314,36 @@ export function createPotController({ appEl, onClose, onRequestClose, onFinalize
     renderStep();
   }
 
+  function openCommentBoard({
+    tableId,
+    comments: nextComments = [],
+    tableOwnerProfile: nextTableOwnerProfile = null,
+  } = {}) {
+    if (openFlag) return;
+
+    openFlag = true;
+    openedAt = performance.now();
+    activeTableId = tableId ?? null;
+
+    viewOnly = true;
+    ownerTableId = tableId ?? null;
+    viewOnlyPage = "comments";
+    overlayMode = "commentBoard";
+
+    comments = Array.isArray(nextComments) ? nextComments : [];
+    tableOwnerProfile = nextTableOwnerProfile ?? null;
+
+    commentInputValue = "";
+    commentBoardInputValue = "";
+
+    loadStateFromTableState(createEmptyTableState(tableId));
+
+    step = 4;
+
+    mount();
+    renderStep();
+  }
+
   function requestClose() {
     if (typeof onRequestClose === "function") onRequestClose();
     else close({ reason: "normal" });
@@ -274,8 +354,16 @@ export function createPotController({ appEl, onClose, onRequestClose, onFinalize
     openFlag = false;
     activeTableId = null;
     step = 0;
+    viewOnlyPage = "preview";
+    overlayMode = "potFlow";
+
     activeBallId = null;
     activeIngredientId = null;
+
+    commentInputValue = "";
+    commentBoardInputValue = "";
+    comments = [];
+    tableOwnerProfile = null;
 
     unmountFluidEditor();
     unmountStep4Preview();
@@ -450,11 +538,18 @@ function clearPanel() {
     if (step !== 5) unmountStep5Preview();
     clearPanel();
 
+    if (overlayMode === "commentBoard") {
+      return renderViewOnlyComments();
+    }
+
     if (step === 0) return renderStep0();
     if (step === 1) return renderStep1();
     if (step === 2) return renderStep2();
     if (step === 3) return renderStep3();
-    if (step === 4) return renderStep4();
+    if (step === 4) {
+      if (viewOnly && viewOnlyPage === "comments") return renderViewOnlyComments();
+      return renderStep4();
+    }
     if (step === 5) return renderStep5();
   }
 
@@ -646,7 +741,15 @@ async function storeIngredient(name) {
     return btn;
   }
 
-  function addActionButton({ rect, label, iconSrc, iconRect, onClick, textOffsetX = 0 }) {
+  function addActionButton({
+    rect,
+    label,
+    iconSrc,
+    iconRect,
+    onClick,
+    textOffsetX = 0,
+    textOffsetY = 19,
+  }) {
     const btn = addCapsuleButton({
       x: rect.x,
       y: rect.y,
@@ -667,7 +770,7 @@ async function storeIngredient(name) {
 
     addText(label, {
       x: rect.x + rect.w / 2 + textOffsetX,
-      y: rect.y + 19,
+      y: rect.y + textOffsetY,
       size: 25,
       color: "#FD6FFF",
       center: true,
@@ -1065,6 +1168,76 @@ async function storeIngredient(name) {
     panelEl.appendChild(input);
     return input;
   }
+
+  function addCommentInput({
+  x,
+  y,
+  w,
+  h,
+  value = "",
+  placeholder = "輸入留言...",
+  fontSize = 16,
+  textColor = "#FD6FFF",
+  placeholderColor = "#CFCFCF",
+  bg = "#EAEAEA",
+  border = "0",
+  z = 3,
+  onInput,
+} = {}) {
+  const wrap = document.createElement("div");
+  Object.assign(wrap.style, {
+    position: "absolute",
+    left: `${x}px`,
+    top: `${y}px`,
+    width: `${w}px`,
+    height: `${h}px`,
+    borderRadius: "999px",
+    background: bg,
+    border,
+    boxSizing: "border-box",
+    zIndex: String(z),
+    overflow: "hidden",
+  });
+  panelEl.appendChild(wrap);
+
+  const input = document.createElement("input");
+  input.type = "text";
+  input.value = value;
+  input.placeholder = placeholder;
+  Object.assign(input.style, {
+    width: "100%",
+    height: "100%",
+    border: "0",
+    outline: "none",
+    background: "transparent",
+    padding: "0 16px",
+    boxSizing: "border-box",
+    fontFamily: '"zpix", ui-sans-serif, system-ui',
+    fontSize: `${fontSize}px`,
+    color: textColor,
+  });
+
+  input.addEventListener("input", (e) => {
+    onInput?.(e.target.value);
+  });
+
+  wrap.appendChild(input);
+
+  const styleId = "pot-comment-input-placeholder-style";
+  if (!document.getElementById(styleId)) {
+    const style = document.createElement("style");
+    style.id = styleId;
+    style.textContent = `
+      #pot-overlay input::placeholder {
+        color: ${placeholderColor};
+        opacity: 1;
+      }
+    `;
+    document.head.appendChild(style);
+  }
+
+  return input;
+}
 
   function addFrameBox({ x, y, w, h, bg = "transparent", border = "2px solid #FD6FFF", radius = 0, z = 2 }) {
     const el = document.createElement("div");
@@ -3174,6 +3347,24 @@ function renderVerticalList({
     
 
     function renderStep4() {
+      const displayName = viewOnly
+        ? (
+            tableOwnerProfile?.name ||
+            tableOwnerProfile?.nickname ||
+            tableOwnerProfile?.displayName ||
+            "未命名"
+          )
+        : "我";
+
+      addText(`${displayName}的火鍋`, {
+        x: UI.overlayW / 2,
+        y: 56,
+        size: 25,
+        color: "#FD6FFF",
+        center: true,
+        z: 10,
+      });
+      
       const s = UI.step4;
       const prevRect = { x: 35, y: 551, w: 199, h: 63 };
       const prevIconRect = { x: 173, y: 562, w: 42, h: 42 };
@@ -3207,6 +3398,7 @@ function renderVerticalList({
         items: balls,
         activeId: activeBallId,
         getPreviewUrl: (x) => x.previewUrl,
+        editable: !viewOnly,
         onRename: (id, nextName) => {
           const target = balls.find((x) => x.id === id);
           if (!target) return;
@@ -3220,6 +3412,7 @@ function renderVerticalList({
         items: ingredients,
         activeId: activeIngredientId,
         getPreviewUrl: (x) => x.previewUrl,
+        editable: !viewOnly,
         onRename: (id, nextName) => {
           const target = ingredients.find((x) => x.id === id);
           if (!target) return;
@@ -3244,104 +3437,107 @@ function renderVerticalList({
 
       mountStep4Preview();
 
-      const potBodyColorWrap = document.createElement("div");
-      Object.assign(potBodyColorWrap.style, {
-        position: "absolute",
-        left: "470px",
-        top: "560px",
-        width: "220px",
-        height: "54px",
-        zIndex: "3",
-        display: "flex",
-        alignItems: "center",
-        gap: "12px",
-      });
-      panelEl.appendChild(potBodyColorWrap);
+      if (!viewOnly) {
+        const potBodyColorWrap = document.createElement("div");
+        Object.assign(potBodyColorWrap.style, {
+          position: "absolute",
+          left: "470px",
+          top: "560px",
+          width: "220px",
+          height: "54px",
+          zIndex: "3",
+          display: "flex",
+          alignItems: "center",
+          gap: "12px",
+        });
+        panelEl.appendChild(potBodyColorWrap);
 
-      const potBodyColorLabel = document.createElement("div");
-      potBodyColorLabel.textContent = "鍋子顏色";
-      Object.assign(potBodyColorLabel.style, {
-        fontFamily: '"zpix", ui-sans-serif, system-ui',
-        fontSize: "20px",
-        color: "#FD6FFF",
-      });
-      potBodyColorWrap.appendChild(potBodyColorLabel);
+        const potBodyColorLabel = document.createElement("div");
+        potBodyColorLabel.textContent = "鍋子顏色";
+        Object.assign(potBodyColorLabel.style, {
+          fontFamily: '"zpix", ui-sans-serif, system-ui',
+          fontSize: "20px",
+          color: "#FD6FFF",
+        });
+        potBodyColorWrap.appendChild(potBodyColorLabel);
 
-      const potBodyColorBtn = document.createElement("button");
-      Object.assign(potBodyColorBtn.style, {
-        width: "54px",
-        height: "54px",
-        borderRadius: "999px",
-        border: "transparent",
-        background: potBodyColor,
-        cursor: "pointer",
-      });
-      potBodyColorWrap.appendChild(potBodyColorBtn);
+        const potBodyColorBtn = document.createElement("button");
+        Object.assign(potBodyColorBtn.style, {
+          width: "54px",
+          height: "54px",
+          borderRadius: "999px",
+          border: "transparent",
+          background: potBodyColor,
+          cursor: "pointer",
+        });
+        potBodyColorWrap.appendChild(potBodyColorBtn);
 
-      const potBodyPopover = createColorPopover({
-        panelEl,
-        anchorRect: { x: 616, y: 510, w: 54, h: 54 },
-        initialColor: potBodyColor,
-        onChange: (c) => {
-          potBodyColor = c;
-          potBodyColorBtn.style.background = c;
-          updateStep4PotColorMaterials();
-        },
-      });
+        const potBodyPopover = createColorPopover({
+          panelEl,
+          anchorRect: { x: 616, y: 510, w: 54, h: 54 },
+          initialColor: potBodyColor,
+          onChange: (c) => {
+            potBodyColor = c;
+            potBodyColorBtn.style.background = c;
+            updateStep4PotColorMaterials();
+          },
+        });
 
-      potBodyColorBtn.onclick = (e) => {
-        e.stopPropagation();
-        potBodyPopover.toggle();
-      };
-      const potHandleColorWrap = document.createElement("div");
-      Object.assign(potHandleColorWrap.style, {
-        position: "absolute",
-        left: "690px",
-        top: "560px",
-        width: "220px",
-        height: "54px",
-        zIndex: "3",
-        display: "flex",
-        alignItems: "center",
-        gap: "12px",
-      });
-      panelEl.appendChild(potHandleColorWrap);
+        potBodyColorBtn.onclick = (e) => {
+          e.stopPropagation();
+          potBodyPopover.toggle();
+        };
 
-      const potHandleColorLabel = document.createElement("div");
-      potHandleColorLabel.textContent = "握把顏色";
-      Object.assign(potHandleColorLabel.style, {
-        fontFamily: '"zpix", ui-sans-serif, system-ui',
-        fontSize: "20px",
-        color: "#FD6FFF",
-      });
-      potHandleColorWrap.appendChild(potHandleColorLabel);
+        const potHandleColorWrap = document.createElement("div");
+        Object.assign(potHandleColorWrap.style, {
+          position: "absolute",
+          left: "690px",
+          top: "560px",
+          width: "220px",
+          height: "54px",
+          zIndex: "3",
+          display: "flex",
+          alignItems: "center",
+          gap: "12px",
+        });
+        panelEl.appendChild(potHandleColorWrap);
 
-      const potHandleColorBtn = document.createElement("button");
-      Object.assign(potHandleColorBtn.style, {
-        width: "54px",
-        height: "54px",
-        borderRadius: "999px",
-        border: "transparent",
-        background: potHandleColor,
-        cursor: "pointer",
-      });
-      potHandleColorWrap.appendChild(potHandleColorBtn);
+        const potHandleColorLabel = document.createElement("div");
+        potHandleColorLabel.textContent = "握把顏色";
+        Object.assign(potHandleColorLabel.style, {
+          fontFamily: '"zpix", ui-sans-serif, system-ui',
+          fontSize: "20px",
+          color: "#FD6FFF",
+        });
+        potHandleColorWrap.appendChild(potHandleColorLabel);
 
-      const potHandlePopover = createColorPopover({
-        panelEl,
-        anchorRect: { x: 836, y: 510, w: 54, h: 54 },
-        initialColor: potHandleColor,
-        onChange: (c) => {
-          potHandleColor = c;
-          potHandleColorBtn.style.background = c;
-          updateStep4PotColorMaterials();
-        },
-      });
+        const potHandleColorBtn = document.createElement("button");
+        Object.assign(potHandleColorBtn.style, {
+          width: "54px",
+          height: "54px",
+          borderRadius: "999px",
+          border: "transparent",
+          background: potHandleColor,
+          cursor: "pointer",
+        });
+        potHandleColorWrap.appendChild(potHandleColorBtn);
 
-      potHandleColorBtn.onclick = (e) => {
-        e.stopPropagation();
-        potHandlePopover.toggle();
-      };
+        const potHandlePopover = createColorPopover({
+          panelEl,
+          anchorRect: { x: 836, y: 510, w: 54, h: 54 },
+          initialColor: potHandleColor,
+          onChange: (c) => {
+            potHandleColor = c;
+            potHandleColorBtn.style.background = c;
+            updateStep4PotColorMaterials();
+          },
+        });
+
+        potHandleColorBtn.onclick = (e) => {
+          e.stopPropagation();
+          potHandlePopover.toggle();
+        };
+      }
 
       if (!viewOnly) {
         addActionButton({
@@ -3368,7 +3564,104 @@ function renderVerticalList({
         },
       });
     }
-    if (viewOnly) {
+      if (viewOnly) {
+        addTopRightCloseButton({
+          x: UI.overlayW - 90,
+          y: 24,
+          w: 50,
+          h: 50,
+          onClick: () => requestClose(),
+        });
+
+        addImageButton(
+          ASSETS.card,
+          {
+            x: 390,
+            y: 493,
+            w: 108,
+            h: 108,
+          },
+          {
+            onClick: () => {
+              viewOnlyPage = "comments";
+              renderStep();
+            },
+            border: "0",
+            bg: "transparent",
+            radius: 0,
+            z: 4,
+          }
+        );
+
+        const previewCommentInput = addCommentInput({
+          x: 512,
+          y: 521,
+          w: 406,
+          h: 54,
+          value: commentInputValue,
+          placeholder: "輸入留言...",
+          fontSize: 16,
+          textColor: "#FD6FFF",
+          placeholderColor: "#CFCFCF",
+          bg: "#EAEAEA",
+          border: "0",
+          z: 3,
+          onInput: (nextValue) => {
+            commentInputValue = nextValue;
+          },
+        });
+
+        addCapsuleButton({
+          x: 806,
+          y: 521,
+          w: 112,
+          h: 54,
+          bg: "#FD6FFF",
+          border: "0",
+          radius: 999,
+          z: 4,
+        onClick: async () => {
+          const value = commentInputValue.trim();
+          if (!value) return;
+
+          try {
+            const nextComment = await onSubmitComment?.({
+              tableId: activeTableId,
+              content: value,
+            });
+
+            if (nextComment) {
+              comments.push(nextComment);
+            }
+
+            commentInputValue = "";
+            renderStep();
+          } catch (err) {
+            console.error("[preview comment submit failed]", err);
+          }
+        },
+        });
+
+        addText("留言", {
+          x: 806 + 112 / 2,
+          y: 521 + 13,
+          size: 25,
+          color: "#FFFFFF",
+          center: true,
+          z: 5,
+        });
+
+        if (previewCommentInput) {
+          previewCommentInput.value = commentInputValue;
+        }
+      }
+
+  }
+  function renderViewOnlyComments() {
+    const titleText = getCommentBoardTitle();
+    const ownerAvatarSrc = getOwnerAvatarSrc();
+    const ownerIdCardSnapshotSrc = getOwnerIdCardSnapshotSrc();
+
     addTopRightCloseButton({
       x: UI.overlayW - 90,
       y: 24,
@@ -3376,10 +3669,269 @@ function renderVerticalList({
       h: 50,
       onClick: () => requestClose(),
     });
-  }
+
+    // 標題
+    addText(titleText, {
+      x: UI.overlayW / 2,
+      y: 56,
+      size: 25,
+      color: "#FD6FFF",
+      center: true,
+      z: 3,
+    });
+
+    // 左：ID 卡外框
+    addFrameBox({
+      x: 81,
+      y: 138,
+      w: 533,
+      h: 341,
+      bg: "transparent",
+      border: "2px solid #FD6FFF",
+      radius: 28,
+      z: 4,
+    });
+
+    // 右：留言板外框
+    addFrameBox({
+      x: 694,
+      y: 138,
+      w: 533,
+      h: 341,
+      bg: "#FFFFFF",
+      border: "2px solid #FD6FFF",
+      radius: 28,
+      z: 1,
+    });
+
+  // ---------- 左邊 ID 卡 snapshot ----------
+  if (ownerIdCardSnapshotSrc) {
+    fitImgPreview(ownerIdCardSnapshotSrc, {
+      x: 81,
+      y: 138,
+      w: 533,
+      h: 341,
+    }, {
+      objectFit: "contain",
+      borderRadius: 28,
+      z: 3,
+    });
+  } else {
+    const emptyCard = document.createElement("div");
+    emptyCard.textContent = "尚無 ID card snapshot";
+    Object.assign(emptyCard.style, {
+      position: "absolute",
+      left: "81px",
+      top: "138px",
+      width: "533px",
+      height: "341px",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      fontFamily: '"zpix", ui-sans-serif, system-ui',
+      fontSize: "18px",
+      color: "#C0C0C0",
+      zIndex: "3",
+    });
+    panelEl.appendChild(emptyCard);
   }
 
-  function renderPreviewListInBox({ box, items, activeId, getPreviewUrl, onRename }) {
+    // ---------- 右邊留言板內容 ----------
+    const commentsWrap = document.createElement("div");
+    Object.assign(commentsWrap.style, {
+      position: "absolute",
+      left: "725px",
+      top: "170px",
+      width: "470px",
+      height: "220px",
+      overflowY: "auto",
+      display: "flex",
+      flexDirection: "column",
+      gap: "18px",
+      zIndex: "3",
+      paddingRight: "6px",
+      boxSizing: "border-box",
+    });
+    panelEl.appendChild(commentsWrap);
+
+    const safeComments = Array.isArray(comments) ? comments : [];
+
+    if (!safeComments.length) {
+      const empty = document.createElement("div");
+      empty.textContent = "尚無留言";
+      Object.assign(empty.style, {
+        fontFamily: '"zpix", ui-sans-serif, system-ui',
+        fontSize: "16px",
+        color: "#C0C0C0",
+      });
+      commentsWrap.appendChild(empty);
+    } else {
+      safeComments.forEach((comment) => {
+        const isOwner = !!comment.isOwner;
+
+        const row = document.createElement("div");
+        Object.assign(row.style, {
+          display: "flex",
+          alignItems: "center",
+          justifyContent: isOwner ? "flex-end" : "flex-start",
+          gap: "12px",
+        });
+
+        const avatar = document.createElement("div");
+        Object.assign(avatar.style, {
+          width: "49px",
+          height: "37px",
+          background: "#EAEAEA",
+          overflow: "hidden",
+          flexShrink: "0",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+        });
+
+        const commentAvatarSrc = isOwner
+          ? ownerAvatarSrc
+          : (comment.authorAvatarPhoto || "");
+
+        if (commentAvatarSrc) {
+          const img = document.createElement("img");
+          img.src = commentAvatarSrc;
+          Object.assign(img.style, {
+            width: "100%",
+            height: "100%",
+            objectFit: "cover",
+            objectPosition: "center",
+          });
+          avatar.appendChild(img);
+        } else {
+          avatar.textContent = "pfp";
+          Object.assign(avatar.style, {
+            color: isOwner ? "#1248FF" : "#000000",
+            background: isOwner ? "#FFFFFF" : "#22FF22",
+            fontFamily: '"zpix", ui-sans-serif, system-ui',
+            fontSize: "16px",
+          });
+        }
+
+        const bubble = document.createElement("div");
+        bubble.textContent = comment.content || "";
+        Object.assign(bubble.style, {
+          minHeight: "37px",
+          maxWidth: "300px",
+          padding: "0 18px",
+          borderRadius: "999px",
+          background: "#EAEAEA",
+          display: "flex",
+          alignItems: "center",
+          fontFamily: '"zpix", ui-sans-serif, system-ui',
+          fontSize: "16px",
+          lineHeight: "1",
+          color: isOwner ? "#1248FF" : "#FD6FFF",
+          whiteSpace: "nowrap",
+        });
+
+        if (isOwner) {
+          row.appendChild(bubble);
+          row.appendChild(avatar);
+        } else {
+          row.appendChild(avatar);
+          row.appendChild(bubble);
+        }
+
+        commentsWrap.appendChild(row);
+      });
+    }
+
+    // 右下 input
+    const boardInput = addCommentInput({
+      x: 725,
+      y: 418,
+      w: 474,
+      h: 37,
+      value: commentBoardInputValue,
+      placeholder: "輸入留言...",
+      fontSize: 16,
+      textColor: "#C0C0C0",
+      placeholderColor: "#CFCFCF",
+      bg: "#EAEAEA",
+      border: "0",
+      z: 3,
+      onInput: (nextValue) => {
+        commentBoardInputValue = nextValue;
+      },
+    });
+
+    addCapsuleButton({
+      x: 1122,
+      y: 418,
+      w: 77,
+      h: 37,
+      bg: "#FD6FFF",
+      border: "0",
+      radius: 999,
+      z: 4,
+    onClick: async () => {
+      const value = commentBoardInputValue.trim();
+      if (!value) return;
+
+      try {
+        const nextComment = await onSubmitComment?.({
+          tableId: activeTableId,
+          content: value,
+        });
+
+        if (nextComment) {
+          comments.push(nextComment);
+        }
+
+        commentBoardInputValue = "";
+        renderStep();
+      } catch (err) {
+        console.error("[comment board submit failed]", err);
+      }
+    },
+    });
+
+    addText("留言", {
+      x: 1122 + 77 / 2,
+      y: 418 + 11,
+      size: 16,
+      color: "#FFFFFF",
+      center: true,
+      z: 5,
+    });
+
+    if (boardInput) {
+      boardInput.value = commentBoardInputValue;
+    }
+
+    if (overlayMode !== "commentBoard") {
+      addActionButton({
+        rect: { x: 256, y: 533, w: 180, h: 54 },
+        label: "查看火鍋",
+        iconSrc: ASSETS.potIcon,
+        iconRect: { x: 269, y: 545, w: 39, h: 29 },
+        textOffsetX: 16,
+        textOffsetY: 14,
+        onClick: () => {
+          viewOnlyPage = "preview";
+          renderStep();
+        },
+      });
+
+      addActionButton({
+        rect: { x: 869, y: 533, w: 180, h: 54 },
+        label: "返回宴會",
+        iconSrc: ASSETS.rightArrow,
+        iconRect: { x: 882, y: 536, w: 48, h: 48 },
+        textOffsetX: 20,
+        textOffsetY: 14,
+        onClick: () => requestClose(),
+      });
+    }
+  }
+
+  function renderPreviewListInBox({ box, items, activeId, getPreviewUrl, onRename, editable = true }) {
     const wrap = document.createElement("div");
     Object.assign(wrap.style, {
       position: "absolute",
@@ -3452,6 +4004,7 @@ function renderVerticalList({
         cursor: "text",
       });
 
+    if (editable) {
       label.addEventListener("dblclick", (e) => {
         e.stopPropagation();
 
@@ -3490,17 +4043,18 @@ function renderVerticalList({
             ev.preventDefault();
             cancel();
           }
-      });
+        });
 
-      input.addEventListener("blur", () => {
-        commit();
-      });
+        input.addEventListener("blur", () => {
+          commit();
+        });
 
-      labelWrap.innerHTML = "";
-      labelWrap.appendChild(input);
-      input.focus();
-      input.select();
-    });
+        labelWrap.innerHTML = "";
+        labelWrap.appendChild(input);
+        input.focus();
+        input.select();
+      });
+    }
 
     labelWrap.appendChild(label);
 
@@ -3861,6 +4415,10 @@ function renderVerticalList({
       initialized: currentTableState?.initialized ?? false,
       viewOnly,
       ownerTableId,
+
+      viewOnlyPage,
+      commentsCount: comments.length,
+      tableOwnerProfile,
     };
   }
 
@@ -3870,6 +4428,7 @@ function renderVerticalList({
 
   return {
     open,
+    openCommentBoard,
     close,
     isOpen,
     getState,

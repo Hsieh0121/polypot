@@ -159,6 +159,7 @@
       overflow: hidden;
       display: flex;
       flex-direction: column;
+      justify-content: center; 
       gap: 10px;
       border-radius: var(--radius-md);
     }
@@ -219,7 +220,7 @@
     .pot-name {
     position: absolute;
     left: 50%;
-    top: 364px;
+    top: 390px;
     transform: translateX(-50%);
     width: 356px;
     max-width: 356px;
@@ -235,7 +236,7 @@
     .pot-mini-actions {
     position: absolute;
     left: 50%;
-    top: 414px;
+    top: 450px;
     transform: translateX(-50%);
     display: flex;
     gap: 8px;
@@ -484,21 +485,24 @@
     potCardTitle.addEventListener("click", () => setSelectedCard("pot"));
 
     function getSerialFromUrlOrStorage() {
-      const params = new URLSearchParams(window.location.search);
-      const urlSerial = params.get("serial");
-      if (urlSerial) return urlSerial.trim();
+    const params = new URLSearchParams(window.location.search);
+    const urlSerial = params.get("serial");
+    if (urlSerial) return urlSerial.trim();
 
-      try {
+    const ssSerial = sessionStorage.getItem("polypot_serial");
+    if (ssSerial) return ssSerial.trim();
+
+    try {
         const raw = localStorage.getItem("polypot_profile");
         if (!raw) return "";
         const parsed = JSON.parse(raw);
         if (typeof parsed === "string") return parsed.trim();
         if (parsed && typeof parsed.serial === "string") return parsed.serial.trim();
-      } catch (err) {
+    } catch (err) {
         console.warn("[print] local profile parse failed", err);
-      }
+    }
 
-      return "";
+    return "";
     }
 
     async function fetchPrintData(serial) {
@@ -929,9 +933,8 @@
         renderPotName(profile);
 
         if (pot) {
-          await mountPotPreview(pot);
-          await new Promise((resolve) => setTimeout(resolve, 250));
-          await exportPotCardImage();
+        await mountPotPreview(pot);
+        showStagePreview();
         } else {
           potCardExportStage.style.display = "none";
           potSavedFrame.style.display = "block";
@@ -943,7 +946,7 @@
         if (!profile?.idCardSnapshot) {
           setStatus("沒有找到身份卡 snapshot。");
         } else if (pot) {
-          setStatus("資料已載入，點選要列印的卡片後按「現場列印」。");
+        setStatus("火鍋已載入，可先調整視角，再按「更新圖卡」。");
         }
       } catch (err) {
         console.error("[print] load failed", err);

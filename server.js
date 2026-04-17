@@ -15,6 +15,9 @@ import {
   createPrintJob,
   listPendingPrintJobs,
   markPrintJobPrinted,
+  createPotComment,
+  listPotCommentsByRoomAndTable,
+  listRecentPotCommentsByRoomAndTable,
 } from "./db.js";
 
 console.log("[server] boot", new Date().toISOString());
@@ -213,6 +216,89 @@ app.post("/print-jobs/:id/printed", (req, res) => {
   }
 });
 
+app.get("/tables/:roomId/:tableId/comments", (req, res) => {
+  try {
+    const roomId =
+      typeof req.params.roomId === "string" ? req.params.roomId.trim() : "";
+    const tableId =
+      typeof req.params.tableId === "string" ? req.params.tableId.trim() : "";
+    const recent =
+      typeof req.query.recent === "string" ? req.query.recent.trim() : "";
+
+    if (!roomId || !tableId) {
+      return res.status(400).json({
+        ok: false,
+        error: "missing roomId or tableId",
+      });
+    }
+
+    const comments =
+      recent === "1"
+        ? listRecentPotCommentsByRoomAndTable(roomId, tableId, 5)
+        : listPotCommentsByRoomAndTable(roomId, tableId);
+
+    return res.json({
+      ok: true,
+      comments,
+    });
+  } catch (err) {
+    console.error("[GET /tables/:roomId/:tableId/comments] failed:", err);
+    return res.status(500).json({
+      ok: false,
+      error: "get comments failed",
+    });
+  }
+});
+app.post("/tables/:roomId/:tableId/comments", (req, res) => {
+  try {
+    const roomId =
+      typeof req.params.roomId === "string" ? req.params.roomId.trim() : "";
+    const tableId =
+      typeof req.params.tableId === "string" ? req.params.tableId.trim() : "";
+    const authorSerial =
+      typeof req.body?.authorSerial === "string" ? req.body.authorSerial.trim() : "";
+    const content =
+      typeof req.body?.content === "string" ? req.body.content.trim() : "";
+
+    if (!roomId || !tableId || !authorSerial || !content) {
+      return res.status(400).json({
+        ok: false,
+        error: "missing fields",
+      });
+    }
+
+    const authorProfile = getProfileBySerial(authorSerial);
+    if (!authorProfile) {
+      return res.status(404).json({
+        ok: false,
+        error: "author profile not found",
+      });
+    }
+
+    const ownerProfile = dbPrepareOwnerProfile(roomId, tableId);
+
+    const comment = createPotComment({
+      roomId,
+      tableId,
+      authorSerial,
+      authorName: authorProfile.name ?? "",
+      authorAvatarPhoto: authorProfile.avatarPhoto ?? "",
+      content,
+      isOwner: ownerProfile?.serial === authorSerial,
+    });
+
+    return res.json({
+      ok: true,
+      comment,
+    });
+  } catch (err) {
+    console.error("[POST /tables/:roomId/:tableId/comments] failed:", err);
+    return res.status(500).json({
+      ok: false,
+      error: "create comment failed",
+    });
+  }
+});
 // -------------------------
 // state
 // -------------------------
@@ -405,7 +491,21 @@ function sanitizePotPayload(input = {}) {
             : "#E8F25A"),
   };
 }
+function dbPrepareOwnerProfile(roomId, tableId) {
+  if (!roomId || !tableId) return null;
 
+  const roomNum = Number(String(roomId).replace(/^room/i, ""));
+  const tableNum = Number(String(tableId).replace(/^table/i, ""));
+
+  if (!Number.isFinite(roomNum) || !Number.isFinite(tableNum)) {
+    return null;
+  }
+
+  const serialNumber = (roomNum - 1) * 8 + tableNum;
+  const serial = `P${String(serialNumber).padStart(6, "0")}`;
+
+  return getProfileBySerial(serial);
+}
 function getSocketProfile(socketId) {
   const serial = state.serialBySocketId.get(socketId);
   if (!serial) return null;

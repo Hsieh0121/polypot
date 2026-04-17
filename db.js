@@ -76,6 +76,17 @@ db.exec(`
     created_at INTEGER NOT NULL,
     printed_at INTEGER
   );
+    CREATE TABLE IF NOT EXISTS pot_comments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    room_id TEXT NOT NULL,
+    table_id TEXT NOT NULL,
+    author_serial TEXT NOT NULL,
+    author_name TEXT,
+    author_avatar_photo TEXT,
+    content TEXT NOT NULL,
+    is_owner INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL
+  );
 `);
 
 // --------------------
@@ -787,6 +798,134 @@ export function setAvatarPresenceOnline(serial, isOnline) {
     isOnline,
     mode: existing.mode,
   });
+}
+// --------------------
+// pot comment helpers
+// --------------------
+function parsePotCommentRow(row) {
+  if (!row) return null;
+
+  return {
+    id: row.id,
+    roomId: row.roomId,
+    tableId: row.tableId,
+    authorSerial: row.authorSerial,
+    authorName: row.authorName ?? "",
+    authorAvatarPhoto: row.authorAvatarPhoto ?? "",
+    content: row.content ?? "",
+    isOwner: !!row.isOwner,
+    createdAt: row.createdAt,
+  };
+}
+const insertPotCommentStmt = db.prepare(`
+  INSERT INTO pot_comments (
+    room_id,
+    table_id,
+    author_serial,
+    author_name,
+    author_avatar_photo,
+    content,
+    is_owner,
+    created_at
+  )
+  VALUES (
+    @roomId,
+    @tableId,
+    @authorSerial,
+    @authorName,
+    @authorAvatarPhoto,
+    @content,
+    @isOwner,
+    @createdAt
+  )
+`);
+
+const listPotCommentsByRoomAndTableStmt = db.prepare(`
+  SELECT
+    id,
+    room_id as roomId,
+    table_id as tableId,
+    author_serial as authorSerial,
+    author_name as authorName,
+    author_avatar_photo as authorAvatarPhoto,
+    content,
+    is_owner as isOwner,
+    created_at as createdAt
+  FROM pot_comments
+  WHERE room_id = ? AND table_id = ?
+  ORDER BY created_at ASC
+`);
+
+const listRecentPotCommentsByRoomAndTableStmt = db.prepare(`
+  SELECT
+    id,
+    room_id as roomId,
+    table_id as tableId,
+    author_serial as authorSerial,
+    author_name as authorName,
+    author_avatar_photo as authorAvatarPhoto,
+    content,
+    is_owner as isOwner,
+    created_at as createdAt
+  FROM pot_comments
+  WHERE room_id = ? AND table_id = ?
+  ORDER BY created_at DESC
+  LIMIT ?
+`);
+export function createPotComment(input) {
+  if (!input?.roomId) {
+    throw new Error("createPotComment: roomId is required");
+  }
+  if (!input?.tableId) {
+    throw new Error("createPotComment: tableId is required");
+  }
+  if (!input?.authorSerial) {
+    throw new Error("createPotComment: authorSerial is required");
+  }
+  if (!input?.content || !String(input.content).trim()) {
+    throw new Error("createPotComment: content is required");
+  }
+
+  const row = {
+    roomId: input.roomId,
+    tableId: input.tableId,
+    authorSerial: input.authorSerial,
+    authorName: input.authorName ?? "",
+    authorAvatarPhoto: input.authorAvatarPhoto ?? "",
+    content: String(input.content).trim().slice(0, 200),
+    isOwner: input.isOwner ? 1 : 0,
+    createdAt: Date.now(),
+  };
+
+  const result = insertPotCommentStmt.run(row);
+
+  return db.prepare(`
+    SELECT
+      id,
+      room_id as roomId,
+      table_id as tableId,
+      author_serial as authorSerial,
+      author_name as authorName,
+      author_avatar_photo as authorAvatarPhoto,
+      content,
+      is_owner as isOwner,
+      created_at as createdAt
+    FROM pot_comments
+    WHERE id = ?
+  `).get(result.lastInsertRowid);
+}
+
+export function listPotCommentsByRoomAndTable(roomId, tableId) {
+  return listPotCommentsByRoomAndTableStmt
+    .all(roomId, tableId)
+    .map(parsePotCommentRow);
+}
+
+export function listRecentPotCommentsByRoomAndTable(roomId, tableId, limit = 5) {
+  return listRecentPotCommentsByRoomAndTableStmt
+    .all(roomId, tableId, limit)
+    .map(parsePotCommentRow)
+    .reverse();
 }
 // --------------------
 // print job helpers

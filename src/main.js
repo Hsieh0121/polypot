@@ -42,6 +42,94 @@ const SS_SERIAL = "polypot_serial";
 const LS_HAS_PLAYED = "polypot_has_played";
 const LS_LAST_SERIAL = "polypot_last_serial";
 
+const API_BASE =
+  import.meta.env.VITE_API_BASE ||
+  import.meta.env.VITE_SOCKET_URL ||
+  "http://localhost:3001";
+
+function mapSerialToRoom(serial, roomSize = 8) {
+  const num = parseInt(String(serial || "").replace(/^P/i, ""), 10);
+  if (!Number.isFinite(num) || num <= 0) return null;
+  const roomIndex = Math.floor((num - 1) / roomSize) + 1;
+  return `room${roomIndex}`;
+}
+
+function getOwnerSerialFromRoomAndTable(roomId, tableId) {
+  const roomNum = Number(String(roomId || "").replace(/^room/i, ""));
+  const tableNum = Number(String(tableId || "").replace(/^table/i, ""));
+
+  if (!Number.isFinite(roomNum) || !Number.isFinite(tableNum)) return "";
+
+  const serialNumber = (roomNum - 1) * 8 + tableNum;
+  return `P${String(serialNumber).padStart(6, "0")}`;
+}
+
+async function fetchProfileBySerial(serial) {
+  if (!serial) return null;
+
+  const res = await fetch(`${API_BASE}/profiles/${encodeURIComponent(serial)}`);
+  const data = await res.json();
+
+  if (!res.ok || !data?.ok) {
+    throw new Error(data?.error || "fetch profile failed");
+  }
+
+  return data.profile || null;
+}
+
+async function fetchTableComments(roomId, tableId, { recent = false } = {}) {
+  if (!roomId || !tableId) return [];
+
+  const url = new URL(
+    `${API_BASE}/tables/${encodeURIComponent(roomId)}/${encodeURIComponent(tableId)}/comments`
+  );
+
+  if (recent) {
+    url.searchParams.set("recent", "1");
+  }
+
+  const res = await fetch(url.toString());
+  const data = await res.json();
+
+  if (!res.ok || !data?.ok) {
+    throw new Error(data?.error || "fetch comments failed");
+  }
+
+  return Array.isArray(data.comments) ? data.comments : [];
+}
+async function submitTableComment(roomId, tableId, content) {
+  if (!roomId || !tableId) {
+    throw new Error("missing roomId or tableId");
+  }
+
+  const authorSerial = currentProfile?.serial;
+  if (!authorSerial) {
+    throw new Error("missing authorSerial");
+  }
+
+  const res = await fetch(
+    `${API_BASE}/tables/${encodeURIComponent(roomId)}/${encodeURIComponent(tableId)}/comments`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        authorSerial,
+        content,
+      }),
+    }
+  );
+
+  const data = await res.json();
+
+  if (!res.ok || !data?.ok) {
+    throw new Error(data?.error || "submit comment failed");
+  }
+
+  return data.comment || null;
+}
+
 function loadHallIdentity() {
   const serial = sessionStorage.getItem(SS_SERIAL) || "";
   return serial ? { serial } : {};
@@ -127,13 +215,25 @@ function mapSerialToTable(serial, tableCount = 8) {
 }
 let hallSceneReady = false;
 let pendingSnapshotPots = [];
+let recentCommentsUiOpen = false;
+let recentCommentsTableId = null;
+let recentCommentsData = [];
+let recentCommentsOwnerSerial = "";
+let recentCommentsOwnerAvatarPhoto = "";
+let exitDoorUiOpen = false;
+let exitDoorMesh = null;
+const exitDoorBox = new THREE.Box3();
+const exitDoorCenter = new THREE.Vector3();
+let exitDoorRadius = 2.4;
+let exitDoorInRange = false;
+const EXIT_DOOR_TRIGGER_PAD = 0.8;
 let assignedTableId =
   currentProfile?.assignedTableId ??
   mapSerialToTable(currentProfile?.serial);
 
 console.log("[hall] profile =", currentProfile);
 console.log("[hall] assignedTableId =", assignedTableId);
-
+let isOverlayOpening = false;
 let net = {
   connected: false,
   ping: null,
@@ -164,6 +264,12 @@ function enqueueAction(type, payload = null) {
 }
 
 let state = FSM.FREE_ROAM;
+const OVERLAY_SOURCE = {
+  NONE: "NONE",
+  POT: "POT",
+  MY_COMMENT_BOARD: "MY_COMMENT_BOARD",
+};
+let overlaySource = OVERLAY_SOURCE.NONE;
 const seatsState = new Map();
 const groundRaycaster = new THREE.Raycaster();
 const viewRaycaster = new THREE.Raycaster();
@@ -1034,12 +1140,24 @@ socket.on("connect_error", (err) => {
 });
 
 
-window.addEventListener("resize", resize);
+window.addEventListener("resize", () => {
+  resize();
+  refreshExitDoorBox();
+});
 resize();
-
 
 const app = document.querySelector("#app");
 app.appendChild(renderer.domElement);
+
+renderer.domElement.addEventListener("click", (e) => {
+  if (IS_MOBILE) return;
+  if (exitDoorUiOpen) return;
+  if (state === FSM.UI_OPEN) return;
+  if (pot.isOpen?.()) return;
+  if (controls?.isLocked) return;
+
+  safeLockPointer();
+});
 
 const hallUi = document.createElement("div");
 hallUi.style.position = "fixed";
@@ -1048,7 +1166,251 @@ hallUi.style.pointerEvents = "none";
 hallUi.style.zIndex = "10000";
 document.body.appendChild(hallUi);
 
+// =========================
+// RECENT COMMENTS UI
+// =========================
 
+const recentCommentsLayer = document.createElement("div");
+recentCommentsLayer.style.position = "fixed";
+recentCommentsLayer.style.inset = "0";
+recentCommentsLayer.style.display = "none";
+recentCommentsLayer.style.pointerEvents = "none";
+recentCommentsLayer.style.zIndex = "30010";
+hallUi.appendChild(recentCommentsLayer);
+
+const recentCommentsDim = document.createElement("div");
+recentCommentsDim.style.position = "absolute";
+recentCommentsDim.style.inset = "0";
+recentCommentsDim.style.background = "rgba(0,0,0,0.08)";
+recentCommentsDim.style.pointerEvents = "auto";
+recentCommentsLayer.appendChild(recentCommentsDim);
+
+const recentCommentsBubbleWrap = document.createElement("div");
+recentCommentsBubbleWrap.style.position = "absolute";
+recentCommentsBubbleWrap.style.inset = "0";
+recentCommentsBubbleWrap.style.pointerEvents = "none";
+recentCommentsLayer.appendChild(recentCommentsBubbleWrap);
+
+const recentCommentsCenterWrap = document.createElement("div");
+recentCommentsCenterWrap.style.position = "absolute";
+recentCommentsCenterWrap.style.left = "50%";
+recentCommentsCenterWrap.style.bottom = "68px";
+recentCommentsCenterWrap.style.transform = "translateX(-50%)";
+recentCommentsCenterWrap.style.display = "flex";
+recentCommentsCenterWrap.style.flexDirection = "column";
+recentCommentsCenterWrap.style.alignItems = "center";
+recentCommentsCenterWrap.style.gap = "14px";
+recentCommentsCenterWrap.style.pointerEvents = "auto";
+recentCommentsLayer.appendChild(recentCommentsCenterWrap);
+
+const recentCommentsOpenBtn = document.createElement("button");
+recentCommentsOpenBtn.type = "button";
+recentCommentsOpenBtn.textContent = "查看火鍋";
+Object.assign(recentCommentsOpenBtn.style, {
+  minHeight: "74px",
+  padding: "0 28px",
+  border: "0",
+  borderRadius: "999px",
+  background: "#FD6FFF",
+  color: "#FFFFFF",
+  boxShadow: "0 8px 30px rgba(0,0,0,0.14)",
+  fontFamily: "zpix, sans-serif",
+  fontSize: "20px",
+  whiteSpace: "nowrap",
+  cursor: "pointer",
+  pointerEvents: "auto",
+});
+
+const recentCommentsSkipBtn = document.createElement("button");
+recentCommentsSkipBtn.type = "button";
+recentCommentsSkipBtn.textContent = "先看看留言";
+Object.assign(recentCommentsSkipBtn.style, {
+  minHeight: "52px",
+  padding: "0 22px",
+  border: "2px solid #FD6FFF",
+  borderRadius: "999px",
+  background: "#FFFFFF",
+  color: "#FD6FFF",
+  boxShadow: "0 8px 30px rgba(0,0,0,0.10)",
+  fontFamily: "zpix, sans-serif",
+  fontSize: "16px",
+  whiteSpace: "nowrap",
+  cursor: "pointer",
+  pointerEvents: "auto",
+});
+
+recentCommentsCenterWrap.appendChild(recentCommentsOpenBtn);
+recentCommentsCenterWrap.appendChild(recentCommentsSkipBtn);
+
+// =========================
+// EXIT DOOR UI
+// =========================
+
+const exitDoorLayer = document.createElement("div");
+exitDoorLayer.style.position = "fixed";
+exitDoorLayer.style.left = "50%";
+exitDoorLayer.style.top = "38%";
+exitDoorLayer.style.transform = "translate(-50%, -50%)";
+exitDoorLayer.style.width = "560px";
+exitDoorLayer.style.display = "none";
+exitDoorLayer.style.pointerEvents = "none";
+exitDoorLayer.style.zIndex = "30020";
+hallUi.appendChild(exitDoorLayer);
+
+const exitDoorBubble = document.createElement("div");
+exitDoorBubble.style.background = "#FFFFFF";
+exitDoorBubble.style.borderRadius = "999px";
+exitDoorBubble.style.boxShadow = "0 12px 34px rgba(0,0,0,0.12)";
+exitDoorBubble.style.height = "85px";
+exitDoorBubble.style.padding = "0 36px";
+exitDoorBubble.style.display = "flex";
+exitDoorBubble.style.alignItems = "center";
+exitDoorBubble.style.justifyContent = "center";
+exitDoorBubble.style.fontFamily = "zpix, sans-serif";
+exitDoorBubble.style.fontSize = "20px";
+exitDoorBubble.style.color = "#FD6FFF";
+exitDoorBubble.style.whiteSpace = "nowrap";
+exitDoorLayer.appendChild(exitDoorBubble);
+
+const exitDoorBtnRow = document.createElement("div");
+exitDoorBtnRow.style.marginTop = "18px";
+exitDoorBtnRow.style.display = "flex";
+exitDoorBtnRow.style.justifyContent = "center";
+exitDoorBtnRow.style.gap = "18px";
+exitDoorBtnRow.style.pointerEvents = "auto";
+exitDoorLayer.appendChild(exitDoorBtnRow);
+
+function makeExitDoorBtn(label) {
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.textContent = label;
+  btn.style.border = "0";
+  btn.style.cursor = "pointer";
+  btn.style.height = "65px";
+  btn.style.padding = "0 26px";
+  btn.style.borderRadius = "999px";
+  btn.style.background = "#FD6FFF";
+  btn.style.color = "#FFFFFF";
+  btn.style.boxShadow = "0 8px 30px rgba(0,0,0,0.14)";
+  btn.style.fontFamily = "zpix, sans-serif";
+  btn.style.fontSize = "16px";
+  btn.style.whiteSpace = "nowrap";
+  btn.style.display = "inline-flex";
+  btn.style.alignItems = "center";
+  btn.style.justifyContent = "center";
+  btn.style.pointerEvents = "auto";
+  btn.style.transform = "scale(1)";
+  btn.style.transition = "transform 120ms ease";
+
+  btn.addEventListener("pointerdown", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    btn.style.transform = "scale(0.96)";
+  });
+  btn.addEventListener("pointerup", () => {
+    btn.style.transform = "scale(1)";
+  });
+  btn.addEventListener("pointercancel", () => {
+    btn.style.transform = "scale(1)";
+  });
+  btn.addEventListener("pointerleave", () => {
+    btn.style.transform = "scale(1)";
+  });
+
+  return btn;
+}
+
+const btnKeepBrowsing = makeExitDoorBtn("再逛一下");
+const btnLeaveHall = makeExitDoorBtn("離開會場");
+exitDoorBtnRow.appendChild(btnKeepBrowsing);
+exitDoorBtnRow.appendChild(btnLeaveHall);
+
+function showExitDoorPrompt() {
+  if (exitDoorUiOpen) return;
+  if (pot.isOpen?.()) return;
+
+  exitDoorUiOpen = true;
+
+  exitDoorLayer.style.display = "block";
+  exitDoorLayer.style.pointerEvents = "auto";
+  exitDoorBubble.textContent = "是否離開宴席會場？";
+
+  clearMoveKeys();
+  hideCenterAction();
+  hideHUD();
+
+  if (!IS_MOBILE && controls?.isLocked) {
+    controls.unlock();
+  }
+
+  if (IS_MOBILE) {
+    setMobileHudVisible(false);
+  }
+}
+
+function hideExitDoorPrompt() {
+  if (!exitDoorUiOpen) return;
+
+  exitDoorUiOpen = false;
+  exitDoorLayer.style.display = "none";
+  exitDoorLayer.style.pointerEvents = "none";
+
+  if (IS_MOBILE) {
+    setMobileHudVisible(true);
+  }
+}
+
+btnKeepBrowsing.addEventListener("click", (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  hideExitDoorPrompt();
+});
+
+btnLeaveHall.addEventListener("click", (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  const serial = sessionStorage.getItem("polypot_serial") || "";
+  window.location.href = `/print.html?serial=${encodeURIComponent(serial)}`;
+});
+
+
+recentCommentsDim.addEventListener("click", (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  hideRecentCommentsPrompt();
+});
+
+recentCommentsSkipBtn.addEventListener("click", (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  hideRecentCommentsPrompt();
+});
+
+recentCommentsOpenBtn.addEventListener("click", async (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+
+  const tableId = recentCommentsTableId || seated?.tableId;
+  if (!tableId) {
+    hideRecentCommentsPrompt();
+    return;
+  }
+
+  hideRecentCommentsPrompt();
+
+  try {
+    await openPotOverlayForTable(tableId, {
+      mobileDebug: IS_MOBILE,
+    });
+  } catch (err) {
+    console.error("[recent comments] open pot failed", err);
+    state = FSM.SEATED;
+
+    if (IS_MOBILE) {
+      setMobileHudVisible(true);
+    }
+  }
+});
 
 // left announcement
 const announcementWrap = document.createElement("div");
@@ -1107,6 +1469,53 @@ ctaWrap.style.pointerEvents = "auto";
 ctaWrap.style.zIndex = "30001";
 document.body.appendChild(ctaWrap);
 
+const myCommentBoardBtn = document.createElement("button");
+myCommentBoardBtn.type = "button";
+Object.assign(myCommentBoardBtn.style, {
+  position: "fixed",
+  right: "42px",
+  bottom: "8px",
+  width: "148px",
+  height: "148px",
+  border: "0",
+  background: "transparent",
+  padding: "0",
+  cursor: "pointer",
+  zIndex: "30005",
+  display: "none",
+});
+
+const myCommentBoardImg = document.createElement("img");
+myCommentBoardImg.src = "/card.png";
+Object.assign(myCommentBoardImg.style, {
+  width: "100%",
+  height: "100%",
+  objectFit: "contain",
+  display: "block",
+  pointerEvents: "none",
+});
+
+myCommentBoardBtn.appendChild(myCommentBoardImg);
+document.body.appendChild(myCommentBoardBtn);
+
+myCommentBoardBtn.addEventListener("click", async (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+
+  hideMyCommentBoardBtn();
+
+  try {
+    await openMyCommentBoard();
+  } catch (err) {
+    console.error("[myCommentBoardBtn] open failed", err);
+    state = FSM.FREE_ROAM;
+
+    if (IS_MOBILE) {
+      setMobileHudVisible(true);
+    }
+  }
+});
+
 const ctaBtn = document.createElement("button");
 ctaBtn.type = "button";
 ctaBtn.style.pointerEvents = "auto";
@@ -1129,7 +1538,11 @@ ctaBtn.style.userSelect = "none";
 const resetCtaBtn = () => {
   ctaBtn.style.transform = "scale(1)";
 };
-ctaBtn.addEventListener("pointerdown", (e) => {
+ctaBtn.addEventListener("pointerdown", async (e) => {
+  if (exitDoorUiOpen) {
+    hideExitDoorPrompt();
+    return;
+  }
   e.preventDefault();
   e.stopPropagation();
 
@@ -1137,35 +1550,18 @@ ctaBtn.addEventListener("pointerdown", (e) => {
 
   if (state === FSM.SEATED && seated) {
     const tableId = seated.tableId;
-    const tableState =
-      tablePotStateMap.get(tableId) ?? createEmptyTablePotState(tableId);
-
-    const isOwnerTable = tableId === assignedTableId;
-    const mobilePotDebug = IS_MOBILE;
 
     try {
-      if (!IS_MOBILE && controls?.isLocked) {
-        controls.unlock();
-      }
-
-      hideCenterAction();
-      clearMoveKeys();
-      state = FSM.UI_OPEN;
-
-      if (IS_MOBILE) {
-        setMobileHudVisible(false);
-      }
-
-      pot.open({
-        tableId,
-        tableState,
-        viewOnly: !isOwnerTable,
-        ownerTableId: assignedTableId,
-        mobileDebug: mobilePotDebug,
+      await openPotOverlayForTable(tableId, {
+        mobileDebug: IS_MOBILE,
       });
     } catch (err) {
       console.error("[CTA] open failed", err);
       state = FSM.SEATED;
+
+      if (IS_MOBILE) {
+        setMobileHudVisible(true);
+      }
     }
     return;
   }
@@ -1196,6 +1592,214 @@ function showCenterAction(label) {
 function hideCenterAction() {
   resetCtaBtn();
   ctaWrap.style.display = "none";
+}
+function showMyCommentBoardBtn() {
+  myCommentBoardBtn.style.display = "block";
+}
+
+function hideMyCommentBoardBtn() {
+  myCommentBoardBtn.style.display = "none";
+}
+
+function clearRecentCommentsBubbles() {
+  recentCommentsBubbleWrap.innerHTML = "";
+}
+
+function createRecentCommentBubble(comment, x, y, { align = "left" } = {}) {
+  const row = document.createElement("div");
+  Object.assign(row.style, {
+    position: "absolute",
+    left: `${x}px`,
+    top: `${y}px`,
+    display: "flex",
+    alignItems: "center",
+    gap: "12px",
+    pointerEvents: "none",
+    transform: align === "right" ? "translateX(-100%)" : "none",
+  });
+
+  const avatar = document.createElement("div");
+  Object.assign(avatar.style, {
+    width: "49px",
+    height: "37px",
+    flexShrink: "0",
+    overflow: "hidden",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    background: align === "right" ? "#FFFFFF" : "#22FF22",
+    color: align === "right" ? "#1248FF" : "#000000",
+    fontFamily: "zpix, sans-serif",
+    fontSize: "16px",
+    lineHeight: "1",
+  });
+
+  const isOwnerComment =
+    !!comment?.authorSerial &&
+    comment.authorSerial === recentCommentsOwnerSerial;
+
+  const avatarSrc = isOwnerComment
+    ? (
+        comment?.authorAvatarPhoto ||
+        recentCommentsOwnerAvatarPhoto ||
+        comment?.avatarPhoto ||
+        ""
+      )
+    : (
+        comment?.authorAvatarPhoto ||
+        comment?.avatarPhoto ||
+        ""
+      );
+
+  if (avatarSrc) {
+    const img = document.createElement("img");
+    img.src = avatarSrc;
+    Object.assign(img.style, {
+      width: "100%",
+      height: "100%",
+      objectFit: "cover",
+      objectPosition: "center",
+      display: "block",
+    });
+    avatar.appendChild(img);
+  } else {
+    avatar.textContent = "pfp";
+  }
+
+  const bubble = document.createElement("div");
+  bubble.textContent = comment?.content || "";
+  Object.assign(bubble.style, {
+    maxWidth: "280px",
+    minHeight: "44px",
+    padding: "0 18px",
+    borderRadius: "999px",
+    background: "#EAEAEA",
+    color: align === "right" ? "#1248FF" : "#FD6FFF",
+    boxShadow: "0 8px 30px rgba(0,0,0,0.12)",
+    display: "flex",
+    alignItems: "center",
+    fontFamily: "zpix, sans-serif",
+    fontSize: "16px",
+    lineHeight: "1.2",
+    whiteSpace: "nowrap",
+  });
+
+  if (align === "right") {
+    row.appendChild(bubble);
+    row.appendChild(avatar);
+  } else {
+    row.appendChild(avatar);
+    row.appendChild(bubble);
+  }
+
+  recentCommentsBubbleWrap.appendChild(row);
+  return row;
+}
+
+function renderRecentCommentBubbles(comments) {
+  clearRecentCommentsBubbles();
+
+  const safeComments = Array.isArray(comments) ? comments.slice(0, 3) : [];
+  if (!safeComments.length) return;
+
+  const guestPositions = [
+    { x: 180, y: 250 },
+    { x: 320, y: 420 },
+    { x: 220, y: 560 },
+  ];
+
+  const ownerPositions = [
+    { x: window.innerWidth - 240, y: 180 },
+    { x: window.innerWidth - 320, y: 500 },
+    { x: window.innerWidth - 260, y: 340 },
+  ];
+
+  let guestIdx = 0;
+  let ownerIdx = 0;
+
+  safeComments.forEach((comment) => {
+    const isOwner =
+      !!comment?.authorSerial &&
+      comment.authorSerial === recentCommentsOwnerSerial;
+
+    const pos = isOwner
+      ? ownerPositions[ownerIdx++ % ownerPositions.length]
+      : guestPositions[guestIdx++ % guestPositions.length];
+
+    createRecentCommentBubble(comment, pos.x, pos.y, {
+      align: isOwner ? "right" : "left",
+     
+    });
+  });
+}
+function hideRecentCommentsPrompt() {
+  if (!recentCommentsUiOpen) return;
+
+  recentCommentsUiOpen = false;
+  recentCommentsTableId = null;
+  recentCommentsData = [];
+  recentCommentsOwnerSerial = "";
+  recentCommentsOwnerAvatarPhoto = "";
+  recentCommentsLayer.style.display = "none";
+  recentCommentsLayer.style.pointerEvents = "none";
+  clearRecentCommentsBubbles();
+
+  if (IS_MOBILE) {
+    setMobileHudVisible(true);
+  }
+}
+
+async function showRecentCommentsPrompt(tableId) {
+  if (!tableId) return;
+  if (tableId === assignedTableId) return;
+  if (pot.isOpen?.()) return;
+  if (exitDoorUiOpen) return;
+
+  const roomId =
+    currentProfile?.roomId || mapSerialToRoom(currentProfile?.serial);
+  
+  const ownerSerial = getOwnerSerialFromRoomAndTable(roomId, tableId);
+
+  let ownerProfile = null;
+  try {
+    ownerProfile = await fetchProfileBySerial(ownerSerial);
+  } catch (err) {
+    console.warn("[recent comments] owner profile fetch failed", {
+      roomId,
+      tableId,
+      ownerSerial,
+      err,
+    });
+  }
+
+  let comments = [];
+  try {
+    comments = await fetchTableComments(roomId, tableId, { recent: true });
+  } catch (err) {
+    console.warn("[recent comments] fetch failed", { roomId, tableId, err });
+  }
+
+  recentCommentsUiOpen = true;
+  recentCommentsTableId = tableId;
+  recentCommentsData = comments;
+  recentCommentsOwnerSerial = ownerSerial;
+  recentCommentsOwnerAvatarPhoto = ownerProfile?.avatarPhoto || "";
+  recentCommentsLayer.style.display = "block";
+  recentCommentsLayer.style.pointerEvents = "auto";
+
+  clearMoveKeys();
+  hideCenterAction();
+  hideHUD();
+
+  if (!IS_MOBILE && controls?.isLocked) {
+    controls.unlock();
+  }
+
+  if (IS_MOBILE) {
+    setMobileHudVisible(false);
+  }
+
+  renderRecentCommentBubbles(comments);
 }
 
 function clearHallIntroTimers() {
@@ -1228,6 +1832,9 @@ const pot = createPotController({
   appEl: document.querySelector("#app"),
 
   onClose: ({ reason = "normal" } = {}) => {
+    const source = overlaySource;
+    overlaySource = OVERLAY_SOURCE.NONE;
+
     clearMoveKeys();
 
     if (IS_MOBILE) {
@@ -1238,11 +1845,40 @@ const pot = createPotController({
       return;
     }
 
-    unseatSeat();
+    // 自己的留言板：關掉後直接回自由移動
+    if (source === OVERLAY_SOURCE.MY_COMMENT_BOARD) {
+      state = FSM.FREE_ROAM;
+      hideCenterAction();
+      hideHUD();
+      return;
+    }
+
+    // 鍋子流程：維持你現在原本的設計，關掉就離座
+    if (source === OVERLAY_SOURCE.POT) {
+      unseatSeat();
+      return;
+    }
+
+    // 保底
+    state = seated ? FSM.SEATED : FSM.FREE_ROAM;
   },
 
   onRequestClose: () => {
     pot.close({ reason: "normal" });
+  },
+  onSubmitComment: async ({ tableId, content }) => {
+    const roomId =
+      currentProfile?.roomId || mapSerialToRoom(currentProfile?.serial);
+
+    const saved = await submitTableComment(roomId, tableId, content);
+
+    return {
+      ...saved,
+      isOwner: true,
+      authorSerial: saved?.authorSerial || currentProfile?.serial || "",
+      authorAvatarPhoto:
+        saved?.authorAvatarPhoto || currentProfile?.avatarPhoto || "",
+    };
   },
 
   onFinalizePot: ({
@@ -1299,11 +1935,152 @@ const pot = createPotController({
   },
 });
 
-function safeLockPointer() {
-  // UI 開著就不要 lock
-  if (pot?.isOpen?.()) return;
+async function openPotOverlayForTable(tableId, { mobileDebug = false } = {}) {
+  if (isOverlayOpening) return;
+  isOverlayOpening = true;
+  const prevState = state;
 
-  // 只在「瀏覽器允許」時才 lock，避免噴 error
+  const tableState =
+    tablePotStateMap.get(tableId) ?? createEmptyTablePotState(tableId);
+
+  const isOwnerTable = tableId === assignedTableId;
+  const roomId =
+    currentProfile?.roomId || mapSerialToRoom(currentProfile?.serial);
+  const ownerSerial = getOwnerSerialFromRoomAndTable(roomId, tableId);
+
+  // 先鎖住 hall 狀態
+  state = FSM.UI_OPEN;
+  overlaySource = OVERLAY_SOURCE.POT;
+  hideMyCommentBoardBtn();
+  hideCenterAction();
+  hideHUD();
+  hideAnnouncementBubble();
+  clearMoveKeys();
+
+  if (!IS_MOBILE && controls?.isLocked) {
+    controls.unlock();
+  }
+
+  if (IS_MOBILE) {
+    setMobileHudVisible(false);
+  }
+
+  let tableOwnerProfile = null;
+  let comments = [];
+
+  try {
+    tableOwnerProfile = await fetchProfileBySerial(ownerSerial);
+  } catch (err) {
+    console.warn("[openPotOverlayForTable] fetch owner profile failed", {
+      roomId,
+      tableId,
+      ownerSerial,
+      err,
+    });
+  }
+
+  try {
+    comments = await fetchTableComments(roomId, tableId);
+  } catch (err) {
+    console.warn("[openPotOverlayForTable] fetch comments failed", {
+      roomId,
+      tableId,
+      err,
+    });
+  }
+
+  try {
+    pot.open({
+      tableId,
+      tableState,
+      viewOnly: !isOwnerTable,
+      ownerTableId: assignedTableId,
+      mobileDebug,
+      comments,
+      tableOwnerProfile,
+    });
+    isOverlayOpening = false;
+  } catch (err) {
+    state = prevState;
+    overlaySource = OVERLAY_SOURCE.NONE;
+    isOverlayOpening = false;
+    throw err;
+  }
+}
+async function openMyCommentBoard() {
+  if (isOverlayOpening) return;
+  isOverlayOpening = true;
+  const prevState = state;
+
+  const tableId = assignedTableId;
+  const roomId =
+    currentProfile?.roomId || mapSerialToRoom(currentProfile?.serial);
+  const ownerSerial =
+    currentProfile?.serial || getOwnerSerialFromRoomAndTable(roomId, tableId);
+
+  // 先鎖住 hall 狀態，避免等待 fetch 時 UI 又被 animate 改回去
+  state = FSM.UI_OPEN;
+  overlaySource = OVERLAY_SOURCE.MY_COMMENT_BOARD;
+  hideMyCommentBoardBtn();
+  hideCenterAction();
+  hideHUD();
+  hideAnnouncementBubble();
+  clearMoveKeys();
+
+  if (!IS_MOBILE && controls?.isLocked) {
+    controls.unlock();
+  }
+
+  if (IS_MOBILE) {
+    setMobileHudVisible(false);
+  }
+
+  let tableOwnerProfile = null;
+  let comments = [];
+
+  try {
+    tableOwnerProfile = await fetchProfileBySerial(ownerSerial);
+  } catch (err) {
+    console.warn("[openMyCommentBoard] fetch owner profile failed", {
+      roomId,
+      tableId,
+      ownerSerial,
+      err,
+    });
+  }
+
+  try {
+    comments = await fetchTableComments(roomId, tableId);
+  } catch (err) {
+    console.warn("[openMyCommentBoard] fetch comments failed", {
+      roomId,
+      tableId,
+      err,
+    });
+  }
+
+  try {
+    pot.openCommentBoard({
+      tableId,
+      comments,
+      tableOwnerProfile,
+    });
+    isOverlayOpening = false;
+  } catch (err) {
+    state = prevState;
+    overlaySource = OVERLAY_SOURCE.NONE;
+    isOverlayOpening = false;
+    throw err;
+  }
+}
+
+function safeLockPointer() {
+  if (IS_MOBILE) return;
+  if (pot?.isOpen?.()) return;
+  if (exitDoorUiOpen) return;
+  if (state === FSM.UI_OPEN) return;
+  if (controls?.isLocked) return;
+
   try {
     controls.lock();
   } catch (err) {
@@ -1769,13 +2546,6 @@ window.addEventListener("mousemove", (e) => {
   ndc.y = -(e.clientY / window.innerHeight) * 2 + 1;
 });
 
-window.addEventListener("click", async () => {
-  try {
-    const isMobile = window.matchMedia("(pointer: coarse)").matches;
-    if (isMobile) return;
-    if (!pot.isOpen()) controls.lock();
-  } catch (err) {}
-});
 
 const keys = {
   forward: false,
@@ -1859,6 +2629,22 @@ function clearMoveKeys() {
 
 window.addEventListener("keydown", (e) => {
   if (e.repeat) return;
+
+  if (exitDoorUiOpen) {
+    if (e.code === "Escape" || e.code === "KeyR") {
+      hideExitDoorPrompt();
+    }
+    return;
+  }
+
+  if (recentCommentsUiOpen) {
+    if (e.code === "Escape" || e.code === "KeyR") {
+      hideRecentCommentsPrompt();
+    }
+    return;
+  }
+
+
   console.log ("keydown:", e.code, e.key);
   if (e.code === "ArrowUp" || e.code === "KeyW") keys.forward = true;
   if (e.code === "ArrowDown" || e.code === "KeyS") keys.back = true;
@@ -1906,6 +2692,40 @@ loader.load(
     envRoot.traverse((obj) => {
   if (obj.name) console.log(obj.name);
   });
+
+  exitDoorMesh = null;
+
+envRoot.traverse((obj) => {
+  if (exitDoorMesh) return;
+  if (!obj.name) return;
+
+  const n = obj.name.toLowerCase();
+  if (n.includes("doorarea") || n === "doorarea" || n.includes("door")) {
+    exitDoorMesh = obj;
+  }
+});
+
+console.log("[exitDoorMesh]", exitDoorMesh);
+
+if (!exitDoorMesh) {
+  console.warn("找不到 door 相關節點，請看 [door candidate] log");
+} else {
+  refreshExitDoorBox();
+
+  const s = new THREE.Vector3();
+  exitDoorBox.getSize(s);
+  console.log("[exitDoorBox size]", s.toArray());
+}
+
+  if (!exitDoorMesh) {
+    console.warn("找不到 doorArea.001，請確認 env.glb 內名稱完全一致");
+  } else {
+    refreshExitDoorBox();
+
+    const s = new THREE.Vector3();
+    exitDoorBox.getSize(s);
+    console.log("[exitDoorBox size]", s.toArray());
+  }
 
   console.log("gltf.scene:", gltf.scene);
   console.log("children:", gltf.scene.children.map(c => c.name));
@@ -2488,37 +3308,35 @@ function dispatchAction(action) {
         }
 
         activeTableId = seated.tableId;
-        const tableState = tablePotStateMap.get(activeTableId) ?? createEmptyTablePotState(activeTableId);
-        const isOwnerTable = activeTableId === assignedTableId;
 
-        controls.unlock();
-        clearMoveKeys();
-        state = FSM.UI_OPEN;
-
-        if (IS_MOBILE) {
-          setMobileHudVisible(false);
-        }
-
-        pot.open({
-          tableId: activeTableId,
-          tableState,
-          viewOnly: !isOwnerTable,
-          ownerTableId: assignedTableId,
+        openPotOverlayForTable(activeTableId, {
           mobileDebug: IS_MOBILE,
+        }).then(() => {
+          const tableState =
+            tablePotStateMap.get(activeTableId) ??
+            createEmptyTablePotState(activeTableId);
+
+          const isOwnerTable = activeTableId === assignedTableId;
+
+          console.log(
+            "[FSM] SEATED -> UI_OPEN table=",
+            activeTableId,
+            "initialized=",
+            tableState?.initialized,
+            "hit=",
+            potHit.object?.name,
+            "isOwnerTable=",
+            isOwnerTable
+          );
+        }).catch((err) => {
+          console.error("[FSM] open failed", err);
+          state = FSM.SEATED;
+
+          if (IS_MOBILE) {
+            setMobileHudVisible(true);
+          }
         });
 
-        controls.unlock();
-
-        console.log(
-          "[FSM] SEATED -> UI_OPEN table=",
-          activeTableId,
-          "initialized=",
-          tableState?.initialized,
-          "hit=",
-          potHit.object?.name,
-          "isOwnerTable=",
-          isOwnerTable
-        );
         return;
       }
       return;
@@ -2763,6 +3581,10 @@ function sitSeatLocalSnap(seat){
 
   if (seat.tableId === assignedTableId) {
     hideAssignedMarker();
+  } else {
+    showRecentCommentsPrompt(seat.tableId).catch((err) => {
+      console.error("[sitSeatLocalSnap] showRecentCommentsPrompt failed", err);
+    });
   }
 
   console.log("[sit local snap FIXED]", seat.tableId, sid, player.position.toArray());
@@ -2855,7 +3677,65 @@ function getAvatarWorldPos() {
   };
 }
 
+function refreshExitDoorBox() {
+  if (!exitDoorMesh) return;
 
+  exitDoorMesh.updateWorldMatrix(true, true);
+  exitDoorBox.setFromObject(exitDoorMesh);
+  exitDoorBox.expandByScalar(EXIT_DOOR_TRIGGER_PAD);
+  exitDoorBox.getCenter(exitDoorCenter);
+
+  const size = new THREE.Vector3();
+  exitDoorBox.getSize(size);
+
+  // 用門的寬/深抓一個合理半徑
+  exitDoorRadius = 0.9;
+
+  console.log("[refreshExitDoorBox]", {
+    min: exitDoorBox.min.toArray(),
+    max: exitDoorBox.max.toArray(),
+    center: exitDoorCenter.toArray(),
+    size: size.toArray(),
+    radius: exitDoorRadius,
+  });
+}
+
+function updateExitDoorProximity() {
+  if (!exitDoorMesh) return;
+  if (pot.isOpen?.()) return;
+
+  const playerPos = player.position;
+
+  // 只比 XZ，忽略 Y
+  const dx = playerPos.x - exitDoorCenter.x;
+  const dz = playerPos.z - exitDoorCenter.z;
+  const distXZ = Math.sqrt(dx * dx + dz * dz);
+
+  const inRange = distXZ <= exitDoorRadius;
+
+  if (!window.__exitDoorDebugOnce || Math.random() < 0.02) {
+    console.log("[exitDoor check]", {
+      player: playerPos.toArray(),
+      center: exitDoorCenter.toArray(),
+      radius: exitDoorRadius,
+      distXZ,
+      inRange,
+    });
+    window.__exitDoorDebugOnce = true;
+  }
+
+  if (inRange && !exitDoorInRange) {
+    exitDoorInRange = true;
+    console.log("[exitDoor] ENTER");
+    showExitDoorPrompt();
+  }
+
+  if (!inRange && exitDoorInRange) {
+    exitDoorInRange = false;
+    console.log("[exitDoor] LEAVE");
+    hideExitDoorPrompt();
+  }
+}
 
 
 
@@ -2865,7 +3745,22 @@ const moveDir = new THREE.Vector3();
 function animate() {
   requestAnimationFrame(animate);
 
-  if (state === FSM.UI_OPEN) {
+  updateExitDoorProximity();
+
+  if (exitDoorUiOpen) {
+    hideMyCommentBoardBtn();
+    renderer.render(scene, camera);
+    return;
+  }
+
+  if (recentCommentsUiOpen) {
+    hideMyCommentBoardBtn();
+    renderer.render(scene, camera);
+    return;
+  }
+
+  if (isOverlayOpening || state === FSM.UI_OPEN || pot.isOpen?.()) {
+    hideMyCommentBoardBtn();
     renderer.render(scene, camera);
     return;
   }
@@ -3111,14 +4006,42 @@ function animate() {
   }
   if (activePotRoot) setPotHighlight(activePotRoot, shouldPotGlow);
 
+
+  if (recentCommentsUiOpen) {
+    hideCenterAction();
+    updateHUD();
+    renderer.render(scene, camera);
+    return;
+  }
+    const shouldShowMyBoardBtn =
+    !exitDoorUiOpen &&
+    !recentCommentsUiOpen &&
+    state !== FSM.UI_OPEN &&
+    !pot.isOpen?.() &&
+    !!assignedTableId;
+
+  if (shouldShowMyBoardBtn) {
+    showMyCommentBoardBtn();
+  } else {
+    hideMyCommentBoardBtn();
+  }
   // CTA
   let shouldShowCTA = false;
   let nextCTALabel = "";
 
-  if (state === FSM.FREE_ROAM && hallAssignmentRevealed) {
-    if (isLookingAtAssignedTable()) {
-      shouldShowCTA = true;
-      nextCTALabel = "入座";
+  if (state === FSM.FREE_ROAM) {
+    const hitTable = getLookAtTable();
+    if (hitTable) {
+      const tableId = hitTable.name;
+      const info = tableRegistry.get(tableId);
+
+      if (info) {
+        const dist = distanceToTable(info, player.position);
+        if (dist <= INTERACT_DISTANCE) {
+          shouldShowCTA = true;
+          nextCTALabel = "入座";
+        }
+      }
     }
   }
 
