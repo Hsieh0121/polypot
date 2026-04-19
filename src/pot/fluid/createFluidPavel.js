@@ -374,7 +374,7 @@ const displayShaderSource = [
   "float dyeMask(vec3 c){return clamp(length(c)*5.0,0.0,1.0);}",
   "float edgeAlpha(float m){return smoothstep(0.05,0.25,m);}",
   // 保色相、亮度 floor：讓任何像素不低於 minLen
-  "vec3 brightnessFloor(vec3 c,float minLen){float len=max(length(c),0.001);return len<minLen?c/len*minLen:c;}",
+  "vec3 brightnessFloor(vec3 c,float minLen){float len=length(c);if(len<=0.00001)return c;return len<minLen?c/len*minLen:c;}",
 
   // ink — 純色，亮度 floor 0.35，無立體感
   "vec4 applyInk(sampler2D d){vec3 c=texture2D(d,vUv).rgb;c=clamp(c,0.0,1.0);float m=dyeMask(c);if(m<0.02)return vec4(0.0);c=brightnessFloor(c,0.99);float a=edgeAlpha(m);return vec4(c,a);}",

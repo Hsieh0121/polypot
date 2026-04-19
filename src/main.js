@@ -3713,16 +3713,6 @@ function updateExitDoorProximity() {
 
   const inRange = distXZ <= exitDoorRadius;
 
-  if (!window.__exitDoorDebugOnce || Math.random() < 0.02) {
-    console.log("[exitDoor check]", {
-      player: playerPos.toArray(),
-      center: exitDoorCenter.toArray(),
-      radius: exitDoorRadius,
-      distXZ,
-      inRange,
-    });
-    window.__exitDoorDebugOnce = true;
-  }
 
   if (inRange && !exitDoorInRange) {
     exitDoorInRange = true;
@@ -3904,15 +3894,20 @@ function animate() {
     }
   }
 
-  let nextPotRoot = null;
-  if (activeTableId) {
-    nextPotRoot = tableRegistry.get(activeTableId)?.potRef ?? null;
-  }
-  if (nextPotRoot !== activePotRoot) {
+  let nextPotId = activeTableId ?? null;
+  let lastActivePotId = null;
+  if (nextPotId !== lastActivePotId) {
+    lastActivePotId = nextPotId;
+
+    const potRoot = nextPotId
+      ? tableRegistry.get(nextPotId)?.potRef
+      : null;
+
     if (activePotRoot) setPotHighlight(activePotRoot, false);
-    activePotRoot = nextPotRoot;
+    activePotRoot = potRoot;
     if (activePotRoot) setPotHighlight(activePotRoot, true);
-    console.log("active pot:", activePotRoot?.name ?? "none");
+
+    console.log("active pot:", nextPotId ?? "none");
   }
 
   if (!window.__seatDebugOnce) {

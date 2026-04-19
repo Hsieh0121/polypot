@@ -30,8 +30,9 @@ const allowedOrigins = [
   "http://localhost:5173",
   "http://localhost:5174",
   "http://localhost:5175",
-  process.env.CLIENT_ORIGIN,
-].filter(Boolean);
+  "https://polypot-xkiz.vercel.app",
+  "https://polypot-xkiz-esunbhnaf-hsieh0121s-projects.vercel.app",
+];
 
 app.use(
   cors({
@@ -49,6 +50,9 @@ const io = new Server(server, {
 });
 
 app.get("/health", (_, res) => res.send("ok"));
+app.get("/", (_, res) => {
+  res.send("polypot backend is running");
+});
 
 app.get("/profiles/:serial", (req, res) => {
   try {

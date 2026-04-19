@@ -69,7 +69,7 @@ export function createPotController({
   let cutLines = [];
   // ★ NEW: per-line color tracking
   let cutLineColors = [];
-  let cutColor = "#000000";
+  let cutColor = "#FF0000";
   let step3Bound = false;
 
   // ★ per-item "next placement" scale — only affects the NEXT placement, not existing ones
@@ -394,7 +394,7 @@ export function createPotController({
     cutPath = [];
     cutLines = [];
     cutLineColors = [];
-    cutColor = "#000000";
+    cutColor = "#FF0000";
 
     ballNextScale.clear();
     ingredientNextScale.clear();
@@ -841,7 +841,7 @@ async function storeIngredient(name) {
     anchorRect,
     initialColor = "#fd6fff",
     onChange,
-    presetColors = ["#FD6FFF", "#1248FF", "#E8F25A", "#FFFFFF", "#000000", "#FF8A65", "#7ED957", "#B388FF"],
+    presetColors = ["#FD6FFF", "#1248FF", "#E8F25A", "#FFFFFF", "#FF0000", "#FF8A65", "#7ED957", "#B388FF"],
   }) {
     let open = false;
 
@@ -987,9 +987,9 @@ async function storeIngredient(name) {
   function createAttachedColorPopover({
     panelEl,
     anchorEl,
-    initialColor = "#000000",
+    initialColor = "#FF0000",
     onChange,
-    presetColors = ["#000000", "#FD6FFF", "#1248FF", "#E8F25A", "#FFFFFF", "#FF8A65", "#7ED957", "#B388FF"],
+    presetColors = ["#FF0000", "#FD6FFF", "#1248FF", "#E8F25A", "#FFFFFF", "#FF8A65", "#7ED957", "#B388FF"],
     offsetX = 12,
     offsetY = 0,
   }) {
@@ -1331,7 +1331,7 @@ async function storeIngredient(name) {
     cutPath = [];
     cutLines = [];
     cutLineColors = [];
-    cutColor = "#000000";
+    cutColor = "#FF0000";
 
     ballNextScale.clear();
     ingredientNextScale.clear();
@@ -1553,7 +1553,7 @@ async function storeIngredient(name) {
         "#1248FF",
         "#E8F25A",
         "#FFFFFF",
-        "#000000",
+        "#FF0000",
         "#FF8A65",
         "#7ED957",
         "#B388FF",
@@ -2026,7 +2026,7 @@ async function storeIngredient(name) {
         "#1248FF",
         "#E8F25A",
         "#FFFFFF",
-        "#000000",
+        "#FF0000",
         "#FF8A65",
         "#7ED957",
         "#B388FF",
@@ -2502,7 +2502,7 @@ async function storeIngredient(name) {
     potCtx.lineJoin = "round";
 
     cutLines.forEach((line, idx) => {
-      potCtx.strokeStyle = cutLineColors[idx] ?? "#000000";
+      potCtx.strokeStyle = cutLineColors[idx] ?? "#FF0000";
       strokePath(potCtx, line, true);
     });
 
@@ -2889,7 +2889,7 @@ function renderVerticalList({
         redrawComposeCanvas();
       },
       presetColors: [
-        "#000000",
+        "#FF0000",
         "#FD6FFF",
         "#1248FF",
         "#E8F25A",
@@ -3171,7 +3171,17 @@ function renderVerticalList({
 
           step4Texture = loader.load(
             finalPotTextureUrl,
-            () => {
+            (tex) => {
+              tex.colorSpace = THREE.SRGBColorSpace;
+              tex.flipY = false;
+              tex.wrapS = THREE.ClampToEdgeWrapping;
+              tex.wrapT = THREE.ClampToEdgeWrapping;
+              tex.center.set(0.5, 0.5);
+              tex.rotation = 0;
+              tex.repeat.set(1, 1);
+              tex.offset.set(0, 0);
+              tex.needsUpdate = true;
+
               console.log("[step4] soup texture loaded");
               step4Renderer?.render(step4Scene, step4Camera);
             },
@@ -3180,16 +3190,6 @@ function renderVerticalList({
               console.error("[step4] failed to load finalPotTextureUrl", err);
             }
           );
-
-          step4Texture.colorSpace = THREE.SRGBColorSpace;
-          step4Texture.flipY = false;
-          step4Texture.wrapS = THREE.ClampToEdgeWrapping;
-          step4Texture.wrapT = THREE.ClampToEdgeWrapping;
-          step4Texture.center.set(0.5, 0.5);
-          step4Texture.rotation = 0;
-          step4Texture.repeat.set(1, 1);
-          step4Texture.offset.set(0, 0);
-          step4Texture.needsUpdate = true;
 
           soupBaseMesh.visible = true;
           soupBaseMesh.renderOrder = 10;
@@ -3806,7 +3806,7 @@ function renderVerticalList({
         } else {
           avatar.textContent = "pfp";
           Object.assign(avatar.style, {
-            color: isOwner ? "#1248FF" : "#000000",
+            color: isOwner ? "#1248FF" : "#FF0000",
             background: isOwner ? "#FFFFFF" : "#22FF22",
             fontFamily: '"zpix", ui-sans-serif, system-ui',
             fontSize: "16px",
@@ -4294,7 +4294,7 @@ function renderVerticalList({
         "#FD6FFF",
         "#1248FF",
         "#FFFFFF",
-        "#000000",
+        "#FF0000",
         "#FF8A65",
         "#7ED957",
         "#B388FF",
