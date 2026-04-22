@@ -1832,7 +1832,7 @@ console.log("[npcEnterQ1] begin", { locked: controls.isLocked });
   console.log("[npcEnterQ1] after unlock", { locked: controls.isLocked });
 
   npcState = NPC_STATE.Q1;
-  npcShowBubble("您好，請問是預約的賓客嗎？");
+  npcShowBubble("請問要進入會場嗎？");
 
   optionRow.style.pointerEvents = "auto";
   optionRow.style.opacity = "1";
@@ -1860,7 +1860,7 @@ function npcKickOut() {
 function npcAskName() {
     console.log("[npcEnterQ1] begin", { locked: controls.isLocked });
     npcState = NPC_STATE.ASK_NAME;
-    npcShowBubble("您登記的姓名是？");
+    npcShowBubble("如何稱呼您呢？");
 
     optionRow.style.opacity = "0";
     optionRow.style.pointerEvents = "none";
@@ -1879,9 +1879,9 @@ function npcAskName() {
 }
 function npcCheckId() {
     npcState = NPC_STATE.CHECK_ID;
-    npcShowBubble("好的，那這邊需要查看一下您的證件");
+    npcShowBubble("您可以選擇您的入席方式");
     btnNo.textContent = "用力拒絕";
-    btnYes.textContent = "拿出證件";
+    btnYes.textContent = "好啊";
 
     optionRow.style.opacity = "1";
     optionRow.style.transform = "translateY(0)";
@@ -2772,7 +2772,7 @@ submitBtn.addEventListener("click", async () => {
 
     if (!controls.isLocked) controls.lock();
 
-    await bubbleFor("已為您確認身份", 1500);
+    await bubbleFor("我們將會發放給您新的識別證明", 1500);
     await bubbleFor("您可以從旁邊的大門進入會場", 1500);
 
     bubbleHide();
