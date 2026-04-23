@@ -1486,28 +1486,6 @@ avatarColorBtn.style.padding = "0";
 avatarColorBtn.style.boxShadow = "0 10px 24px rgba(0,0,0,0.08)";
 drawToolRow.appendChild(avatarColorBtn);
 
-const avatarColorPopover = createColorPopover({
-  panelEl: avatarDrawPanel,
-  anchorEl: avatarColorBtn,
-  initialColor: avatarDrawColor,
-  onChange: (nextColor) => {
-    avatarDrawColor = nextColor;
-    avatarColorBtn.style.background = nextColor;
-  },
-  presetColors: [
-    "#FD6FFF",
-    "#1248FF",
-    "#FFFFFF",
-    "#000000",
-    "#D9D9D9",
-    "#FF8A00",
-    "#00C853",
-    "#00BCD4",
-  ],
-  title: "自訂顏色",
-  offsetX: 12,
-  offsetY: 0,
-});
 
 // brush
 const avatarBrushBtn = makeRoundToolButton();
@@ -1591,6 +1569,29 @@ let avatarDrawColor = "#FD6FFF";
 let avatarBrushSize = 10;
 let avatarToolMode = "draw";
 let avatarDrawing = false;
+
+const avatarColorPopover = createColorPopover({
+  panelEl: avatarDrawPanel,
+  anchorEl: avatarColorBtn,
+  initialColor: avatarDrawColor,
+  onChange: (nextColor) => {
+    avatarDrawColor = nextColor;
+    avatarColorBtn.style.background = nextColor;
+  },
+  presetColors: [
+    "#FD6FFF",
+    "#1248FF",
+    "#FFFFFF",
+    "#000000",
+    "#D9D9D9",
+    "#FF8A00",
+    "#00C853",
+    "#00BCD4",
+  ],
+  title: "自訂顏色",
+  offsetX: 12,
+  offsetY: 0,
+});
 
 function initAvatarDrawCanvas() {
   drawCanvasWrap.innerHTML = "";
