@@ -287,8 +287,6 @@ export function initMobileInput({
     // 底部按鈕區不要搶
     if (isInsideActionButtons(e.clientX, e.clientY)) return false;
 
-    // 只允許右側/偏右區域開始 look
-    if (!isRightLookArea(e.clientX)) return false;
 
     lookDrag.pointerId = e.pointerId;
     lookDrag.active = true;
