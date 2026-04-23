@@ -307,9 +307,13 @@ function syncTouchLookFromCamera() {
 }
 
 function applyTouchLook() {
-  controls.getObject().rotation.y = touchLook.yaw;
-  camera.rotation.x = touchLook.pitch;
-  camera.rotation.z = 0;
+  const obj = controls.getObject();
+
+  obj.rotation.order = "YXZ";
+  camera.rotation.order = "YXZ";
+
+  obj.rotation.set(0, touchLook.yaw, 0);
+  camera.rotation.set(touchLook.pitch, 0, 0);
 }
 
 function isTouchLookBlocked() {

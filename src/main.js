@@ -1050,15 +1050,16 @@ const touchLook = {
 };
 
 function syncTouchLookFromCamera() {
-  const e = new THREE.Euler().setFromQuaternion(camera.quaternion, "YXZ");
-  touchLook.yaw = e.y;
-  touchLook.pitch = e.x;
+  touchLook.yaw = player.rotation.y;
+  touchLook.pitch = camera.rotation.x;
 }
 
 function applyTouchLook() {
-  player.rotation.y = touchLook.yaw;
-  camera.rotation.x = touchLook.pitch;
-  camera.rotation.z = 0;
+  player.rotation.order = "YXZ";
+  camera.rotation.order = "YXZ";
+
+  player.rotation.set(0, touchLook.yaw, 0);
+  camera.rotation.set(touchLook.pitch, 0, 0);
 }
 
 function isTouchLookBlocked() {
@@ -3573,7 +3574,9 @@ function sitSeatLocalSnap(seat){
   player.position.copy(seat.pos);
   player.quaternion.copy(seat.quat);
 
-  player.position.y = seat.pos.y + EYE_HEIGHT_SEATED;
+  const e = new THREE.Euler().setFromQuaternion(seat.quat, "YXZ");
+  player.rotation.set(0, e.y, 0);
+  camera.rotation.set(0, 0, 0);
   syncTouchLookFromCamera();
   velY = 0;
   isGrounded = true;
