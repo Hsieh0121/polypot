@@ -302,17 +302,13 @@ const touchLook = {
 };
 
 function syncTouchLookFromCamera() {
-  touchLook.yaw = playerObject.rotation.y;
+  touchLook.yaw = controls.getObject().rotation.y;
   touchLook.pitch = camera.rotation.x;
 }
 
 function applyTouchLook() {
-  playerObject.rotation.order = "YXZ";
-  camera.rotation.order = "YXZ";
-
-  playerObject.rotation.y = touchLook.yaw;
+  controls.getObject().rotation.y = touchLook.yaw;
   camera.rotation.x = touchLook.pitch;
-  camera.rotation.y = 0;
   camera.rotation.z = 0;
 }
 
