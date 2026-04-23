@@ -14,6 +14,8 @@ export default defineConfig({
         entry: resolve(__dirname, "entry.html"),
         white: resolve(__dirname, "white.html"),
         hall: resolve(__dirname, "hall.html"),
+        print: resolve(__dirname, "print.html"),
+        printAdmin: resolve(__dirname, "print-admin.html"),
       },
     },
   },
