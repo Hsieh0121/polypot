@@ -311,14 +311,12 @@ export function initMobileInput({
     lookDrag.lastX = e.clientX;
     lookDrag.lastY = e.clientY;
 
-    // 依你的手感再調
-    const LOOK_SENSITIVITY_X = 0.018;
-    const LOOK_SENSITIVITY_Y = 0.018;
+    const LOOK_SENSITIVITY_X = 0.008;
+    const LOOK_SENSITIVITY_Y = 0.008;
 
-    // 小抖動過濾
     const DEAD_PX = 0.5;
     const outX = Math.abs(dx) < DEAD_PX ? 0 : dx * LOOK_SENSITIVITY_X;
-    const outY = Math.abs(dy) < DEAD_PX ? 0 : dy * LOOK_SENSITIVITY_Y;
+    const outY = Math.abs(dy) < DEAD_PX ? 0 : -dy * LOOK_SENSITIVITY_Y;
 
     if (outX !== 0 || outY !== 0) {
       onLook(outX, outY);
