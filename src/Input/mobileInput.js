@@ -512,7 +512,6 @@ export function initMobileInput({
 
   function onResize() {
     moveStick.refreshGeometry();
-    lookStick.refreshGeometry();
     updateVisibility();
   }
 
