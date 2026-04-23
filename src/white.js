@@ -301,9 +301,11 @@ const touchLook = {
 };
 
 function syncTouchLookFromCamera() {
-  const e = new THREE.Euler().setFromQuaternion(camera.quaternion, "YXZ");
-  touchLook.yaw = e.y;
-  touchLook.pitch = e.x;
+  const obj = controls.object;
+  if (!obj) return;
+
+  touchLook.yaw = obj.rotation.y;
+  touchLook.pitch = camera.rotation.x;
 }
 
 function applyTouchLook() {
@@ -3128,7 +3130,15 @@ loader.load("/white.glb", (gltf) => {
     center.z
     );
     const target = new THREE.Vector3(center.x, obj.position.y, center.z + 10);
-    obj.lookAt(target);
+    const dx = target.x - obj.position.x;
+    const dz = target.z - obj.position.z;
+
+    obj.rotation.order = "YXZ";
+    camera.rotation.order = "YXZ";
+
+    obj.rotation.set(0, Math.atan2(dx, dz), 0);
+    camera.rotation.set(0, 0, 0);
+
     syncTouchLookFromCamera();
 
 
