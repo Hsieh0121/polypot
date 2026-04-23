@@ -2114,15 +2114,16 @@ if (window.matchMedia("(pointer: coarse)").matches) {
     isUiOpen: () =>
       uiActive ||
       idOverlay.style.display !== "none" ||
-      avatarOverlay.style.display !== "none",
+      avatarOverlay.style.display !== "none" ||
+      avatarDrawOverlay.style.display !== "none" ||
+      doorUiActive,
 
-    onLook: (nx, ny) => {
+    onLook: (dx, dy) => {
       if (!touchLook) return;
+      if (isTouchLookBlocked()) return;
 
-      const LOOK_STEP = 0.035;
-
-      touchLook.yaw -= nx * LOOK_STEP;
-      touchLook.pitch -= ny * LOOK_STEP;
+      touchLook.yaw -= dx;
+      touchLook.pitch -= dy;
 
       touchLook.pitch = THREE.MathUtils.clamp(
         touchLook.pitch,

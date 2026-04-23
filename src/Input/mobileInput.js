@@ -236,78 +236,116 @@ export function initMobileInput({
     enqueueAction(ACTION.JUMP);
   });
 
+    // =========================
+  // drag anywhere on right side to look
   // =========================
-  // right look stick
-  // =========================
-  const lookStick = makeStick({
-    side: "right",
-    size: 104,
-    knobSize: 44,
-    bottom: 22,
-    sideOffset: 22,
-  });
-  let lookAxisLock = null; // "x" | "y" | null
+  const lookDrag = {
+    pointerId: null,
+    active: false,
+    lastX: 0,
+    lastY: 0,
+  };
 
-  function emitLook(nx, ny) {
+  function isRightLookArea(clientX) {
+    const vw = window.innerWidth;
+    return clientX > vw * 0.38;
+  }
+
+  function isInsideMoveStick(clientX, clientY) {
+    const rect = moveStick.wrap.getBoundingClientRect();
+    return (
+      clientX >= rect.left &&
+      clientX <= rect.right &&
+      clientY >= rect.top &&
+      clientY <= rect.bottom
+    );
+  }
+
+  function isInsideActionButtons(clientX, clientY) {
+    const els = [interactBtn, cancelBtn, confirmBtn];
+    return els.some((el) => {
+      if (!el || el.style.display === "none") return false;
+      const rect = el.getBoundingClientRect();
+      return (
+        clientX >= rect.left &&
+        clientX <= rect.right &&
+        clientY >= rect.top &&
+        clientY <= rect.bottom
+      );
+    });
+  }
+
+  function beginLookDrag(e) {
+    if (!shouldShow()) return false;
+    if (typeof onLook !== "function") return false;
+    if (!!isUiOpen()) return false;
+    if (lookDrag.pointerId !== null) return false;
+
+    // 左下移動搖桿區不要搶
+    if (isInsideMoveStick(e.clientX, e.clientY)) return false;
+
+    // 底部按鈕區不要搶
+    if (isInsideActionButtons(e.clientX, e.clientY)) return false;
+
+    // 只允許右側/偏右區域開始 look
+    if (!isRightLookArea(e.clientX)) return false;
+
+    lookDrag.pointerId = e.pointerId;
+    lookDrag.active = true;
+    lookDrag.lastX = e.clientX;
+    lookDrag.lastY = e.clientY;
+
+    root.setPointerCapture?.(e.pointerId);
+    e.preventDefault();
+    return true;
+  }
+
+  function moveLookDrag(e) {
+    if (!lookDrag.active) return;
+    if (e.pointerId !== lookDrag.pointerId) return;
     if (typeof onLook !== "function") return;
 
-    const DEAD = 0.22;
-    const LOCK_THRESHOLD = 0.30;
+    const dx = e.clientX - lookDrag.lastX;
+    const dy = e.clientY - lookDrag.lastY;
 
-    let x = Math.abs(nx) < DEAD ? 0 : nx;
-    let y = Math.abs(ny) < DEAD ? 0 : ny;
+    lookDrag.lastX = e.clientX;
+    lookDrag.lastY = e.clientY;
 
-    if (x === 0 && y === 0) return;
+    // 依你的手感再調
+    const LOOK_SENSITIVITY_X = 0.018;
+    const LOOK_SENSITIVITY_Y = 0.018;
 
-    // 還沒鎖軸時，先決定這次拖曳只走水平或垂直
-    if (!lookAxisLock) {
-      if (Math.abs(x) < LOCK_THRESHOLD && Math.abs(y) < LOCK_THRESHOLD) {
-        return;
-      }
+    // 小抖動過濾
+    const DEAD_PX = 0.5;
+    const outX = Math.abs(dx) < DEAD_PX ? 0 : dx * LOOK_SENSITIVITY_X;
+    const outY = Math.abs(dy) < DEAD_PX ? 0 : dy * LOOK_SENSITIVITY_Y;
 
-      lookAxisLock = Math.abs(x) > Math.abs(y) ? "x" : "y";
+    if (outX !== 0 || outY !== 0) {
+      onLook(outX, outY);
     }
 
-    // 一旦鎖軸，就只輸出四方向固定值
-    if (lookAxisLock === "x") {
-      onLook(Math.sign(x), 0);
-      return;
-    }
-
-    if (lookAxisLock === "y") {
-      onLook(0, Math.sign(y));
-      return;
-    }
+    e.preventDefault();
   }
 
-  lookStick.wrap.addEventListener("pointerdown", (e) => {
-    const { nx, ny } = lookStick.updateFromPointer(e.clientX, e.clientY);
-    emitLook(nx, ny);
-  });
-
-  lookStick.wrap.addEventListener("pointermove", (e) => {
-    if (e.pointerId !== lookStick.state.pointerId) return;
-    const { nx, ny } = lookStick.updateFromPointer(e.clientX, e.clientY);
-    emitLook(nx, ny);
-  });
-
-  function resetLookStick() {
-    lookStick.reset();
-    lookAxisLock = null;
+  function endLookDrag(e) {
+    if (e.pointerId !== lookDrag.pointerId) return;
+    resetLookDrag();
+    e.preventDefault();
   }
 
-  lookStick.wrap.addEventListener("pointerup", (e) => {
-    if (e.pointerId !== lookStick.state.pointerId) return;
-    resetLookStick();
-  });
+  function resetLookDrag() {
+    lookDrag.pointerId = null;
+    lookDrag.active = false;
+    lookDrag.lastX = 0;
+    lookDrag.lastY = 0;
+  }
 
-  lookStick.wrap.addEventListener("pointercancel", (e) => {
-    if (e.pointerId !== lookStick.state.pointerId) return;
-    resetLookStick();
-  });
-
-  lookStick.wrap.addEventListener("lostpointercapture", () => {
-    resetLookStick();
+  root.addEventListener("pointerdown", beginLookDrag);
+  root.addEventListener("pointermove", moveLookDrag);
+  root.addEventListener("pointerup", endLookDrag);
+  root.addEventListener("pointercancel", endLookDrag);
+  root.addEventListener("lostpointercapture", () => {
+    resetLookDrag();
   });
 
   // =========================
@@ -466,7 +504,7 @@ export function initMobileInput({
 
     if (!forceVisible) {
       resetMoveStickAndKeys();
-      resetLookStick();
+      resetLookDrag();
     }
 
     updateVisibility();
@@ -507,7 +545,7 @@ export function initMobileInput({
 
     destroy() {
       resetMoveStickAndKeys();
-      resetLookStick();
+      resetLookDrag();
       window.removeEventListener("resize", onResize);
       window.removeEventListener("orientationchange", onResize);
       root.remove();
