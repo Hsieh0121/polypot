@@ -140,8 +140,10 @@ function saveHallIdentity(profile) {
     sessionStorage.setItem(SS_SERIAL, profile.serial);
     localStorage.setItem(LS_HAS_PLAYED, "1");
     localStorage.setItem(LS_LAST_SERIAL, profile.serial);
+    localStorage.setItem("polypot_profile", JSON.stringify(profile));
   } else {
     sessionStorage.removeItem(SS_SERIAL);
+    localStorage.removeItem("polypot_profile");
   }
 }
 
@@ -1400,7 +1402,7 @@ recentCommentsOpenBtn.addEventListener("click", async (e) => {
 
   try {
     await openPotOverlayForTable(tableId, {
-      mobileDebug: IS_MOBILE,
+      mobileDebug: false,
     });
   } catch (err) {
     console.error("[recent comments] open pot failed", err);
@@ -1553,7 +1555,7 @@ ctaBtn.addEventListener("pointerdown", async (e) => {
 
     try {
       await openPotOverlayForTable(tableId, {
-        mobileDebug: IS_MOBILE,
+        mobileDebug: false,
       });
     } catch (err) {
       console.error("[CTA] open failed", err);
@@ -1755,10 +1757,33 @@ async function showRecentCommentsPrompt(tableId) {
   if (pot.isOpen?.()) return;
   if (exitDoorUiOpen) return;
 
+  recentCommentsUiOpen = true;
+  recentCommentsTableId = tableId;
+  recentCommentsData = [];
+  recentCommentsOwnerSerial = "";
+  recentCommentsOwnerAvatarPhoto = "";
+  recentCommentsLayer.style.display = "block";
+  recentCommentsLayer.style.pointerEvents = "auto";
+
+  clearMoveKeys();
+  hideCenterAction();
+  hideHUD();
+
+  if (!IS_MOBILE && controls?.isLocked) {
+    controls.unlock();
+  }
+
+  if (IS_MOBILE) {
+    setMobileHudVisible(false);
+  }
+
+  clearRecentCommentsBubbles();
+
   const roomId =
     currentProfile?.roomId || mapSerialToRoom(currentProfile?.serial);
-  
+
   const ownerSerial = getOwnerSerialFromRoomAndTable(roomId, tableId);
+  recentCommentsOwnerSerial = ownerSerial;
 
   let ownerProfile = null;
   try {
@@ -1779,25 +1804,8 @@ async function showRecentCommentsPrompt(tableId) {
     console.warn("[recent comments] fetch failed", { roomId, tableId, err });
   }
 
-  recentCommentsUiOpen = true;
-  recentCommentsTableId = tableId;
   recentCommentsData = comments;
-  recentCommentsOwnerSerial = ownerSerial;
   recentCommentsOwnerAvatarPhoto = ownerProfile?.avatarPhoto || "";
-  recentCommentsLayer.style.display = "block";
-  recentCommentsLayer.style.pointerEvents = "auto";
-
-  clearMoveKeys();
-  hideCenterAction();
-  hideHUD();
-
-  if (!IS_MOBILE && controls?.isLocked) {
-    controls.unlock();
-  }
-
-  if (IS_MOBILE) {
-    setMobileHudVisible(false);
-  }
 
   renderRecentCommentBubbles(comments);
 }
@@ -2905,8 +2913,8 @@ if (!exitDoorMesh) {
     window.__tableInfos = tableInfos;
 
     const seatDebug = {
-    group: null,
-    enabled: true,
+      group: null,
+      enabled: false,
     };
     
     function clearSeatDebug (scene) {
@@ -2961,7 +2969,7 @@ if (!exitDoorMesh) {
     // --- force seat hit meshes raycastable ---
     for (const m of seatHitMeshes) {
       m.layers.set(0);
-      m.visible = true;
+      m.visible = false;
     }
     camera.layers.enable(0);
     viewRaycaster.layers.set(0);
@@ -3309,7 +3317,7 @@ function dispatchAction(action) {
         activeTableId = seated.tableId;
 
         openPotOverlayForTable(activeTableId, {
-          mobileDebug: IS_MOBILE,
+          mobileDebug: false,
         }).then(() => {
           const tableState =
             tablePotStateMap.get(activeTableId) ??
