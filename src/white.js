@@ -34,13 +34,41 @@ document.querySelector("#app").appendChild(renderer.domElement);
 
 
 window.addEventListener("resize", () => {
-    camera.aspect = window.innerWidth / window.innerHeight;
-    camera.updateProjectionMatrix();
-    renderer.setSize(window.innerWidth, window.innerHeight);
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+
+  fitCenteredPanel(idCard, 700, 455);
+  fitCenteredPanel(avatarPanel, 860, 420);
+  fitCenteredPanel(avatarDrawPanel, 860, 420);
 });
 
 const controls = new PointerLockControls(camera, renderer.domElement);
 let uiActive = false; 
+
+function safeLockControls() {
+  if (IS_MOBILE) return;
+  if (!renderer?.domElement) return;
+  if (typeof renderer.domElement.requestPointerLock !== "function") return;
+  if (controls?.isLocked) return;
+
+  try {
+    controls.lock();
+  } catch (err) {
+    console.warn("[safeLockControls] failed", err);
+  }
+}
+
+function safeUnlockControls() {
+  if (IS_MOBILE) return;
+  if (!controls?.isLocked) return;
+
+  try {
+    controls.unlock();
+  } catch (err) {
+    console.warn("[safeUnlockControls] failed", err);
+  }
+}
 
 const IS_MOBILE = window.matchMedia("(pointer: coarse)").matches;
 function shiftUpOnMobile(el, px = 40) {
@@ -155,8 +183,7 @@ renderer.domElement.addEventListener("click", (e) => {
   if (IS_MOBILE) return;
   if (e.target.closest && e.target.closest("#ui-root")) return;
   if (uiActive) return;
-  if (!controls.isLocked) controls.lock();
-  if (!IS_MOBILE && !controls.isLocked) controls.lock();
+  safeLockControls();
 });
 
 document.addEventListener("pointerlockchange", () => {
@@ -173,6 +200,14 @@ const style = document.createElement("style");
 style.textContent = `
   #ui-root input::placeholder {
     color: rgba(255,255,255,0.9);
+  }
+
+  @media (pointer: coarse) {
+    #ui-root input,
+    #ui-root textarea,
+    #ui-root select {
+      font-size: 16px !important;
+    }
   }
 `;
 document.head.appendChild(style);
@@ -510,7 +545,7 @@ nameInput.style.width = "100%";
 nameInput.style.border = "0";
 nameInput.style.outline = "none";
 nameInput.style.fontFamily = '"zpix", system-ui, sans-serif'
-nameInput.style.fontSize = "13px";
+nameInput.style.fontSize = "16px";
 nameInput.style.fontWeight = "700";
 nameInput.style.color = "white";
 nameInput.style.caretColor = "white";
@@ -1068,7 +1103,8 @@ avatarPanel.style.gap = "22px";
 avatarPanel.style.padding = "28px";
 avatarPanel.style.fontFamily = '"zpix", system-ui, sans-serif'
 avatarOverlay.appendChild(avatarPanel);
-fitAnnouncement(0.82);
+fitCenteredPanel(avatarPanel, 860, 420);
+
 
 const previewWrap = document.createElement("div");
 previewWrap.style.position = "relative";
@@ -1191,6 +1227,7 @@ avatarDrawPanel.style.padding = "22px";
 avatarDrawPanel.style.boxSizing = "border-box";
 avatarDrawPanel.style.fontFamily = '"zpix", system-ui, sans-serif'
 avatarDrawOverlay.appendChild(avatarDrawPanel);
+fitCenteredPanel(avatarDrawPanel, 860, 420);
 
 // 左側工作區
 const drawPreviewWrap = document.createElement("div");
@@ -1310,7 +1347,13 @@ drawToolRow.appendChild(avatarDrawConfirmBtn);
 const avatarColorInput = document.createElement("input");
 avatarColorInput.type = "color";
 avatarColorInput.value = "#fd6fff";
-avatarColorInput.style.display = "none";
+avatarColorInput.style.position = "fixed";
+avatarColorInput.style.left = "-9999px";
+avatarColorInput.style.top = "0";
+avatarColorInput.style.width = "1px";
+avatarColorInput.style.height = "1px";
+avatarColorInput.style.opacity = "0";
+avatarColorInput.style.pointerEvents = "none";
 avatarDrawOverlay.appendChild(avatarColorInput);
 
 const avatarBrushPopup = document.createElement("div");
@@ -1497,7 +1540,11 @@ drawUploadBtn.addEventListener("click", () => {
 });
 
 avatarColorBtn.addEventListener("click", () => {
-  avatarColorInput.click();
+  if (typeof avatarColorInput.showPicker === "function") {
+    avatarColorInput.showPicker();
+  } else {
+    avatarColorInput.click();
+  }
 });
 
 avatarColorInput.addEventListener("input", (e) => {
@@ -1849,7 +1896,7 @@ function npcHideAll(){
 function npcEnterQ1() {
 console.log("[npcEnterQ1] begin", { locked: controls.isLocked });
   enterUiMode();
-  if (controls.isLocked) controls.unlock();
+  safeUnlockControls();
   console.log("[npcEnterQ1] after unlock", { locked: controls.isLocked });
 
   npcState = NPC_STATE.Q1;
