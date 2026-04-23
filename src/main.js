@@ -1050,16 +1050,15 @@ const touchLook = {
 };
 
 function syncTouchLookFromCamera() {
-  touchLook.yaw = player.rotation.y;
-  touchLook.pitch = camera.rotation.x;
+  const e = new THREE.Euler().setFromQuaternion(camera.quaternion, "YXZ");
+  touchLook.yaw = e.y;
+  touchLook.pitch = e.x;
 }
 
 function applyTouchLook() {
-  player.rotation.order = "YXZ";
-  camera.rotation.order = "YXZ";
-
-  player.rotation.set(0, touchLook.yaw, 0);
-  camera.rotation.set(touchLook.pitch, 0, 0);
+  player.rotation.y = touchLook.yaw;
+  camera.rotation.x = touchLook.pitch;
+  camera.rotation.z = 0;
 }
 
 function isTouchLookBlocked() {
@@ -1070,7 +1069,10 @@ syncTouchLookFromCamera();
 
 renderer.domElement.addEventListener("pointerdown", (e) => {
   if (IS_MOBILE) return;
-  if (uiActive) return;
+  if (isTouchLookBlocked()) return;
+
+  // 左半邊保留給搖桿，右半邊才控制視角
+  if (e.clientX < window.innerWidth * 0.45) return;
 
   touchLook.active = true;
   touchLook.pointerId = e.pointerId;
@@ -3571,9 +3573,7 @@ function sitSeatLocalSnap(seat){
   player.position.copy(seat.pos);
   player.quaternion.copy(seat.quat);
 
-  const e = new THREE.Euler().setFromQuaternion(seat.quat, "YXZ");
-  player.rotation.set(0, e.y, 0);
-  camera.rotation.set(0, 0, 0);
+  player.position.y = seat.pos.y + EYE_HEIGHT_SEATED;
   syncTouchLookFromCamera();
   velY = 0;
   isGrounded = true;

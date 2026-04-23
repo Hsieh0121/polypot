@@ -44,8 +44,7 @@ window.addEventListener("resize", () => {
 });
 
 const controls = new PointerLockControls(camera, renderer.domElement);
-const playerObject = controls.object;
-let uiActive = false;
+let uiActive = false; 
 
 function safeLockControls() {
   if (IS_MOBILE) return;
@@ -302,8 +301,9 @@ const touchLook = {
 };
 
 function syncTouchLookFromCamera() {
-  touchLook.yaw = controls.getObject().rotation.y;
-  touchLook.pitch = camera.rotation.x;
+  const e = new THREE.Euler().setFromQuaternion(camera.quaternion, "YXZ");
+  touchLook.yaw = e.y;
+  touchLook.pitch = e.x;
 }
 
 function applyTouchLook() {
@@ -317,18 +317,6 @@ function isTouchLookBlocked() {
 }
 
 syncTouchLookFromCamera();
-renderer.domElement.addEventListener("pointerdown", (e) => {
-  if (IS_MOBILE) return;
-  if (uiActive) return;
-
-  touchLook.active = true;
-  touchLook.pointerId = e.pointerId;
-  touchLook.lastX = e.clientX;
-  touchLook.lastY = e.clientY;
-
-  renderer.domElement.setPointerCapture?.(e.pointerId);
-  e.preventDefault();
-}, { passive: false });
 renderer.domElement.addEventListener("pointermove", (e) => {
   if (IS_MOBILE) return;
   if (!touchLook.active) return;
@@ -406,7 +394,7 @@ document.head.appendChild(style);
 controls.getObject = () => {
   return controls.object ?? camera;
 };
-scene.add(playerObject);
+scene.add (controls.getObject());
 
 const center = new THREE.Vector3();
 const size = new THREE.Vector3();
