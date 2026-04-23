@@ -824,7 +824,7 @@ idOverlay.appendChild(idDim);
 const idCard = document.createElement("div");
 idCard.style.position = "relative";
 idCard.style.left = "50%";
-idCard.style.top = "50%";
+idCard.style.top = "46%";
 idCard.style.transform = "translate(-50%,-50%)";
 idCard.style.width = "700px";
 idCard.style.height = "455px";
