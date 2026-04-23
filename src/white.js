@@ -323,6 +323,18 @@ function isTouchLookBlocked() {
 }
 
 syncTouchLookFromCamera();
+renderer.domElement.addEventListener("pointerdown", (e) => {
+  if (IS_MOBILE) return;
+  if (uiActive) return;
+
+  touchLook.active = true;
+  touchLook.pointerId = e.pointerId;
+  touchLook.lastX = e.clientX;
+  touchLook.lastY = e.clientY;
+
+  renderer.domElement.setPointerCapture?.(e.pointerId);
+  e.preventDefault();
+}, { passive: false });
 renderer.domElement.addEventListener("pointermove", (e) => {
   if (IS_MOBILE) return;
   if (!touchLook.active) return;
@@ -3130,15 +3142,7 @@ loader.load("/white.glb", (gltf) => {
     center.z
     );
     const target = new THREE.Vector3(center.x, obj.position.y, center.z + 10);
-    const dx = target.x - obj.position.x;
-    const dz = target.z - obj.position.z;
-
-    obj.rotation.order = "YXZ";
-    camera.rotation.order = "YXZ";
-
-    obj.rotation.set(0, Math.atan2(dx, dz), 0);
-    camera.rotation.set(0, 0, 0);
-
+    obj.lookAt(target);
     syncTouchLookFromCamera();
 
 

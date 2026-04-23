@@ -1070,10 +1070,7 @@ syncTouchLookFromCamera();
 
 renderer.domElement.addEventListener("pointerdown", (e) => {
   if (IS_MOBILE) return;
-  if (isTouchLookBlocked()) return;
-
-  // 左半邊保留給搖桿，右半邊才控制視角
-  if (e.clientX < window.innerWidth * 0.45) return;
+  if (uiActive) return;
 
   touchLook.active = true;
   touchLook.pointerId = e.pointerId;
