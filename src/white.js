@@ -211,6 +211,26 @@ socket.on("disconnect", (reason) => {
 
 socket.on("connect_error", (err) => {
   console.error("[white socket] connect_error", err.message);
+  if (window.__debugLog) {
+    window.__debugLog("[socket connect_error]", err.message);
+  }
+});
+
+window.__debugLog?.("[socket url]", SOCKET_URL);
+
+socket.on("connect", () => {
+  console.log("[white socket] connected", socket.id);
+  window.__debugLog?.("[socket connected]", socket.id);
+});
+
+socket.on("disconnect", (reason) => {
+  console.log("[white socket] disconnected", reason);
+  window.__debugLog?.("[socket disconnected]", reason);
+});
+
+socket.on("connect_error", (err) => {
+  console.error("[white socket] connect_error", err.message);
+  window.__debugLog?.("[socket connect_error]", err.message);
 });
 
 // =========================
@@ -238,6 +258,8 @@ socket.on("connect_error", (err) => {
       typeof v === "string" ? v : JSON.stringify(v, null, 2)
     ).join(" ") + "\n";
   };
+
+  window.__debugLog = log;
 
   window.addEventListener("error", (e) => {
     log("[error]", e.message, e.filename, e.lineno + ":" + e.colno);
@@ -381,7 +403,7 @@ function makePillButton(label){
     btn.style.borderRadius = "999px";
     btn.style.background = "#fd6fff";
     btn.style.color = "white";
-    btn.style.fontFamily = "system-ui, -apple-system, Segoe UI, Roboto, sans-serif";
+    btn.style.fontFamily = '"zpix", system-ui, sans-serif'
     btn.style.fontSize = "16px";
     btn.style.fontWeight = "700";
     btn.style.boxShadow = "0 10px 26px rgba(0,0,0,0.18)";
@@ -413,7 +435,7 @@ npcBubble.style.minHeight = "56px";
 npcBubble.style.display = "flex";
 npcBubble.style.alignItems = "center";
 npcBubble.style.justifyContent = "center";
-npcBubble.style.fontFamily = "system-ui, -apple-system, Segoe UI, Roboto, sans-serif";
+npcBubble.style.fontFamily = '"zpix", system-ui, sans-serif'
 npcBubble.style.fontSize = "17px";
 npcBubble.style.fontWeight = "600";
 npcBubble.style.color = "#fd6fff";
@@ -535,7 +557,7 @@ nameInput.placeholder = "輸入名稱";
 nameInput.style.width = "100%";
 nameInput.style.border = "0";
 nameInput.style.outline = "none";
-nameInput.style.fontFamily = "system-ui, -apple-system, Segoe UI, Roboto, sans-serif";
+nameInput.style.fontFamily = '"zpix", system-ui, sans-serif'
 nameInput.style.fontSize = "13px";
 nameInput.style.fontWeight = "700";
 nameInput.style.color = "white";
@@ -581,7 +603,7 @@ kicked.appendChild(kickedInner);
 
 const kickedText = document.createElement("div");
 kickedText.textContent = "您已被趕出等待區";
-kickedText.style.fontFamily = "system-ui, -apple-system, Segoe UI, Roboto, sans-serif";
+kickedText.style.fontFamily = '"zpix", system-ui, sans-serif'
 kickedText.style.fontSize = "22px";
 kickedText.style.fontWeight = "800";
 kickedText.style.color = "#fd6fff";
@@ -646,7 +668,7 @@ idCard.style.height = "455px";
 idCard.style.background = "white";
 idCard.style.borderRadius = "28px";
 idCard.style.boxShadow = "0 18px 60px rgba(0,0,0,0.20)";
-idCard.style.fontFamily = `"Pixelify Sans", system-ui, -apple-system, Segoe UI, Roboto, sans-serif`;
+idCard.style.fontFamily = '"zpix", system-ui, sans-serif'
 idOverlay.appendChild(idCard);
 fitCenteredPanel(idCard, 700, 455);
 
@@ -738,7 +760,7 @@ editBtn.style.cursor = "pointer";
 editBtn.style.borderRadius = "999px";
 editBtn.style.background = "#FD6FFF";
 editBtn.style.color = "#FFFFFF";
-editBtn.style.fontFamily = `"Pixelify Sans", system-ui, -apple-system, Segoe UI, Roboto, sans-serif`;
+editBtn.style.fontFamily = '"zpix", system-ui, sans-serif'
 editBtn.style.fontWeight = "600";
 editBtn.style.fontSize = "16px";
 editBtn.style.display = "flex";
@@ -811,7 +833,7 @@ infoBox.style.outline = "none";
 infoBox.style.resize = "none";
 infoBox.style.padding = "0";
 infoBox.style.boxSizing = "border-box";
-infoBox.style.fontFamily = `"Pixelify Sans", system-ui, -apple-system, Segoe UI, Roboto, sans-serif`;
+infoBox.style.fontFamily = '"zpix", system-ui, sans-serif'
 infoBox.style.fontWeight = "600";
 infoBox.style.fontSize = "16px";
 infoBox.style.color = "#1248FF";
@@ -856,7 +878,7 @@ sigClearBtn.style.padding = "0";
 sigClearBtn.style.cursor = "pointer";
 sigClearBtn.style.background = "transparent";
 sigClearBtn.style.color = "#FD6FFF";
-sigClearBtn.style.fontFamily = `"Pixelify Sans", system-ui`;
+sigClearBtn.style.fontFamily = '"zpix", system-ui, sans-serif'
 sigClearBtn.style.fontSize = "18px";
 sigClearBtn.style.lineHeight = "18px";
 sigClearBtn.style.userSelect = "none";
@@ -1092,7 +1114,7 @@ avatarPanel.style.display = "grid";
 avatarPanel.style.gridTemplateColumns = "1fr 300px";
 avatarPanel.style.gap = "22px";
 avatarPanel.style.padding = "28px";
-avatarPanel.style.fontFamily = "system-ui, -apple-system, Segoe UI, Roboto, sans-serif";
+avatarPanel.style.fontFamily = '"zpix", system-ui, sans-serif'
 avatarOverlay.appendChild(avatarPanel);
 fitAnnouncement(0.82);
 
@@ -1215,7 +1237,7 @@ avatarDrawPanel.style.borderRadius = "28px";
 avatarDrawPanel.style.boxShadow = "0 18px 60px rgba(0,0,0,0.20)";
 avatarDrawPanel.style.padding = "22px";
 avatarDrawPanel.style.boxSizing = "border-box";
-avatarDrawPanel.style.fontFamily = "system-ui, -apple-system, Segoe UI, Roboto, sans-serif";
+avatarDrawPanel.style.fontFamily = '"zpix", system-ui, sans-serif'
 avatarDrawOverlay.appendChild(avatarDrawPanel);
 
 // 左側工作區
@@ -1622,7 +1644,7 @@ doorBubble.style.minHeight = "56px";
 doorBubble.style.display = "flex";
 doorBubble.style.alignItems = "center";
 doorBubble.style.justifyContent = "center";
-doorBubble.style.fontFamily = "system-ui, -apple-system, Segoe UI, Roboto, sans-serif";
+doorBubble.style.fontFamily = '"zpix", system-ui, sans-serif'
 doorBubble.style.fontSize = "17px";
 doorBubble.style.fontWeight = "600";
 doorBubble.style.color = "#fd6fff";

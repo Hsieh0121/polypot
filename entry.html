@@ -5,6 +5,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Polypot Entry</title>
   <style>
+    @font-face {
+      font-family: "zpix";
+      src: url("/fonts/zpix.ttf") format("truetype");
+      font-display: swap;
+    }
     html, body {
       margin: 0;
       width: 100%;
@@ -400,7 +405,10 @@
     currentSerial: "polypot_serial",
   };
 
-  const API_BASE = "http://localhost:3001";
+  const API_BASE =
+  location.hostname === "localhost" || location.hostname === "127.0.0.1"
+    ? "http://localhost:3001"
+    : "https://你的-render-domain.onrender.com";
 
   const continueBtn = document.getElementById("continueBtn");
   const newGameBtn = document.getElementById("newGameBtn");
