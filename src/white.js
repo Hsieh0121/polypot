@@ -91,9 +91,9 @@ function fitCenteredPanel(el, baseW, baseH) {
     return;
   }
 
-  const padX = 20;
-  const padTop = 92;
-  const padBottom = 36;
+  const padX = 10;
+  const padTop = 58;
+  const padBottom = 14;
 
   const availW = window.innerWidth - padX * 2;
   const availH = window.innerHeight - padTop - padBottom;
@@ -116,6 +116,177 @@ function fitAnnouncement(scale = 1) {
   if (!isSmallMobile()) return;
   announceWrap.style.transform = `scale(${scale})`;
   announceWrap.style.transformOrigin = "left bottom";
+}
+
+function createColorPopover({
+  panelEl,
+  anchorEl,
+  initialColor = "#FD6FFF",
+  onChange,
+  presetColors = [
+    "#FD6FFF",
+    "#1248FF",
+    "#FFFFFF",
+    "#000000",
+    "#D9D9D9",
+    "#FF8A00",
+    "#00C853",
+    "#00BCD4",
+  ],
+  title = "自訂顏色",
+  offsetX = 12,
+  offsetY = 0,
+}) {
+  let open = false;
+
+  const pop = document.createElement("div");
+  Object.assign(pop.style, {
+    position: "absolute",
+    left: "0px",
+    top: "0px",
+    width: "210px",
+    background: "#1a1a1a",
+    borderRadius: "18px",
+    padding: "12px",
+    display: "none",
+    flexDirection: "column",
+    gap: "12px",
+    zIndex: "120",
+    boxShadow: "0 6px 20px rgba(0,0,0,0.28)",
+    boxSizing: "border-box",
+  });
+  panelEl.appendChild(pop);
+
+  const presetWrap = document.createElement("div");
+  Object.assign(presetWrap.style, {
+    display: "grid",
+    gridTemplateColumns: "repeat(4, 1fr)",
+    gap: "10px",
+  });
+  pop.appendChild(presetWrap);
+
+  const nativeLabel = document.createElement("div");
+  nativeLabel.textContent = title;
+  Object.assign(nativeLabel.style, {
+    fontFamily: '"zpix", ui-sans-serif, system-ui',
+    fontSize: "16px",
+    color: "#fff",
+    lineHeight: "1",
+  });
+  pop.appendChild(nativeLabel);
+
+  const nativeInputWrap = document.createElement("div");
+  Object.assign(nativeInputWrap.style, {
+    width: "100%",
+    height: "44px",
+    borderRadius: "999px",
+    overflow: "hidden",
+    border: "1px solid rgba(255,255,255,0.18)",
+    background: "#2a2a2a",
+  });
+  pop.appendChild(nativeInputWrap);
+
+  const nativeInput = document.createElement("input");
+  nativeInput.type = "color";
+  nativeInput.value = initialColor;
+  Object.assign(nativeInput.style, {
+    width: "100%",
+    height: "100%",
+    border: "0",
+    padding: "0",
+    background: "transparent",
+    cursor: "pointer",
+  });
+  nativeInputWrap.appendChild(nativeInput);
+
+  const swatchButtons = [];
+
+  function applyColor(nextColor) {
+    nativeInput.value = nextColor;
+    swatchButtons.forEach((btn) => {
+      const active = btn.dataset.color?.toLowerCase() === nextColor.toLowerCase();
+      btn.style.outline = active ? "3px solid #FD6FFF" : "2px solid transparent";
+    });
+    onChange?.(nextColor);
+  }
+
+  presetColors.forEach((color) => {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.dataset.color = color;
+    Object.assign(btn.style, {
+      width: "38px",
+      height: "38px",
+      borderRadius: "999px",
+      border: "0",
+      outline: "2px solid transparent",
+      background: color,
+      cursor: "pointer",
+      padding: "0",
+    });
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      applyColor(color);
+    });
+    presetWrap.appendChild(btn);
+    swatchButtons.push(btn);
+  });
+
+  nativeInput.addEventListener("input", (e) => {
+    applyColor(e.target.value);
+  });
+
+  pop.addEventListener("pointerdown", (e) => {
+    e.stopPropagation();
+  });
+
+  function positionPopover() {
+    if (!anchorEl) return;
+    const left = anchorEl.offsetLeft + anchorEl.offsetWidth + offsetX;
+    const top = anchorEl.offsetTop + offsetY;
+    pop.style.left = `${left}px`;
+    pop.style.top = `${top}px`;
+  }
+
+  function close() {
+    if (!open) return;
+    open = false;
+    pop.style.display = "none";
+    document.removeEventListener("pointerdown", onDocPointerDown, true);
+  }
+
+  function openPopover() {
+    if (open) return;
+    positionPopover();
+    open = true;
+    pop.style.display = "flex";
+    setTimeout(() => {
+      document.addEventListener("pointerdown", onDocPointerDown, true);
+    }, 0);
+  }
+
+  function toggle() {
+    if (open) close();
+    else openPopover();
+  }
+
+  function onDocPointerDown(e) {
+    if (pop.contains(e.target)) return;
+    if (anchorEl?.contains?.(e.target)) return;
+    close();
+  }
+
+  applyColor(initialColor);
+
+  return {
+    el: pop,
+    toggle,
+    open: openPopover,
+    close,
+    setValue: applyColor,
+    isOpen: () => open,
+    reposition: positionPopover,
+  };
 }
 
 const touchLook = {
@@ -1232,7 +1403,7 @@ avatarDrawPanel.style.padding = "22px";
 avatarDrawPanel.style.boxSizing = "border-box";
 avatarDrawPanel.style.fontFamily = '"zpix", system-ui, sans-serif'
 avatarDrawOverlay.appendChild(avatarDrawPanel);
-fitCenteredPanel(avatarDrawPanel, 860, 420);
+fitCenteredPanel(avatarDrawPanel, 860, 460);
 
 // 左側工作區
 const drawPreviewWrap = document.createElement("div");
@@ -1315,6 +1486,29 @@ avatarColorBtn.style.padding = "0";
 avatarColorBtn.style.boxShadow = "0 10px 24px rgba(0,0,0,0.08)";
 drawToolRow.appendChild(avatarColorBtn);
 
+const avatarColorPopover = createColorPopover({
+  panelEl: avatarDrawPanel,
+  anchorEl: avatarColorBtn,
+  initialColor: avatarDrawColor,
+  onChange: (nextColor) => {
+    avatarDrawColor = nextColor;
+    avatarColorBtn.style.background = nextColor;
+  },
+  presetColors: [
+    "#FD6FFF",
+    "#1248FF",
+    "#FFFFFF",
+    "#000000",
+    "#D9D9D9",
+    "#FF8A00",
+    "#00C853",
+    "#00BCD4",
+  ],
+  title: "自訂顏色",
+  offsetX: 12,
+  offsetY: 0,
+});
+
 // brush
 const avatarBrushBtn = makeRoundToolButton();
 const avatarBrushImg = document.createElement("img");
@@ -1349,66 +1543,7 @@ avatarDrawConfirmBtn.appendChild(avatarDrawConfirmImg);
 drawToolRow.appendChild(avatarDrawConfirmBtn);
 
 // hidden native inputs
-const avatarColorInput = document.createElement("input");
-avatarColorInput.type = "color";
-avatarColorInput.value = "#fd6fff";
-avatarColorInput.style.position = "fixed";
-avatarColorInput.style.left = "-9999px";
-avatarColorInput.style.top = "0";
-avatarColorInput.style.width = "1px";
-avatarColorInput.style.height = "1px";
-avatarColorInput.style.opacity = "0";
-avatarColorInput.style.pointerEvents = "none";
-avatarDrawOverlay.appendChild(avatarColorInput);
 
-const avatarColorPopup = document.createElement("div");
-avatarColorPopup.style.position = "absolute";
-avatarColorPopup.style.left = "50%";
-avatarColorPopup.style.top = "50%";
-avatarColorPopup.style.width = "220px";
-avatarColorPopup.style.transform = "translate(-50%, -50%)";
-avatarColorPopup.style.padding = "14px";
-avatarColorPopup.style.background = "#ffffff";
-avatarColorPopup.style.borderRadius = "20px";
-avatarColorPopup.style.display = "none";
-avatarColorPopup.style.gridTemplateColumns = "repeat(4, 1fr)";
-avatarColorPopup.style.gap = "12px";
-avatarColorPopup.style.zIndex = "10";
-avatarColorPopup.style.boxShadow = "0 10px 24px rgba(0,0,0,0.18)";
-avatarDrawPanel.appendChild(avatarColorPopup);
-
-const avatarPresetColors = [
-  "#FD6FFF",
-  "#1248FF",
-  "#FFFFFF",
-  "#000000",
-  "#D9D9D9",
-  "#FF8A00",
-  "#00C853",
-  "#00BCD4",
-];
-
-avatarPresetColors.forEach((color) => {
-  const swatch = document.createElement("button");
-  swatch.type = "button";
-  swatch.style.width = "48px";
-  swatch.style.height = "48px";
-  swatch.style.borderRadius = "999px";
-  swatch.style.border = color === "#FFFFFF" ? "1px solid #ccc" : "0";
-  swatch.style.background = color;
-  swatch.style.cursor = "pointer";
-  swatch.style.padding = "0";
-  swatch.style.boxShadow = "0 4px 12px rgba(0,0,0,0.10)";
-
-  swatch.addEventListener("click", () => {
-    avatarDrawColor = color;
-    avatarColorBtn.style.background = color;
-    avatarColorInput.value = color;
-    avatarColorPopup.style.display = "none";
-  });
-
-  avatarColorPopup.appendChild(swatch);
-});
 
 const avatarBrushPopup = document.createElement("div");
 avatarBrushPopup.style.position = "absolute";
@@ -1578,7 +1713,7 @@ function openAvatarDrawEditor() {
 function closeAvatarDrawEditor() {
   avatarDrawOverlay.style.display = "none";
   avatarBrushPopup.style.display = "none";
-  avatarColorPopup.style.display = "none";
+  avatarColorPopover.close();
   avatarOverlay.style.display = "block";
 }
 
@@ -1598,14 +1733,10 @@ drawUploadBtn.addEventListener("click", () => {
 avatarColorBtn.addEventListener("click", (e) => {
   e.stopPropagation();
   avatarBrushPopup.style.display = "none";
-  avatarColorPopup.style.display =
-    avatarColorPopup.style.display === "grid" ? "none" : "grid";
+  avatarColorPopover.toggle();
 });
 
-avatarColorInput.addEventListener("input", (e) => {
-  avatarDrawColor = e.target.value;
-  avatarColorBtn.style.background = avatarDrawColor;
-});
+
 
 avatarBrushBtn.addEventListener("click", (e) => {
   e.stopPropagation();
@@ -1665,14 +1796,6 @@ document.addEventListener("pointerdown", (e) => {
     !avatarBrushBtn.contains(e.target)
   ) {
     avatarBrushPopup.style.display = "none";
-  }
-
-  if (
-    avatarColorPopup.style.display === "grid" &&
-    !avatarColorPopup.contains(e.target) &&
-    !avatarColorBtn.contains(e.target)
-  ) {
-    avatarColorPopup.style.display = "none";
   }
 });
 
