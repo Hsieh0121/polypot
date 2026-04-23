@@ -39,8 +39,8 @@ window.addEventListener("resize", () => {
   renderer.setSize(window.innerWidth, window.innerHeight);
 
   fitCenteredPanel(idCard, 700, 455);
-  fitCenteredPanel(avatarPanel, 860, 420);
-  fitCenteredPanel(avatarDrawPanel, 860, 420);
+  fitCenteredPanel(avatarPanel, 860, 460);
+  fitCenteredPanel(avatarDrawPanel, 860, 460);
 });
 
 const controls = new PointerLockControls(camera, renderer.domElement);
@@ -86,12 +86,17 @@ function fitCenteredPanel(el, baseW, baseH) {
   if (!el) return;
 
   if (!isSmallMobile()) {
+    el.style.transform = "translate(-50%, -50%)";
+    el.style.transformOrigin = "center center";
     return;
   }
 
-  const pad = 24;
-  const availW = window.innerWidth - pad * 2;
-  const availH = window.innerHeight - pad * 2;
+  const padX = 20;
+  const padTop = 92;
+  const padBottom = 36;
+
+  const availW = window.innerWidth - padX * 2;
+  const availH = window.innerHeight - padTop - padBottom;
 
   const scale = Math.min(1, availW / baseW, availH / baseH);
 
@@ -375,7 +380,7 @@ uiRoot.style.inset = "0";
 uiRoot.style.zIndex = "30001";
 uiRoot.style.pointerEvents = "none";
 document.body.appendChild(uiRoot);
-shiftUpOnMobile(uiRoot, 40);
+// shiftUpOnMobile(uiRoot, 40);
 
 function makePillButton(label){
     const btn = document.createElement("button");
@@ -1103,7 +1108,7 @@ avatarPanel.style.gap = "22px";
 avatarPanel.style.padding = "28px";
 avatarPanel.style.fontFamily = '"zpix", system-ui, sans-serif'
 avatarOverlay.appendChild(avatarPanel);
-fitCenteredPanel(avatarPanel, 860, 420);
+fitCenteredPanel(avatarPanel, 860, 460);
 
 
 const previewWrap = document.createElement("div");
@@ -1356,11 +1361,61 @@ avatarColorInput.style.opacity = "0";
 avatarColorInput.style.pointerEvents = "none";
 avatarDrawOverlay.appendChild(avatarColorInput);
 
+const avatarColorPopup = document.createElement("div");
+avatarColorPopup.style.position = "absolute";
+avatarColorPopup.style.left = "50%";
+avatarColorPopup.style.top = "50%";
+avatarColorPopup.style.width = "220px";
+avatarColorPopup.style.transform = "translate(-50%, -50%)";
+avatarColorPopup.style.padding = "14px";
+avatarColorPopup.style.background = "#ffffff";
+avatarColorPopup.style.borderRadius = "20px";
+avatarColorPopup.style.display = "none";
+avatarColorPopup.style.gridTemplateColumns = "repeat(4, 1fr)";
+avatarColorPopup.style.gap = "12px";
+avatarColorPopup.style.zIndex = "10";
+avatarColorPopup.style.boxShadow = "0 10px 24px rgba(0,0,0,0.18)";
+avatarDrawPanel.appendChild(avatarColorPopup);
+
+const avatarPresetColors = [
+  "#FD6FFF",
+  "#1248FF",
+  "#FFFFFF",
+  "#000000",
+  "#D9D9D9",
+  "#FF8A00",
+  "#00C853",
+  "#00BCD4",
+];
+
+avatarPresetColors.forEach((color) => {
+  const swatch = document.createElement("button");
+  swatch.type = "button";
+  swatch.style.width = "48px";
+  swatch.style.height = "48px";
+  swatch.style.borderRadius = "999px";
+  swatch.style.border = color === "#FFFFFF" ? "1px solid #ccc" : "0";
+  swatch.style.background = color;
+  swatch.style.cursor = "pointer";
+  swatch.style.padding = "0";
+  swatch.style.boxShadow = "0 4px 12px rgba(0,0,0,0.10)";
+
+  swatch.addEventListener("click", () => {
+    avatarDrawColor = color;
+    avatarColorBtn.style.background = color;
+    avatarColorInput.value = color;
+    avatarColorPopup.style.display = "none";
+  });
+
+  avatarColorPopup.appendChild(swatch);
+});
+
 const avatarBrushPopup = document.createElement("div");
 avatarBrushPopup.style.position = "absolute";
-avatarBrushPopup.style.left = "645px";
-avatarBrushPopup.style.top = "250px";
+avatarBrushPopup.style.left = "50%";
+avatarBrushPopup.style.top = "50%";
 avatarBrushPopup.style.width = "220px";
+avatarBrushPopup.style.transform = "translate(-50%, -50%)";
 avatarBrushPopup.style.background = "#1a1a1a";
 avatarBrushPopup.style.borderRadius = "999px";
 avatarBrushPopup.style.padding = "10px 16px";
@@ -1523,6 +1578,7 @@ function openAvatarDrawEditor() {
 function closeAvatarDrawEditor() {
   avatarDrawOverlay.style.display = "none";
   avatarBrushPopup.style.display = "none";
+  avatarColorPopup.style.display = "none";
   avatarOverlay.style.display = "block";
 }
 
@@ -1539,12 +1595,11 @@ drawUploadBtn.addEventListener("click", () => {
   fileInput.click();
 });
 
-avatarColorBtn.addEventListener("click", () => {
-  if (typeof avatarColorInput.showPicker === "function") {
-    avatarColorInput.showPicker();
-  } else {
-    avatarColorInput.click();
-  }
+avatarColorBtn.addEventListener("click", (e) => {
+  e.stopPropagation();
+  avatarBrushPopup.style.display = "none";
+  avatarColorPopup.style.display =
+    avatarColorPopup.style.display === "grid" ? "none" : "grid";
 });
 
 avatarColorInput.addEventListener("input", (e) => {
@@ -1610,6 +1665,14 @@ document.addEventListener("pointerdown", (e) => {
     !avatarBrushBtn.contains(e.target)
   ) {
     avatarBrushPopup.style.display = "none";
+  }
+
+  if (
+    avatarColorPopup.style.display === "grid" &&
+    !avatarColorPopup.contains(e.target) &&
+    !avatarColorBtn.contains(e.target)
+  ) {
+    avatarColorPopup.style.display = "none";
   }
 });
 
@@ -2637,8 +2700,8 @@ async function captureIdCardSnapshot(profileInput) {
 
   // 載圖
   const [avatarImg, signatureImg, titleImg, barcodeImg] = await Promise.all([
-    loadImageSafe(profile.avatarPhoto),
-    loadImageSafe(profile.signature),
+    loadImageSafe(profile.avatarPhoto ?? null),
+    loadImageSafe(profile.signature ?? null),
     loadImageSafe("/title.png"),
     loadImageSafe("/barcode.png"),
   ]);
@@ -2811,8 +2874,10 @@ continueEditBtn.addEventListener("click", () => {
     setIdCardState("EDIT");
 });
 submitBtn.addEventListener("click", async () => {
+  let profile;
+
   try {
-    const profile = loadProfileLocal();
+    profile = loadProfileLocal();
     if (!profile?.serial) {
       throw new Error("missing profile");
     }
@@ -2827,27 +2892,30 @@ submitBtn.addEventListener("click", async () => {
     profile.idCardSnapshot = snapshot ?? null;
 
     saveProfileLocal(profile);
-
     await syncCurrentProfileToServer();
-
-    idVerified = true;
-    idOverlay.style.display = "none";
-
-    exitUiMode();
-    npcState = NPC_STATE.HIDDEN;
-    optionRow.style.pointerEvents = "none";
-    optionRow.style.opacity = "0";
-    optionRow.style.transform = "translateY(6px)";
-
-    if (!controls.isLocked) controls.lock();
-
-    await bubbleFor("我們將會發放給您新的識別證明", 1500);
-    await bubbleFor("您可以從旁邊的大門進入會場", 1500);
-
-    bubbleHide();
   } catch (err) {
     console.error("[submitBtn] sync failed", err);
     npcShowBubble(`證件提交失敗：${err.message}`);
+    return;
+  }
+
+  idVerified = true;
+  idOverlay.style.display = "none";
+
+  exitUiMode();
+  npcState = NPC_STATE.HIDDEN;
+  optionRow.style.pointerEvents = "none";
+  optionRow.style.opacity = "0";
+  optionRow.style.transform = "translateY(6px)";
+
+  safeLockControls();
+
+  try {
+    await bubbleFor("我們將會發放給您新的識別證明", 1500);
+    await bubbleFor("您可以從旁邊的大門進入會場", 1500);
+    bubbleHide();
+  } catch (err) {
+    console.warn("[submitBtn] post-submit ui failed", err);
   }
 });
 
