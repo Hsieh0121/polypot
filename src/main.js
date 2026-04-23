@@ -2170,52 +2170,7 @@ function getOfflineAvatarPoseForTable(tableId, serial) {
     rotY,
   };
 }
-(function () {
-  const box = document.createElement("pre");
-  box.style.position = "fixed";
-  box.style.left = "8px";
-  box.style.top = "8px";
-  box.style.zIndex = "999999";
-  box.style.maxWidth = "90vw";
-  box.style.maxHeight = "40vh";
-  box.style.overflow = "auto";
-  box.style.background = "rgba(0,0,0,0.8)";
-  box.style.color = "#0f0";
-  box.style.padding = "8px";
-  box.style.fontSize = "11px";
-  box.style.whiteSpace = "pre-wrap";
-  box.style.pointerEvents = "none";
-  document.body.appendChild(box);
 
-  const log = (...args) => {
-    box.textContent += args.map(v =>
-      typeof v === "string" ? v : JSON.stringify(v, null, 2)
-    ).join(" ") + "\n";
-  };
-
-  window.addEventListener("error", (e) => {
-    log("[error]", e.message, e.filename, e.lineno + ":" + e.colno);
-  });
-
-  window.addEventListener("unhandledrejection", (e) => {
-    log("[promise]", String(e.reason));
-  });
-
-  const rawFetch = window.fetch;
-  window.fetch = async (...args) => {
-    log("[fetch]", args[0]);
-    try {
-      const res = await rawFetch(...args);
-      log("[fetch ok]", res.url, res.status);
-      return res;
-    } catch (err) {
-      log("[fetch fail]", args[0], String(err));
-      throw err;
-    }
-  };
-
-  log("[boot]", location.href);
-})();
 
 function findPotRef(tableRoot) {
   const cadidates = ["potbody_", "soupBase_", "soupTransparent_", "pothandle_", "potstand_", "stovebody_", "stovebutton_", "stovecap_", "fire_"];
