@@ -311,10 +311,10 @@ export function initMobileInput({
     lookDrag.lastX = e.clientX;
     lookDrag.lastY = e.clientY;
 
-    const LOOK_SENSITIVITY_X = 0.008;
-    const LOOK_SENSITIVITY_Y = 0.008;
+    const LOOK_SENSITIVITY_X = 0.005;
+    const LOOK_SENSITIVITY_Y = 0.005;
 
-    const DEAD_PX = 0.5;
+    const DEAD_PX = 0.2;
     const outX = Math.abs(dx) < DEAD_PX ? 0 : dx * LOOK_SENSITIVITY_X;
     const outY = Math.abs(dy) < DEAD_PX ? 0 : -dy * LOOK_SENSITIVITY_Y;
 
