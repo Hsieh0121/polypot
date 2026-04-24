@@ -1,15 +1,22 @@
-<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>polypot</title>
-  </head>
-  <body>
-    <div id="app"></div>
-    <script type="module" src="/src/main.js"></script>
-    <div id="reticle"></div>
-    <div id="hud"></div>
-  </body>
-</html>
+<body>
+  <!-- 進場動畫 -->
+  <div id="intro-video">
+    <video
+      id="introVideoEl"
+      src="/animation.mp4"
+      autoplay
+      muted
+      playsinline
+    ></video>
+
+    <button id="introSkipBtn" type="button">
+      SKIP
+    </button>
+  </div>
+
+  <!-- 原本內容 -->
+  <div id="app"></div>
+  <script type="module" src="/src/main.js"></script>
+  <div id="reticle"></div>
+  <div id="hud"></div>
+</body>

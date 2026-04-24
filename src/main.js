@@ -1,3 +1,37 @@
+// ===== Intro Video Control =====
+let introPlaying = true;
+
+window.addEventListener("DOMContentLoaded", () => {
+  const introWrap = document.getElementById("intro-video");
+  const introVideo = document.getElementById("introVideoEl");
+  const introSkipBtn = document.getElementById("introSkipBtn");
+
+  if (!introWrap || !introVideo) {
+    introPlaying = false;
+    return;
+  }
+
+  function closeIntroVideo() {
+    if (!introPlaying) return;
+
+    introPlaying = false;
+    introWrap.style.opacity = "0";
+    introWrap.style.pointerEvents = "none";
+
+    setTimeout(() => {
+      introWrap.remove();
+    }, 600);
+  }
+
+  introVideo.addEventListener("ended", closeIntroVideo);
+
+  introSkipBtn?.addEventListener("pointerdown", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    closeIntroVideo();
+  }, { passive: false });
+});
+
 import { io } from "socket.io-client";
 import * as THREE from "three";
 import "./style.css";
@@ -3225,6 +3259,8 @@ function trySelectTableAndSit(){
 
 
 function dispatchAction(action) {
+  if (introPlaying) return;
+
   const { type } = action;
 
   // ---- Global CANCEL（任何 state 都先吃）----
