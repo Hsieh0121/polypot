@@ -606,6 +606,7 @@ function makeRemoteAvatar(playerLike) {
       transparent: true,
       opacity: 0.55,
       depthWrite: false,
+      visible: false,
     })
   );
 
