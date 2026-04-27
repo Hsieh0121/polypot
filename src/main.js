@@ -2457,7 +2457,7 @@ function applyHallScreenVideo(envRoot) {
   hallScreenVideo = document.createElement("video");
   hallScreenVideo.src = "/animation.mp4";
   hallScreenVideo.loop = true;
-  hallScreenVideo.muted = true;
+  hallScreenVideo.muted = false;
   hallScreenVideo.playsInline = true;
   hallScreenVideo.autoplay = true;
   hallScreenVideo.preload = "auto";

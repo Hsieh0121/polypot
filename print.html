@@ -315,6 +315,75 @@
       z-index: 20;
       border-radius: var(--radius-lg);
     }
+    .feedback-modal-backdrop {
+      position: absolute;
+      inset: 0;
+      background: rgba(18, 72, 255, 0.22);
+      z-index: 50;
+      display: none;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .feedback-modal {
+      position: relative;
+      width: 760px;
+      min-height: 360px;
+      background: #fff;
+      border: 3px solid var(--blue);
+      border-radius: 28px;
+      padding: 58px 52px 42px;
+      color: var(--blue);
+      font-family: "zpix", system-ui, sans-serif;
+    }
+
+    .feedback-close {
+      position: absolute;
+      right: 24px;
+      top: 20px;
+      width: 42px;
+      height: 42px;
+      border: 3px solid var(--blue);
+      border-radius: 999px;
+      background: #fff;
+      color: var(--blue);
+      font-family: "zpix", system-ui, sans-serif;
+      font-size: 22pt;
+      line-height: 1;
+      cursor: pointer;
+    }
+
+    .feedback-title {
+      font-size: 22pt;
+      line-height: 1.55;
+      margin-bottom: 28px;
+    }
+
+    .feedback-textarea {
+      width: 100%;
+      height: 128px;
+      resize: none;
+      border: 3px solid var(--blue);
+      border-radius: 18px;
+      padding: 16px;
+      color: var(--blue);
+      font-family: "zpix", system-ui, sans-serif;
+      font-size: 15pt;
+      outline: none;
+    }
+
+    .feedback-submit {
+      margin-top: 20px;
+      height: 56px;
+      padding: 0 28px;
+      border: 3px solid var(--blue);
+      border-radius: 999px;
+      background: #fff;
+      color: var(--blue);
+      font-family: "zpix", system-ui, sans-serif;
+      font-size: 18pt;
+      cursor: pointer;
+    }
   </style>
 </head>
 <body>
@@ -398,6 +467,27 @@
     </button>
 
     <div id="statusText" class="status-text"></div>
+    <div id="feedbackModalBackdrop" class="feedback-modal-backdrop">
+    <div class="feedback-modal">
+      <button id="feedbackCloseBtn" class="feedback-close" type="button">×</button>
+
+      <div class="feedback-title">
+        遊玩過程有遇到任何問題嗎？<br>
+        告訴我們！（我們不一定會改進。）
+      </div>
+
+      <textarea
+        id="feedbackTextarea"
+        class="feedback-textarea"
+        placeholder="可以寫下你遇到的問題、卡住的地方，或任何奇怪的東西。"
+      ></textarea>
+
+      <button id="feedbackSubmitBtn" class="feedback-submit" type="button">
+        送出意見
+      </button>
+    </div>
+    </div>
+
   </div>
 
   <!-- 先獨立處理縮放，不依賴 module -->
@@ -450,6 +540,64 @@
     const printBtn = document.getElementById("printBtn");
     const statusText = document.getElementById("statusText");
 
+    const feedbackModalBackdrop = document.getElementById("feedbackModalBackdrop");
+    const feedbackCloseBtn = document.getElementById("feedbackCloseBtn");
+    const feedbackTextarea = document.getElementById("feedbackTextarea");
+    const feedbackSubmitBtn = document.getElementById("feedbackSubmitBtn");
+
+    function openFeedbackModal() {
+      if (!feedbackModalBackdrop) return;
+      feedbackModalBackdrop.style.display = "flex";
+    }
+
+    function closeFeedbackModal() {
+      if (!feedbackModalBackdrop) return;
+      feedbackModalBackdrop.style.display = "none";
+    }
+
+    feedbackCloseBtn?.addEventListener("click", closeFeedbackModal);
+
+    feedbackModalBackdrop?.addEventListener("click", (e) => {
+      if (e.target === feedbackModalBackdrop) closeFeedbackModal();
+    });
+
+    feedbackSubmitBtn?.addEventListener("click", async () => {
+  const content = feedbackTextarea?.value?.trim() || "";
+
+  if (!content) {
+    setStatus("請先輸入意見內容。");
+    return;
+  }
+
+  try {
+    const res = await fetch(`${API_BASE}/feedback`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        serial: profile?.serial || "",
+        content,
+      }),
+    });
+
+    const data = await res.json();
+
+    if (!res.ok || !data?.ok) {
+      throw new Error(data?.error || "submit feedback failed");
+    }
+
+    console.log("[feedback saved]", data.feedback);
+
+    feedbackTextarea.value = "";
+    closeFeedbackModal();
+    setStatus("謝謝你的意見，我們已經假裝慎重收下。");
+  } catch (err) {
+    console.error("[feedback submit failed]", err);
+    setStatus(`意見送出失敗：${err.message || err}`);
+  }
+});
+
     const API_BASE =
       (typeof import.meta !== "undefined" && import.meta.env && import.meta.env.VITE_API_BASE)
         ? import.meta.env.VITE_API_BASE
@@ -462,7 +610,7 @@
 
     console.log("[print] API_BASE =", API_BASE);
     console.log("[print] hostname =", window.location.hostname);
-    
+
     let selectedCardType = "id";
     let profile = null;
     let pot = null;
@@ -1016,6 +1164,7 @@
           setStatus("正在送出身份卡列印...");
           await submitPrintJob("id", imageData);
           setStatus("身份卡已送至現場列印台。");
+          openFeedbackModal();
           return;
         }
 
@@ -1029,6 +1178,7 @@
         setStatus("正在送出火鍋卡列印...");
         await submitPrintJob("pot", imageData);
         setStatus("火鍋卡已送至現場列印台。");
+        openFeedbackModal();
       } catch (err) {
         console.error("[print] submit failed", err);
         setStatus(`送印失敗：${err.message || err}`);

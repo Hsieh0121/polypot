@@ -87,6 +87,13 @@ db.exec(`
     is_owner INTEGER NOT NULL DEFAULT 0,
     created_at INTEGER NOT NULL
   );
+    CREATE TABLE IF NOT EXISTS feedbacks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    serial TEXT,
+    room_id TEXT,
+    content TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+  );
 `);
 
 // --------------------
@@ -926,6 +933,78 @@ export function listRecentPotCommentsByRoomAndTable(roomId, tableId, limit = 5) 
     .all(roomId, tableId, limit)
     .map(parsePotCommentRow)
     .reverse();
+}
+// --------------------
+// feedback helpers
+// --------------------
+function parseFeedbackRow(row) {
+  if (!row) return null;
+
+  return {
+    id: row.id,
+    serial: row.serial ?? "",
+    roomId: row.roomId ?? null,
+    content: row.content ?? "",
+    createdAt: row.createdAt,
+  };
+}
+
+const insertFeedbackStmt = db.prepare(`
+  INSERT INTO feedbacks (
+    serial,
+    room_id,
+    content,
+    created_at
+  )
+  VALUES (
+    @serial,
+    @roomId,
+    @content,
+    @createdAt
+  )
+`);
+
+const listAllFeedbacksStmt = db.prepare(`
+  SELECT
+    id,
+    serial,
+    room_id as roomId,
+    content,
+    created_at as createdAt
+  FROM feedbacks
+  ORDER BY created_at DESC
+`);
+
+export function createFeedback(input) {
+  if (!input?.content || !String(input.content).trim()) {
+    throw new Error("createFeedback: content is required");
+  }
+
+  const row = {
+    serial: input.serial ?? "",
+    roomId: input.roomId ?? null,
+    content: String(input.content).trim().slice(0, 500),
+    createdAt: Date.now(),
+  };
+
+  const result = insertFeedbackStmt.run(row);
+
+  return parseFeedbackRow(
+    db.prepare(`
+      SELECT
+        id,
+        serial,
+        room_id as roomId,
+        content,
+        created_at as createdAt
+      FROM feedbacks
+      WHERE id = ?
+    `).get(result.lastInsertRowid)
+  );
+}
+
+export function listAllFeedbacks() {
+  return listAllFeedbacksStmt.all().map(parseFeedbackRow);
 }
 // --------------------
 // print job helpers

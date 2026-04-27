@@ -18,6 +18,8 @@ import {
   createPotComment,
   listPotCommentsByRoomAndTable,
   listRecentPotCommentsByRoomAndTable,
+  createFeedback,
+  listAllFeedbacks,
 } from "./db.js";
 
 console.log("[server] boot", new Date().toISOString());
@@ -219,7 +221,57 @@ app.post("/print-jobs/:id/printed", (req, res) => {
     });
   }
 });
+app.post("/feedback", (req, res) => {
+  try {
+    const serial =
+      typeof req.body?.serial === "string" ? req.body.serial.trim() : "";
+    const content =
+      typeof req.body?.content === "string" ? req.body.content.trim() : "";
 
+    if (!content) {
+      return res.status(400).json({
+        ok: false,
+        error: "missing content",
+      });
+    }
+
+    const profile = serial ? getProfileBySerial(serial) : null;
+
+    const feedback = createFeedback({
+      serial,
+      roomId: profile?.roomId ?? null,
+      content,
+    });
+
+    return res.json({
+      ok: true,
+      feedback,
+    });
+  } catch (err) {
+    console.error("[POST /feedback] failed:", err);
+    return res.status(500).json({
+      ok: false,
+      error: "create feedback failed",
+    });
+  }
+});
+
+app.get("/feedback", (_, res) => {
+  try {
+    const feedbacks = listAllFeedbacks();
+
+    return res.json({
+      ok: true,
+      feedbacks,
+    });
+  } catch (err) {
+    console.error("[GET /feedback] failed:", err);
+    return res.status(500).json({
+      ok: false,
+      error: "list feedback failed",
+    });
+  }
+});
 app.get("/tables/:roomId/:tableId/comments", (req, res) => {
   try {
     const roomId =
