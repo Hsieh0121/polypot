@@ -362,6 +362,8 @@ const tables = [];
 const tableBoxes = new Map();
 let envRoot = null;
 let worldBounds = null;  
+let hallScreenVideo = null;
+let hallScreenTexture = null;
 const tablePotStateMap = new Map();
 let hallIntroStarted = false;
 let hallAssignmentRevealed = false;
@@ -2422,7 +2424,67 @@ function applyPotStateToTable(pot) {
     hasTexture: !!resolvedTexture,
   });
 }
+function applyHallScreenVideo(envRoot) {
+  console.log("[hall screen] searching Plane010");
 
+  envRoot.traverse((obj) => {
+    const n = obj.name || "";
+    if (
+      n.includes("Plane") ||
+      n.includes("plane") ||
+      n.includes("010")
+    ) {
+      console.log("[hall screen candidate]", {
+        name: obj.name,
+        type: obj.type,
+        isMesh: obj.isMesh,
+        children: obj.children?.map(c => ({
+          name: c.name,
+          type: c.type,
+          isMesh: c.isMesh,
+        })),
+      });
+    }
+  });
+  const screen = envRoot.getObjectByName("Plane010");
+
+  if (!screen || !screen.isMesh) {
+    console.warn("[hall screen] Plane.010 not found or not mesh", screen);
+    return;
+  }
+
+  hallScreenVideo = document.createElement("video");
+  hallScreenVideo.src = "/animation.mp4";
+  hallScreenVideo.loop = true;
+  hallScreenVideo.muted = true;
+  hallScreenVideo.playsInline = true;
+  hallScreenVideo.autoplay = true;
+  hallScreenVideo.preload = "auto";
+  hallScreenVideo.crossOrigin = "anonymous";
+
+  hallScreenTexture = new THREE.VideoTexture(hallScreenVideo);
+  hallScreenTexture.colorSpace = THREE.SRGBColorSpace;
+  hallScreenTexture.flipY = false;
+  hallScreenTexture.wrapS = THREE.ClampToEdgeWrapping;
+  hallScreenTexture.wrapT = THREE.ClampToEdgeWrapping;
+  hallScreenTexture.minFilter = THREE.LinearFilter;
+  hallScreenTexture.magFilter = THREE.LinearFilter;
+
+  const oldMat = screen.material;
+  screen.material = new THREE.MeshBasicMaterial({
+    map: hallScreenTexture,
+    toneMapped: false,
+    side: THREE.DoubleSide,
+  });
+
+  oldMat?.dispose?.();
+
+  hallScreenVideo.play().catch((err) => {
+    console.warn("[hall screen] video autoplay blocked", err);
+  });
+
+  console.log("[hall screen] animation.mp4 applied to Plane.010");
+}
 function createAssignedMarker() {
   const group = new THREE.Group();
   group.visible = false;
@@ -2730,6 +2792,7 @@ loader.load(
   (gltf) => {
     envRoot = gltf.scene;
     scene.add(envRoot);
+    applyHallScreenVideo(envRoot);
     envRoot.traverse((obj) => {
   if (obj.name) console.log(obj.name);
   });
@@ -2755,7 +2818,7 @@ if (!exitDoorMesh) {
 
   const s = new THREE.Vector3();
   exitDoorBox.getSize(s);
-  console.log("[exitDoorBox size]", s.toArray());
+  // console.log("[exitDoorBox size]", s.toArray());
 }
 
   if (!exitDoorMesh) {
@@ -3734,13 +3797,13 @@ function refreshExitDoorBox() {
   // 用門的寬/深抓一個合理半徑
   exitDoorRadius = 0.9;
 
-  console.log("[refreshExitDoorBox]", {
-    min: exitDoorBox.min.toArray(),
-    max: exitDoorBox.max.toArray(),
-    center: exitDoorCenter.toArray(),
-    size: size.toArray(),
-    radius: exitDoorRadius,
-  });
+  // console.log("[refreshExitDoorBox]", {
+  //   min: exitDoorBox.min.toArray(),
+  //   max: exitDoorBox.max.toArray(),
+  //   center: exitDoorCenter.toArray(),
+  //   size: size.toArray(),
+  //   radius: exitDoorRadius,
+  // });
 }
 
 function updateExitDoorProximity() {
