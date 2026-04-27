@@ -1425,8 +1425,14 @@ async function storeIngredient(name) {
       iconRect: s.nextIcon,
       textOffsetX: 14,
       onClick: () => {
-        step = 1;
-        renderStep();
+        ingredientToolMode = "draw";
+        eraserBtn.style.outline = "none";
+
+        brushPopupOpen = !brushPopupOpen;
+        brushPopup.style.display = brushPopupOpen ? "flex" : "none";
+        if (brushPopupOpen) {
+          setTimeout(() => document.addEventListener("pointerdown", closeBrushPopup), 0);
+        }
       },
     });
   }
@@ -2117,8 +2123,15 @@ async function storeIngredient(name) {
     const eraserBtn = addImageButton(ASSETS.eraser2, s.eraserBtn, {
       onClick: () => {
         ingredientToolMode = ingredientToolMode === "erase" ? "draw" : "erase";
+
+        eraserBtn.style.outline =
+          ingredientToolMode === "erase" ? "3px solid #FD6FFF" : "none";
+
+        eraserBtn.style.outlineOffset = "-6px";
       },
-      border: "0", bg: "transparent", radius: 0,
+      border: "0",
+      bg: "transparent",
+      radius: 999,
     });
     attachHoverLabel(eraserBtn, "刀子：擦除", s.eraserLabel);
 

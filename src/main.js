@@ -165,8 +165,24 @@ async function submitTableComment(roomId, tableId, content) {
 }
 
 function loadHallIdentity() {
-  const serial = sessionStorage.getItem(SS_SERIAL) || "";
-  return serial ? { serial } : {};
+  const sessionSerial = sessionStorage.getItem(SS_SERIAL) || "";
+  const lastSerial = localStorage.getItem(LS_LAST_SERIAL) || "";
+  const serial = sessionSerial || lastSerial;
+
+  if (!serial) return {};
+
+  try {
+    const raw = localStorage.getItem("polypot_profile");
+    const localProfile = raw ? JSON.parse(raw) : null;
+
+    if (localProfile?.serial === serial) {
+      return localProfile;
+    }
+  } catch (err) {
+    console.warn("[hall] local profile parse failed", err);
+  }
+
+  return { serial };
 }
 
 function saveHallIdentity(profile) {
@@ -393,14 +409,14 @@ function createEmptyTablePotState(tableId) {
 }
 
 
-socket.on("connect", () => {
+socket.on("connect", async () => {
   net.connected = true;
   localPlayerId = socket.id;
 
   console.log("[net] connected");
   console.log("[local] localPlayerId =", localPlayerId);
   console.log("[connect] currentProfile =", currentProfile);
-  console.log("[connect] current serial =", currentProfile?.serial); 
+  console.log("[connect] current serial =", currentProfile?.serial);
 
   if (!currentProfile?.serial) {
     console.warn("[hall] missing profile.serial, redirect to entry");
@@ -408,7 +424,35 @@ socket.on("connect", () => {
     return;
   }
 
-  socket.emit("join", { serial: currentProfile.serial }, ({ self, other, ok } = {}) => {
+  try {
+    const serverProfile = await fetchProfileBySerial(currentProfile.serial);
+
+    const hasFullProfile =
+      serverProfile &&
+      serverProfile.name &&
+      serverProfile.name !== "anon" &&
+      serverProfile.avatarPhoto &&
+      serverProfile.idCardSnapshot;
+
+    if (!hasFullProfile) {
+      console.warn("[hall] incomplete server profile, redirect to white", serverProfile);
+      window.location.href = `/white.html?serial=${encodeURIComponent(currentProfile.serial)}`;
+      return;
+    }
+
+    currentProfile = serverProfile;
+    saveHallIdentity(currentProfile);
+
+    assignedTableId =
+      currentProfile?.assignedTableId ??
+      mapSerialToTable(currentProfile?.serial);
+  } catch (err) {
+    console.error("[hall] fetch profile before join failed", err);
+    window.location.href = `/white.html?serial=${encodeURIComponent(currentProfile.serial)}`;
+    return;
+  }
+
+  socket.emit("join", { serial: currentProfile.serial, profile: currentProfile }, ({ self, other, ok } = {}) => {
     if (self?.id) localPlayerId = self.id;
 
     if (ok === false) {

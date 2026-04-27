@@ -1542,7 +1542,7 @@ avatarDrawPanel.appendChild(avatarBrushPopup);
 const avatarBrushSlider = document.createElement("input");
 avatarBrushSlider.type = "range";
 avatarBrushSlider.min = "1";
-avatarBrushSlider.max = "80";
+avatarBrushSlider.max = "200";
 avatarBrushSlider.step = "1";
 avatarBrushSlider.value = "10";
 avatarBrushSlider.style.flex = "1";
@@ -1708,7 +1708,13 @@ function exportAvatarDrawDataUrl() {
 function openAvatarDrawEditor() {
   avatarOverlay.style.display = "none";
   avatarDrawOverlay.style.display = "block";
-  initAvatarDrawCanvas();
+
+  // 第一次才建立 canvas，避免重新打開時清空剛剛畫的圖
+  if (!avatarPaintCanvas || !avatarPaintCtx) {
+    initAvatarDrawCanvas();
+  } else {
+    redrawAvatarGuideCanvas();
+  }
 }
 
 function closeAvatarDrawEditor() {
@@ -1773,6 +1779,7 @@ avatarDrawConfirmBtn.addEventListener("click", () => {
   avatarOverlay.style.display = "block";
   avatarDrawOverlay.style.display = "none";
   avatarBrushPopup.style.display = "none";
+  avatarColorPopover.close();
 });
 
 confirmBtn.addEventListener("click", () => {
