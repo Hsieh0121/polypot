@@ -1425,14 +1425,8 @@ async function storeIngredient(name) {
       iconRect: s.nextIcon,
       textOffsetX: 14,
       onClick: () => {
-        ingredientToolMode = "draw";
-        eraserBtn.style.outline = "none";
-
-        brushPopupOpen = !brushPopupOpen;
-        brushPopup.style.display = brushPopupOpen ? "flex" : "none";
-        if (brushPopupOpen) {
-          setTimeout(() => document.addEventListener("pointerdown", closeBrushPopup), 0);
-        }
+        step = 1;
+        renderStep();
       },
     });
   }
