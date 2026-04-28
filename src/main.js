@@ -560,8 +560,10 @@ socket.on("snapshot", (snap) => {
 
   // --- pots ---
   if (!hallSceneReady) {
-    pendingSnapshotPots = pots;
-    console.log("[snapshot] pots buffered until hallSceneReady", pots.length);
+    for (const pot of pots) {
+      bufferPendingPot(pot);
+    }
+    console.log("[snapshot] pots buffered until hallSceneReady", pendingSnapshotPots.length);
     return;
   }
 
@@ -1100,8 +1102,28 @@ socket.on("player:move", ({ id, pos, rotY, profile }) => {
   }
 });
 
+function bufferPendingPot(pot) {
+  if (!pot?.tableId) return;
+
+  const idx = pendingSnapshotPots.findIndex((p) => p?.tableId === pot.tableId);
+
+  if (idx >= 0) {
+    pendingSnapshotPots[idx] = pot;
+  } else {
+    pendingSnapshotPots.push(pot);
+  }
+
+  console.log("[pot buffered]", pot.tableId, pendingSnapshotPots.length);
+}
+
 socket.on("pot:updated", (pot) => {
   console.log("[socket] pot:updated", pot);
+
+  if (!hallSceneReady) {
+    bufferPendingPot(pot);
+    return;
+  }
+
   applyPotStateToTable(pot);
 });
 
@@ -1968,6 +1990,34 @@ const pot = createPotController({
       authorAvatarPhoto:
         saved?.authorAvatarPhoto || currentProfile?.avatarPhoto || "",
     };
+  },
+  onAutoSavePot: ({
+    reason,
+    tableId,
+    tableState,
+    finalPotTextureUrl,
+    chairCount,
+    chairColor,
+    potBodyColor,
+    potHandleColor,
+  }) => {
+    const potPayload = {
+      tableId,
+      tableState,
+      finalPotTextureUrl,
+      chairCount,
+      chairColor,
+      potBodyColor,
+      potHandleColor,
+    };
+
+    console.log("[pot autosave]", reason, potPayload);
+
+    applyPotStateToTable(potPayload);
+
+    socket.emit("pot:save", potPayload, (res) => {
+      console.log("[pot autosave ack]", reason, res);
+    });
   },
 
   onFinalizePot: ({

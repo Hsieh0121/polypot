@@ -42,7 +42,7 @@ app.use(
     methods: ["GET", "POST"],
   })
 );
-app.use(express.json({ limit: "15mb" }));
+app.use(express.json({ limit: "50mb" }));
 
 const io = new Server(server, {
   cors: {
@@ -55,7 +55,9 @@ app.get("/health", (_, res) => res.send("ok"));
 app.get("/", (_, res) => {
   res.send("polypot backend is running");
 });
-
+app.get("/debug/download-db", (req, res) => {
+  res.download("data/polypot.sqlite");
+});
 app.get("/profiles/:serial", (req, res) => {
   try {
     const rawSerial =
@@ -366,7 +368,8 @@ const state = {
 };
 
 state.nextSerialId = getNextSerialNumberFallback();
-
+const lastPresenceSaveAt = new Map();
+const PRESENCE_SAVE_INTERVAL_MS = 2000;
 console.log("[server] nextSerialId:", state.nextSerialId);
 
 // -------------------------
@@ -717,7 +720,16 @@ io.on("connection", (socket) => {
       }
 
       if (!finalProfile) {
-        finalProfile = getSocketProfile(socket.id);
+        console.warn("[join] rejected: profile not found", {
+          socketId: socket.id,
+          serial: clean.serial,
+        });
+
+        ack?.({
+          ok: false,
+          error: "profile not found",
+        });
+        return;
       }
 
       if (!finalProfile) {
@@ -827,15 +839,22 @@ io.on("connection", (socket) => {
     }
 
     if (p.profile?.serial) {
-      saveAvatarPresence({
-        serial: p.profile.serial,
-        roomId,
-        assignedTableId: p.profile.assignedTableId,
-        pos: p.pos,
-        rotY: p.rotY,
-        isOnline: true,
-        mode: "static",
-      });
+      const now = Date.now();
+      const last = lastPresenceSaveAt.get(p.profile.serial) || 0;
+
+      if (now - last > PRESENCE_SAVE_INTERVAL_MS) {
+        lastPresenceSaveAt.set(p.profile.serial, now);
+
+        saveAvatarPresence({
+          serial: p.profile.serial,
+          roomId,
+          assignedTableId: p.profile.assignedTableId,
+          pos: p.pos,
+          rotY: p.rotY,
+          isOnline: true,
+          mode: "static",
+        });
+      }
     }
 
     socket.to(roomId).emit("player:move", {

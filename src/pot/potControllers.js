@@ -16,6 +16,7 @@ export function createPotController({
   onRequestClose,
   onFinalizePot,
   onSubmitComment,
+  onAutoSavePot,
 } = {}) {
   if (!appEl) throw new Error("[pot] createPotController: appEl is required");
 
@@ -1337,21 +1338,39 @@ async function storeIngredient(name) {
     ingredientNextScale.clear();
   }
   function buildOutputTableState() {
-    return {
+      return {
+        tableId: activeTableId,
+        initialized: true,
+        balls: balls.map((x) => ({ ...x })),
+        ingredients: ingredients.map((x) => ({ ...x })),
+        composePlacements: composePlacements.map((x) => ({ ...x })),
+        activeBallId,
+        activeIngredientId,
+        chairCount,
+        chairColor,
+        potBodyColor,
+        potHandleColor,
+        finalPotTextureUrl,
+      };
+    }
+    function autoSavePot(reason = "unknown") {
+    if (!activeTableId) return;
+    if (typeof onAutoSavePot !== "function") return;
+
+    const tableState = buildOutputTableState();
+
+    onAutoSavePot({
+      reason,
       tableId: activeTableId,
-      initialized: true,
-      balls: balls.map((x) => ({ ...x })),
-      ingredients: ingredients.map((x) => ({ ...x })),
-      composePlacements: composePlacements.map((x) => ({ ...x })),
-      activeBallId,
-      activeIngredientId,
+      tableState,
+      finalPotTextureUrl,
       chairCount,
       chairColor,
       potBodyColor,
       potHandleColor,
-      finalPotTextureUrl,
-    };
+    });
   }
+
   function addTopRightCloseButton({ x, y, w = 50, h = 50, onClick }) {
   const btn = document.createElement("button");
   btn.type = "button";
@@ -1822,6 +1841,7 @@ async function storeIngredient(name) {
         if (!ball) return;
         balls.unshift({ id: ball.id, name: ball.name, previewUrl: ball.previewDataURL });
         activeBallId = ball.id;
+        autoSavePot("step1_save_ball");
         nameInput.value = "";
         updateNameLabel();
         const old = panelEl.querySelector(".soup-list-wrap");
@@ -2260,6 +2280,8 @@ async function storeIngredient(name) {
 
       await storeIngredient(nm);
 
+      autoSavePot("step2_save_ingredient");
+
       ingredientPreviewImgUrl = null;
       clearIngredientDrawing(ingredientCanvas, ingredientCtx);
       previewNameInput.value = "";
@@ -2568,6 +2590,7 @@ async function storeIngredient(name) {
         createdAt: Date.now(),
       });
       redrawComposeCanvas();
+      autoSavePot("step3_place_soup");
       return;
     }
 
@@ -2583,6 +2606,7 @@ async function storeIngredient(name) {
         createdAt: Date.now(),
       });
       redrawComposeCanvas();
+      autoSavePot("step3_place_ingredient");
       return;
     }
   }
@@ -2612,6 +2636,7 @@ async function storeIngredient(name) {
     if (cutPath.length >= 2) {
       cutLines.push([...cutPath]);
       cutLineColors.push(cutColor);
+      autoSavePot("step3_cut_line");
     }
     cutPath = [];
     redrawComposeCanvas();
@@ -3000,6 +3025,7 @@ function renderVerticalList({
       border: "2px solid #FD6FFF",
       onClick: () => {
         finalPotTextureUrl = exportFinalPotTexture();
+        autoSavePot("step3_finish_to_step4");
         step = 4;
         renderStep();
       },
