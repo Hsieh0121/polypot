@@ -2,7 +2,7 @@ import express from "express";
 import http from "http";
 import cors from "cors";
 import { Server } from "socket.io";
-import {
+import db, {
   getProfileBySerial,
   getPotByRoomAndTableId,
   saveProfile,
@@ -56,7 +56,13 @@ app.get("/", (_, res) => {
   res.send("polypot backend is running");
 });
 app.get("/debug/download-db", (req, res) => {
-  res.download("data/polypot.sqlite");
+  try {
+    db.pragma("wal_checkpoint(TRUNCATE)");
+    res.download("data/polypot.sqlite");
+  } catch (err) {
+    console.error("[debug/download-db] failed:", err);
+    res.status(500).send("download db failed");
+  }
 });
 app.get("/profiles/:serial", (req, res) => {
   try {
