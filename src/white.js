@@ -5,6 +5,15 @@ import "./style.css";
 import { depth } from "three/tsl";
 import { io } from "socket.io-client";
 import { initMobileInput } from "./Input/mobileInput.js";
+import { createTranslator, getLang } from "./i18n.js";
+import { TEXT } from "./i18n-text.js";
+
+const t = createTranslator(TEXT);
+const lang = getLang();
+
+if (lang === "en") {
+  document.body.classList.add("lang-en");
+}
 
 // 全域字體改成 zpix
 const zpixStyle = document.createElement("style");
@@ -506,9 +515,9 @@ bubble.style.textOverflow = "ellipsis";
 announceWrap.appendChild(bubble);
 
 const announcements = [
-    { text: "宴席尚未開放", ms: 3500 },
-    { text: "場域已開放", ms: 3500 },
-    { text: "請自由探索", ms: 3500 },
+  { text: t("white_announce_not_open"), ms: 3500 },
+  { text: t("white_announce_open"), ms: 3500 },
+  { text: t("white_announce_free_explore"), ms: 3500 },
 ];
 
 let announceIndex = 0;
@@ -619,8 +628,8 @@ optionRow.style.transition = "opacity 180ms ease, transform 180ms ease";
 optionRow.style.pointerEvents = "none";
 npcLayer.appendChild(optionRow);
 
-const btnNo = makePillButton("不是");
-const btnYes = makePillButton("是");
+const btnNo = makePillButton(t("white_btn_no"));
+const btnYes = makePillButton(t("white_btn_yes"));
 optionRow.appendChild(btnNo);
 optionRow.appendChild(btnYes);
 
@@ -716,7 +725,7 @@ nameRow.appendChild(nameBubble);
 
 const nameInput = document.createElement("input");
 nameInput.type = "text";
-nameInput.placeholder = "輸入名稱";
+nameInput.placeholder = t("white_name_placeholder");
 nameInput.style.width = "100%";
 nameInput.style.border = "0";
 nameInput.style.outline = "none";
@@ -729,7 +738,7 @@ nameInput.style.background = "transparent";
 nameInput.style.pointerEvents = "auto";
 nameBubble.appendChild(nameInput);
 
-const nameOk = makePillButton("確定");
+const nameOk = makePillButton(t("white_name_confirm"));
 nameOk.style.width = "60px";
 nameOk.style.height = "55px";
 nameOk.style.padding = "0 18px";
@@ -765,7 +774,7 @@ kickedInner.style.gap = "18px";
 kicked.appendChild(kickedInner);
 
 const kickedText = document.createElement("div");
-kickedText.textContent = "您已被趕出等待區";
+kickedText.textContent = t("white_kicked_text");
 kickedText.style.fontFamily = '"zpix", system-ui, sans-serif'
 kickedText.style.fontSize = "22px";
 kickedText.style.fontWeight = "800";
@@ -909,7 +918,7 @@ console.log("photoImg", photoImg.getBoundingClientRect());
 
 const editBtn = document.createElement("button");
 editBtn.type = "button";
-editBtn.textContent = "Edit";
+editBtn.textContent = t("white_edit");
 editBtn.style.position = "absolute";
 // your measured relative in photoBox: left 49, top 173
 editBtn.style.left = "50%";
@@ -984,7 +993,7 @@ infoLabel.style.color = "#1248FF";
 idCard.appendChild(infoLabel);
 
 const infoBox = document.createElement("textarea");
-infoBox.placeholder = "（輸入任意留言）";
+infoBox.placeholder = t("white_info_placeholder");
 infoBox.style.position = "absolute";
 infoBox.style.left = `${POS.infoBoxLeft}px`;
 infoBox.style.top = `${POS.infoBoxTop}px`;
@@ -1030,7 +1039,7 @@ idCard.appendChild(signatureLabel);
 const sigClearBtn = document.createElement("button");
 sigClearBtn.type = "button";
 sigClearBtn.textContent = "×";
-sigClearBtn.title = "Clear signature";
+sigClearBtn.title = t("white_clear_signature");
 sigClearBtn.style.position = "absolute";
 sigClearBtn.style.left = `${POS.sigBoxLeft + POS.sigBoxW - 18}px`;
 sigClearBtn.style.top = `${POS.sigLabelTop + 2}px`;
@@ -1334,13 +1343,13 @@ actionRow.style.gap = "10px";
 side.appendChild(actionRow);
 
 const uploadBtn = document.createElement("button");
-uploadBtn.textContent = "上傳圖片";
+uploadBtn.textContent = t("white_avatar_upload");
 stylePrimaryBtn(uploadBtn);
 uploadBtn.style.flex = "1";
 actionRow.appendChild(uploadBtn);
 
 const drawBtn = document.createElement("button");
-drawBtn.textContent = "繪製角色";
+drawBtn.textContent = t("white_avatar_draw");
 styleSecondaryBtn(drawBtn);
 drawBtn.style.flex = "1";
 actionRow.appendChild(drawBtn);
@@ -1349,7 +1358,7 @@ actionRow.appendChild(drawBtn);
 
 const confirmBtn = document.createElement("button");
 confirmBtn.type = "button";
-confirmBtn.textContent = "確認套用";
+confirmBtn.textContent = t("white_avatar_apply");
 confirmBtn.style.border = "2px solid #1248ff";
 confirmBtn.style.cursor = "pointer";
 confirmBtn.style.height = "52px";
@@ -1361,7 +1370,7 @@ side.appendChild(confirmBtn);
 
 const cancelBtn = document.createElement("button");
 cancelBtn.type = "button";
-cancelBtn.textContent = "取消";
+cancelBtn.textContent = t("white_avatar_cancel");
 cancelBtn.style.border = "0";
 cancelBtn.style.cursor = "pointer";
 cancelBtn.style.height = "44px";
@@ -1435,13 +1444,13 @@ drawTopRow.style.gap = "14px";
 avatarDrawPanel.appendChild(drawTopRow);
 
 const drawUploadBtn = document.createElement("button");
-drawUploadBtn.textContent = "上傳圖片";
+drawUploadBtn.textContent = t("white_avatar_upload");
 styleSecondaryBtn(drawUploadBtn);
 drawUploadBtn.style.flex = "1";
 drawTopRow.appendChild(drawUploadBtn);
 
 const drawModeBtn = document.createElement("button");
-drawModeBtn.textContent = "繪製角色";
+drawModeBtn.textContent = t("white_avatar_draw");
 stylePrimaryBtn(drawModeBtn);
 drawModeBtn.style.flex = "1";
 drawTopRow.appendChild(drawModeBtn);
@@ -1588,7 +1597,7 @@ const avatarColorPopover = createColorPopover({
     "#00C853",
     "#00BCD4",
   ],
-  title: "自訂顏色",
+  title: t("white_avatar_custom_color"),
   offsetX: 12,
   offsetY: 0,
 });
@@ -1857,8 +1866,8 @@ doorBtns.style.transition = "opacity 180ms ease, transform 180ms ease";
 doorBtns.style.pointerEvents = "none";
 doorLayer.appendChild(doorBtns);
 
-const btnWander = makePillButton("再逛一下");
-const btnEnterHall = makePillButton("進入會場");
+const btnWander = makePillButton(t("white_door_wander"));
+const btnEnterHall = makePillButton(t("white_door_enter"));
 doorBtns.appendChild(btnWander);
 doorBtns.appendChild(btnEnterHall);
 
@@ -1869,7 +1878,7 @@ function doorEnterPrompt() {
 
     doorLayer.style.pointerEvents = "auto";
 
-    doorBubble.textContent = "是否進入宴席會場？";
+    doorBubble.textContent = t("white_door_question");
     doorBubble.style.opacity = "1";
     doorBubble.style.transform = "translateY(0)";
 
@@ -2094,7 +2103,7 @@ console.log("[npcEnterQ1] begin", { locked: controls.isLocked });
   console.log("[npcEnterQ1] after unlock", { locked: controls.isLocked });
 
   npcState = NPC_STATE.Q1;
-  npcShowBubble("請問要進入會場嗎？");
+  npcShowBubble(t("white_npc_enter_question"));
 
   optionRow.style.pointerEvents = "auto";
   optionRow.style.opacity = "1";
@@ -2109,7 +2118,7 @@ console.log("[npcEnterQ1] begin", { locked: controls.isLocked });
 function npcKickOut() {
   npcState = NPC_STATE.NOT_GUEST;
 
-  npcShowBubble("ಠ_ಠ");
+  npcShowBubble(t("white_npc_not_guest_face"));
   optionRow.style.opacity = "0";
   optionRow.style.pointerEvents = "none";
 
@@ -2122,7 +2131,7 @@ function npcKickOut() {
 function npcAskName() {
     console.log("[npcEnterQ1] begin", { locked: controls.isLocked });
     npcState = NPC_STATE.ASK_NAME;
-    npcShowBubble("如何稱呼您呢？");
+    npcShowBubble(t("white_npc_ask_name"));
 
     optionRow.style.opacity = "0";
     optionRow.style.pointerEvents = "none";
@@ -2141,9 +2150,9 @@ function npcAskName() {
 }
 function npcCheckId() {
     npcState = NPC_STATE.CHECK_ID;
-    npcShowBubble("您可以選擇您的入席方式");
-    btnNo.textContent = "用力拒絕";
-    btnYes.textContent = "好啊";
+    npcShowBubble(t("white_npc_check_id"));
+    btnNo.textContent = t("white_btn_force_reject");
+    btnYes.textContent = t("white_btn_okay");
 
     optionRow.style.opacity = "1";
     optionRow.style.transform = "translateY(0)";
@@ -2191,7 +2200,7 @@ async function submitName() {
     npcCheckId();
   } catch (err) {
     console.error("[submitName] register failed", err);
-    npcShowBubble(`身份登記失敗：${err.message}`);
+    npcShowBubble(t("white_npc_register_fail", { error: err.message }));
   }
 }
 async function syncCurrentProfileToServer() {
@@ -2249,7 +2258,7 @@ btnYes.addEventListener("pointerdown", (e) => {
   if (npcState === NPC_STATE.Q1) npcAskName();
   if (npcState === NPC_STATE.CHECK_ID) {
     npcState = NPC_STATE.SHOW_ID_CARD;
-    npcShowBubble("為您確認證件中......");
+    npcShowBubble(t("white_npc_verifying"));
     optionRow.style.opacity = "0";
     optionRow.style.pointerEvents = "none";
 
@@ -2260,7 +2269,7 @@ btnYes.addEventListener("pointerdown", (e) => {
       })
       .catch((err) => {
         console.error("[show id card] failed", err);
-        npcShowBubble(`證件讀取失敗：${err.message}`);
+        npcShowBubble(t("white_npc_id_fail", { error: err.message }));
       });
   }
 });
@@ -2295,7 +2304,7 @@ btnEnterHall.addEventListener("click", () => {
     window.location.href = "/hall.html";
 });
 btnWander.addEventListener("click", () => {
-    doorTipOnce("可隨時進入宴席會場", 1500);
+    doorTipOnce(t("white_door_tip"), 1500);
 });
 
 const keys = {
@@ -2990,9 +2999,9 @@ function makePill(text, variant){
     return b;
 }
 
-const doneEditBtn = makePill("編輯完成","pink");
-const continueEditBtn = makePill("繼續編輯", "gray");
-const submitBtn = makePill("確認提交", "outlineBlue");
+const doneEditBtn = makePill(t("white_edit_done"), "pink");
+const continueEditBtn = makePill(t("white_continue_edit"), "gray");
+const submitBtn = makePill(t("white_submit"), "outlineBlue");
 
 footer.appendChild(doneEditBtn);
 footer.appendChild(continueEditBtn);
@@ -3026,7 +3035,7 @@ submitBtn.addEventListener("click", async () => {
     await syncCurrentProfileToServer();
   } catch (err) {
     console.error("[submitBtn] sync failed", err);
-    npcShowBubble(`證件提交失敗：${err.message}`);
+    npcShowBubble(t("white_npc_submit_fail", { error: err.message }));
     return;
   }
 
@@ -3042,8 +3051,8 @@ submitBtn.addEventListener("click", async () => {
   safeLockControls();
 
   try {
-    await bubbleFor("我們將會發放給您新的識別證明", 1500);
-    await bubbleFor("您可以從旁邊的大門進入會場", 1500);
+    await bubbleFor(t("white_npc_after_1"), 1500);
+    await bubbleFor(t("white_npc_after_2"), 1500);
     bubbleHide();
   } catch (err) {
     console.warn("[submitBtn] post-submit ui failed", err);

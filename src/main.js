@@ -39,6 +39,15 @@ import { GLTFLoader } from "three/examples/jsm/Addons.js";
 import { PointerLockControls } from "three/examples/jsm/controls/PointerLockControls.js";
 import { createPotController } from "./pot/potControllers.js";
 import { initMobileInput } from "./Input/mobileInput.js";
+import { createTranslator, getLang } from "./i18n.js";
+import { TEXT } from "./i18n-text.js";
+
+const t = createTranslator(TEXT);
+const lang = getLang();
+
+if (lang === "en") {
+  document.body.classList.add("lang-en");
+}
 
 if (typeof document !== "undefined") {
   const old = document.getElementById("__MOBILE_DEBUG__");
@@ -390,6 +399,17 @@ let assignedMarkerBobBaseY = 0;
 let assignedMarkerTarget = null;
 let lastSentAvatarPos = null;
 let lastSentRotY = null;
+const hallLangStyle = document.createElement("style");
+hallLangStyle.textContent = `
+  body.lang-en button {
+    font-size: 15px !important;
+  }
+
+  body.lang-en #hud {
+    font-size: 12px !important;
+  }
+`;
+document.head.appendChild(hallLangStyle);
 
 function createEmptyTablePotState(tableId) {
   return {
@@ -1310,7 +1330,7 @@ recentCommentsLayer.appendChild(recentCommentsCenterWrap);
 
 const recentCommentsOpenBtn = document.createElement("button");
 recentCommentsOpenBtn.type = "button";
-recentCommentsOpenBtn.textContent = "查看火鍋";
+recentCommentsOpenBtn.textContent = t("hall_recent_open_pot");
 Object.assign(recentCommentsOpenBtn.style, {
   minHeight: "74px",
   padding: "0 28px",
@@ -1328,7 +1348,7 @@ Object.assign(recentCommentsOpenBtn.style, {
 
 const recentCommentsSkipBtn = document.createElement("button");
 recentCommentsSkipBtn.type = "button";
-recentCommentsSkipBtn.textContent = "先看看留言";
+recentCommentsSkipBtn.textContent = t("hall_recent_view_comments");
 Object.assign(recentCommentsSkipBtn.style, {
   minHeight: "52px",
   padding: "0 22px",
@@ -1425,8 +1445,8 @@ function makeExitDoorBtn(label) {
   return btn;
 }
 
-const btnKeepBrowsing = makeExitDoorBtn("再逛一下");
-const btnLeaveHall = makeExitDoorBtn("離開會場");
+const btnKeepBrowsing = makeExitDoorBtn(t("hall_exit_keep_browsing"));
+const btnLeaveHall = makeExitDoorBtn(t("hall_exit_leave"));
 exitDoorBtnRow.appendChild(btnKeepBrowsing);
 exitDoorBtnRow.appendChild(btnLeaveHall);
 
@@ -1438,7 +1458,7 @@ function showExitDoorPrompt() {
 
   exitDoorLayer.style.display = "block";
   exitDoorLayer.style.pointerEvents = "auto";
-  exitDoorBubble.textContent = "是否離開宴席會場？";
+  exitDoorBubble.textContent = t("hall_exit_question");
 
   clearMoveKeys();
   hideCenterAction();
@@ -2685,9 +2705,9 @@ function startHallIntroIfNeeded() {
   hallIntroStarted = true;
 
   showAnnouncementSequence([
-    { text: "宴席已開放", ms: 2200 },
-    { text: "您的位置將在一分鐘後安排完畢", ms: 2600 },
-    { text: "您可以先在會場內自由探索", ms: 2400 },
+    { text: t("hall_intro_open"), ms: 2200 },
+    { text: t("hall_intro_assigning"), ms: 2600 },
+    { text: t("hall_intro_explore"), ms: 2400 },
   ]);
 
   const revealTimer = setTimeout(() => {
@@ -2701,10 +2721,10 @@ function revealAssignedSeat() {
   if (hallAssignmentRevealed) return;
   hallAssignmentRevealed = true;
 
-  showAnnouncementBubble("您的位置已安排好");
+  showAnnouncementBubble(t("hall_seat_ready"));
 
   const t1 = setTimeout(() => {
-    showAnnouncementBubble("請依據指示入座");
+    showAnnouncementBubble(t("hall_follow_marker"));
   }, 1800);
 
   const t2 = setTimeout(() => {
@@ -2719,10 +2739,10 @@ function revealAssignedSeat() {
 }
 
 function showPostPotAnnouncement() {
-  showAnnouncementBubble("宴席持續進行中");
+  showAnnouncementBubble(t("hall_after_pot_1"));
 
   const t1 = setTimeout(() => {
-    showAnnouncementBubble("歡迎自由探索會場");
+    showAnnouncementBubble(t("hall_after_pot_2"));
   }, 1800);
 
   const t2 = setTimeout(() => {
@@ -4235,7 +4255,7 @@ function animate() {
         const dist = distanceToTable(info, player.position);
         if (dist <= INTERACT_DISTANCE) {
           shouldShowCTA = true;
-          nextCTALabel = "入座";
+          nextCTALabel = t("hall_cta_sit");
         }
       }
     }
@@ -4246,7 +4266,9 @@ function animate() {
     if (potHit) {
       const isOwnerTable = seated?.tableId === assignedTableId;
       shouldShowCTA = true;
-      nextCTALabel = isOwnerTable ? "開始製作火鍋" : "查看火鍋";
+      nextCTALabel = isOwnerTable
+      ? t("hall_cta_make_pot")
+      : t("hall_cta_view_pot");
     }
   }
 

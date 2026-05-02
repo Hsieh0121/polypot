@@ -9,6 +9,15 @@ import {
   clearIngredientDrawing,
   revokePreviewUrl,
 } from "./ingredientInflate.js";
+import { createTranslator, getLang } from "../i18n.js";
+import { TEXT } from "../i18n-text.js";
+
+const t = createTranslator(TEXT);
+const lang = getLang();
+
+if (lang === "en") {
+  document.body.classList.add("lang-en");
+}
 
 export function createPotController({
   appEl,
@@ -174,8 +183,8 @@ export function createPotController({
       confirmLabel: { x: 1087, y: 220, w: 70,  h: 33 },
       deleteLabel:  { x: 1165, y: 220, w: 70,  h: 33 },
 
-      nextBtn: { x: 1124, y: 551, w: 149, h: 63 },
-      nextIcon: { x: 1148, y: 562, w: 42, h: 42 },
+      nextBtn: { x: 1074, y: 551, w: 199, h: 63 },
+      nextIcon: { x: 1095, y: 562, w: 42, h: 42 },
       nextText: { x: 1199, y: 570 },
       prevBtn: { x: 35, y: 551, w: 199, h: 63 },
       prevIcon: { x: 173, y: 562, w: 42, h: 42 },
@@ -255,8 +264,8 @@ export function createPotController({
       tableOwnerProfile?.name ||
       tableOwnerProfile?.nickname ||
       tableOwnerProfile?.displayName ||
-      "未命名";
-    return `${name}的留言區`;
+      t("pot_unnamed");
+    return t("pot_comment_board_title", { name });
   }
 
   function getOwnerAvatarSrc() {
@@ -769,14 +778,18 @@ async function storeIngredient(name) {
       z: 4
     });
 
-    addText(label, {
+    const labelEl = addText(label, {
       x: rect.x + rect.w / 2 + textOffsetX,
       y: rect.y + textOffsetY,
-      size: 25,
+      size: lang === "en" ? 21 : 25,
       color: "#FD6FFF",
       center: true,
       z: 4
     });
+
+    if (lang === "en") {
+      labelEl.style.letterSpacing = "0px";
+    }
 
     return btn;
   }
@@ -824,6 +837,12 @@ async function storeIngredient(name) {
       color: "#1248FF",
       z: 12,
     });
+    if (lang === "en") {
+      chip.style.width = "auto";
+      chip.style.minWidth = `${rect.w}px`;
+      chip.style.padding = "0 12px";
+      chip.style.boxSizing = "border-box";
+    }
 
     chip.style.display = "none";
 
@@ -873,7 +892,7 @@ async function storeIngredient(name) {
     pop.appendChild(presetWrap);
 
     const nativeLabel = document.createElement("div");
-    nativeLabel.textContent = "自訂顏色";
+    nativeLabel.textContent = t("pot_custom_color");
     Object.assign(nativeLabel.style, {
       fontFamily: '"zpix", ui-sans-serif, system-ui',
       fontSize: "16px",
@@ -1023,7 +1042,7 @@ async function storeIngredient(name) {
     pop.appendChild(presetWrap);
 
     const nativeLabel = document.createElement("div");
-    nativeLabel.textContent = "切割線顏色";
+    nativeLabel.textContent = t("pot_cut_line_color");
     Object.assign(nativeLabel.style, {
       fontFamily: '"zpix", ui-sans-serif, system-ui',
       fontSize: "16px",
@@ -1419,7 +1438,7 @@ async function storeIngredient(name) {
 
     const potImg = addImg(ASSETS.step0Pot, { ...s.pot, z: 2, pointerEvents: "auto" });
     const bubble = addImg(ASSETS.emptyBubble, { ...s.bubble, z: 3, opacity: 0 });
-    const bubbleText = addText("來製作你的火鍋吧！", {
+    const bubbleText = addText(t("pot_intro_hover"), {
       x: 194,
       y: 126,
       size: 30,
@@ -1439,7 +1458,7 @@ async function storeIngredient(name) {
 
     addActionButton({
       rect: s.nextBtn,
-      label: "開始製作",
+      label: t("pot_start"),
       iconSrc: ASSETS.rightArrow,
       iconRect: s.nextIcon,
       textOffsetX: 14,
@@ -1487,7 +1506,7 @@ async function storeIngredient(name) {
 
     if (balls.length === 0) {
       const empty = document.createElement("div");
-      empty.textContent = "尚無湯塊";
+      empty.textContent = t("pot_empty_soup");
       Object.assign(empty.style, {
         fontFamily: '"zpix", ui-sans-serif, system-ui',
         fontSize: "18px",
@@ -1541,8 +1560,8 @@ async function storeIngredient(name) {
     function renderStep1() {
     const s = UI.step1;
     addImg(ASSETS.step1Worktop, { ...s.worktop, z: 1 });
-    addText("湯塊區", { x: s.listFrame.x, y: s.listFrame.y, size: 20, z: 3 });
-    addText("製作湯塊", { x: s.title.x, y: s.title.y, size: 25, z: 3 });
+    addText(t("pot_soup_area"), { x: s.listFrame.x, y: s.listFrame.y, size: 20, z: 3 });
+    addText(t("pot_make_soup"), { x: s.title.x, y: s.title.y, size: 25, z: 3 });
 
     fluidMountEl = document.createElement("div");
     Object.assign(fluidMountEl.style, {
@@ -1588,7 +1607,7 @@ async function storeIngredient(name) {
       bg: "transparent",
       radius: 0,
     });
-    attachHoverLabel(colorBtn, "湯頭：選擇顏色", s.colorLabel);
+    attachHoverLabel(colorBtn, t("pot_soup_color_tool"), s.colorLabel);
 
     let matPopupOpen = false;
 
@@ -1612,12 +1631,12 @@ async function storeIngredient(name) {
     panelEl.appendChild(matPopup);
 
     const mats = [
-      { key: "ink",    label: "Ink" },
-      { key: "latex",  label: "液態乳膠" },
-      { key: "wax",    label: "融蠟" },
-      { key: "chrome", label: "流體金屬" },
-      { key: "pearl",  label: "珍珠母貝" },
-      { key: "clay",   label: "黏土" },
+      { key: "ink",    label: t("pot_material_ink") },
+      { key: "latex",  label: t("pot_material_latex") },
+      { key: "wax",    label: t("pot_material_wax") },
+      { key: "chrome", label: t("pot_material_chrome") },
+      { key: "pearl",  label: t("pot_material_pearl") },
+      { key: "clay",   label: t("pot_material_clay") },
     ];
     let activeMat = "ink";
 
@@ -1671,7 +1690,7 @@ async function storeIngredient(name) {
       },
       border: "0", bg: "transparent", radius: 0,
     });
-    attachHoverLabel(materialBtn, "口感：選擇質地", s.materialLabel);
+    attachHoverLabel(materialBtn, t("pot_soup_texture_tool"), s.materialLabel);
     matPopup.addEventListener("pointerdown", (e) => {
       e.stopPropagation();
     });
@@ -1735,7 +1754,8 @@ async function storeIngredient(name) {
       },
       border: "0", bg: "transparent", radius: 0,
     });
-    attachHoverLabel(brushBtn, "湯勺：調整筆刷大小", s.brushLabel);
+    attachHoverLabel(brushBtn, t("pot_soup_brush_tool"), s.brushLabel);
+
 
     let fluidEraserOn = false;
     let fluidFingerOn = false;
@@ -1755,7 +1775,7 @@ async function storeIngredient(name) {
       },
       border: "0", bg: "transparent", radius: 0,
     });
-    attachHoverLabel(eraserBtn, "衛生紙：擦除", s.eraserLabel);
+    attachHoverLabel(eraserBtn, t("pot_soup_eraser_tool"), s.eraserLabel);
 
     const fingerBtn = addImageButton(ASSETS.finger, s.fingerBtn, {
       onClick: () => {
@@ -1770,7 +1790,7 @@ async function storeIngredient(name) {
       },
       border: "0", bg: "transparent", radius: 0,
     });
-    attachHoverLabel(fingerBtn, "湯壺：攪拌暈染", s.fingerLabel);
+    attachHoverLabel(fingerBtn, t("pot_soup_blend_tool"), s.fingerLabel);
 
     const nameWrap = document.createElement("div");
     Object.assign(nameWrap.style, {
@@ -1813,7 +1833,7 @@ async function storeIngredient(name) {
     nameFrame.appendChild(nameInput);
 
     const nameLabel = document.createElement("div");
-    nameLabel.textContent = "命名湯塊";
+    nameLabel.textContent = t("pot_name_soup");
     Object.assign(nameLabel.style, {
       position: "absolute",
       left: "18px",
@@ -1836,7 +1856,9 @@ async function storeIngredient(name) {
       x: s.confirmBtn.x, y: s.confirmBtn.y, w: s.confirmBtn.w, h: s.confirmBtn.h,
       bg: "#EAEAEA", border: "2px solid #EAEAEA",
       onClick: () => {
-        const nm = nameInput.value.trim() || `湯塊 ${balls.length + 1}`;
+        const nm = nameInput.value.trim() || t("pot_soup_default_name", {
+          number: balls.length + 1,
+        });
         const ball = ballEditor?.storeSnapshot?.(nm);
         if (!ball) return;
         balls.unshift({ id: ball.id, name: ball.name, previewUrl: ball.previewDataURL });
@@ -1851,7 +1873,7 @@ async function storeIngredient(name) {
       }
     });
     addImg(ASSETS.confirm, { ...s.confirmIcon, z: 4 });
-    attachHoverLabel(confirmBtn, "儲存", s.confirmLabel);
+    attachHoverLabel(confirmBtn, t("pot_save"), s.confirmLabel);
 
     const deleteBtn = addCapsuleButton({
       x: s.deleteBtn.x, y: s.deleteBtn.y, w: s.deleteBtn.w, h: s.deleteBtn.h,
@@ -1859,7 +1881,7 @@ async function storeIngredient(name) {
       onClick: () => { fluidCtrl?.clearCanvas(); }
     });
     addImg(ASSETS.delete, { ...s.deleteIcon, z: 4 });
-    attachHoverLabel(deleteBtn, "清空", s.deleteLabel);
+    attachHoverLabel(deleteBtn, t("pot_clear"), s.deleteLabel);
 
     const hiddenBallList = document.createElement("div");
     const hiddenEmpty = document.createElement("div");
@@ -1880,7 +1902,7 @@ async function storeIngredient(name) {
 
     addActionButton({
       rect: s.nextBtn,
-      label: "製作配料",
+      label: t("pot_make_ingredient"),
       iconSrc: ASSETS.rightArrow,
       iconRect: s.nextIcon,
       textOffsetX: 14,
@@ -1950,7 +1972,7 @@ async function storeIngredient(name) {
   }
 
   function renderHorizontalIngredientList(rect) {
-    addText("配料區", { x: rect.x, y: rect.y, size: 20, color: "#1248FF", z: 3 });
+    addText(t("pot_ingredient_area"), { x: rect.x, y: rect.y, size: 20, color: "#1248FF", z: 3 });
 
     const wrap = document.createElement("div");
     Object.assign(wrap.style, {
@@ -2011,8 +2033,8 @@ async function storeIngredient(name) {
     function renderStep2() {
     const s = UI.step2;
     addImg(ASSETS.step2Worktop, { ...s.worktop, z: 1 });
-    addText("製作配料", { x: s.title.x, y: s.title.y, size: 25, color: "#FD6FFF", z: 3 });
-    addText("畫出配料", { x: s.drawTitle.x, y: s.drawTitle.y, size: 20, color: "#FD6FFF", z: 3 });
+    addText(t("pot_make_ingredient"), { x: s.title.x, y: s.title.y, size: 25, color: "#FD6FFF", z: 3 });
+    addText(t("pot_draw_ingredient"), { x: s.drawTitle.x, y: s.drawTitle.y, size: 20, color: "#FD6FFF", z: 3 });
 
     ingredientCanvas = document.createElement("canvas");
     ingredientCanvas.width = s.drawCanvas.w;
@@ -2062,7 +2084,7 @@ async function storeIngredient(name) {
       bg: "transparent",
       radius: 0,
     });
-    attachHoverLabel(colorBtn, "食用色素：選擇顏色", s.colorLabel);
+    attachHoverLabel(colorBtn, t("pot_ingredient_color_tool"), s.colorLabel);
 
     const brushPopup = document.createElement("div");
     Object.assign(brushPopup.style, {
@@ -2132,7 +2154,7 @@ async function storeIngredient(name) {
       bg: "transparent",
       radius: 0,
     });
-    attachHoverLabel(brushBtn, "漏斗：調整筆刷大小", s.brushLabel);
+    attachHoverLabel(brushBtn, t("pot_ingredient_brush_tool"), s.brushLabel);
 
     const eraserBtn = addImageButton(ASSETS.eraser2, s.eraserBtn, {
       onClick: () => {
@@ -2147,7 +2169,7 @@ async function storeIngredient(name) {
       bg: "transparent",
       radius: 999,
     });
-    attachHoverLabel(eraserBtn, "刀子：擦除", s.eraserLabel);
+    attachHoverLabel(eraserBtn, t("pot_ingredient_eraser_tool"), s.eraserLabel);
 
     const oldPreview = panelEl.querySelector(".ingredient-preview-img");
     if (oldPreview) oldPreview.remove();
@@ -2177,7 +2199,7 @@ async function storeIngredient(name) {
       radius: 0,
     });
 
-    addLabelChip("充氣", {
+    addLabelChip(t("pot_inflate"), {
       x: s.inflateLabel.x,
       y: s.inflateLabel.y,
       w: s.inflateLabel.w,
@@ -2243,7 +2265,7 @@ async function storeIngredient(name) {
     inputFrame.appendChild(previewNameInput);
 
     const inputLabel = document.createElement("div");
-    inputLabel.textContent = "命名配料";
+    inputLabel.textContent = t("pot_name_ingredient");
     Object.assign(inputLabel.style, {
       position: "absolute",
       left: "18px",
@@ -2276,7 +2298,9 @@ async function storeIngredient(name) {
       padding: "0",
     });
     confirmBtn.addEventListener("click", async () => {
-      const nm = previewNameInput.value.trim() || `配料 ${ingredients.length + 1}`;
+      const nm = previewNameInput.value.trim() || t("pot_ingredient_default_name", {
+        number: ingredients.length + 1,
+      });
 
       await storeIngredient(nm);
 
@@ -2300,7 +2324,7 @@ async function storeIngredient(name) {
       pointerEvents: "none",
     });
     confirmBtn.appendChild(confirmIcon);
-    attachHoverLabel(confirmBtn, "儲存", s.confirmLabel);
+    attachHoverLabel(confirmBtn, t("pot_save"), s.confirmLabel);
 
     const deleteBtn = document.createElement("button");
     deleteBtn.type = "button";
@@ -2332,13 +2356,13 @@ async function storeIngredient(name) {
       pointerEvents: "none",
     });
     deleteBtn.appendChild(deleteIcon);
-    attachHoverLabel(deleteBtn, "清空", s.deleteLabel);
+    attachHoverLabel(deleteBtn, t("pot_clear"), s.deleteLabel);
 
     renderHorizontalIngredientList(s.listFrame);
 
     addActionButton({
       rect: s.prevBtn,
-      label: "製作湯塊",
+      label: t("pot_make_soup"),
       iconSrc: ASSETS.leftArrow,
       iconRect: s.prevIcon,
       textOffsetX: -16,
@@ -2350,7 +2374,7 @@ async function storeIngredient(name) {
 
     addActionButton({
       rect: s.nextBtn,
-      label: "下鍋",
+      label: t("pot_next_to_pot"),
       iconSrc: ASSETS.rightArrow,
       iconRect: s.nextIcon,
       textOffsetX: 12,
@@ -2665,8 +2689,8 @@ function renderVerticalList({
       z: 1,
     });
 
-    const titleX = title === "湯塊區" ? UI.step3.soupListTitle.x : UI.step3.ingListTitle.x;
-    const titleY = title === "湯塊區" ? UI.step3.soupListTitle.y : UI.step3.ingListTitle.y;
+    const titleX = title === t("pot_soup_area") ? UI.step3.soupListTitle.x : UI.step3.ingListTitle.x;
+    const titleY = title === t("pot_soup_area") ? UI.step3.soupListTitle.y : UI.step3.ingListTitle.y;
     addText(title, { x: titleX, y: titleY, size: 20, color: "#1248FF", z: 3 });
 
     const wrap = document.createElement("div");
@@ -2686,7 +2710,7 @@ function renderVerticalList({
 
     if (!items.length) {
       const empty = document.createElement("div");
-      empty.textContent = "尚無內容";
+      empty.textContent = t("pot_empty_content");
       Object.assign(empty.style, {
         fontFamily: '"zpix", ui-sans-serif, system-ui',
         fontSize: "18px",
@@ -2737,7 +2761,7 @@ function renderVerticalList({
       btn.appendChild(img);
 
       const label = document.createElement("div");
-      label.textContent = item.name || "未命名";
+      label.textContent = item.name || t("pot_unnamed");
       Object.assign(label.style, {
         fontFamily: '"zpix", ui-sans-serif, system-ui',
         fontSize: "18px",
@@ -2758,7 +2782,7 @@ function renderVerticalList({
         });
 
         const sizeLabel = document.createElement("div");
-        sizeLabel.textContent = "大小";
+        sizeLabel.textContent = t("pot_size");
         Object.assign(sizeLabel.style, {
           fontFamily: '"zpix", ui-sans-serif, system-ui',
           fontSize: "14px",
@@ -2825,7 +2849,7 @@ function renderVerticalList({
     redrawComposeCanvas();
 
     renderVerticalList({
-      title: "湯塊區",
+      title: t("pot_soup_area"),
       frame: s.soupList,
       items: balls,
       activeId: activeBallId,
@@ -2848,7 +2872,7 @@ function renderVerticalList({
     });
 
     renderVerticalList({
-      title: "配料區",
+      title: t("pot_ingredient_area"),
       frame: s.ingList,
       items: ingredients,
       activeId: activeIngredientId,
@@ -2886,7 +2910,7 @@ function renderVerticalList({
       h: 42,
       z: 4,
     });
-    addLabelChip("繼續製作", {
+    addLabelChip(t("pot_continue_make"), {
       x: s.controls.continueMake.x - 20,
       y: 551,
       w: 100,
@@ -2947,7 +2971,7 @@ function renderVerticalList({
       rotate: 30,
     });
 
-    addLabelChip("切割", {
+    addLabelChip(t("pot_cut"),  {
       x: s.controls.cut.x - 1,
       y: 551,
       w: 62,
@@ -2978,7 +3002,7 @@ function renderVerticalList({
       h: 40,
       z: 4,
     });
-    addLabelChip("上一步", {
+    addLabelChip(t("pot_undo"),{
       x: s.controls.restart.x - 10,
       y: 551,
       w: 82,
@@ -3008,7 +3032,7 @@ function renderVerticalList({
       h: 40,
       z: 4,
     });
-    addLabelChip("刪除", {
+    addLabelChip(t("pot_delete"), {
       x: s.controls.delete.x - 10,
       y: 551,
       w: 82,
@@ -3037,7 +3061,7 @@ function renderVerticalList({
       h: 42,
       z: 4,
     });
-    addLabelChip("完成火鍋!", {
+    addLabelChip(t("pot_finish"), {
       x: s.controls.finish.x - 18,
       y: 551,
       w: 100,
@@ -3385,11 +3409,11 @@ function renderVerticalList({
             tableOwnerProfile?.name ||
             tableOwnerProfile?.nickname ||
             tableOwnerProfile?.displayName ||
-            "未命名"
+            t("pot_unnamed")
           )
-        : "我";
+        : t("pot_my_display_name");
 
-      addText(`${displayName}的火鍋`, {
+      addText(t("pot_title", { name: displayName }), {
         x: UI.overlayW / 2,
         y: 56,
         size: 25,
@@ -3486,7 +3510,7 @@ function renderVerticalList({
         panelEl.appendChild(potBodyColorWrap);
 
         const potBodyColorLabel = document.createElement("div");
-        potBodyColorLabel.textContent = "鍋子顏色";
+        potBodyColorLabel.textContent = t("pot_body_color");
         Object.assign(potBodyColorLabel.style, {
           fontFamily: '"zpix", ui-sans-serif, system-ui',
           fontSize: "20px",
@@ -3536,7 +3560,7 @@ function renderVerticalList({
         panelEl.appendChild(potHandleColorWrap);
 
         const potHandleColorLabel = document.createElement("div");
-        potHandleColorLabel.textContent = "握把顏色";
+        potHandleColorLabel.textContent = t("pot_handle_color");
         Object.assign(potHandleColorLabel.style, {
           fontFamily: '"zpix", ui-sans-serif, system-ui',
           fontSize: "20px",
@@ -3575,7 +3599,7 @@ function renderVerticalList({
       if (!viewOnly) {
         addActionButton({
           rect: prevRect,
-          label: "繼續製作",
+          label: t("pot_continue_make"),
           iconSrc: ASSETS.leftArrow,
           iconRect: prevIconRect,
           textOffsetX: -16,
@@ -3587,7 +3611,7 @@ function renderVerticalList({
 
       addActionButton({
         rect: nextRect,
-        label: "安排座位",
+        label: t("pot_arrange_seats"),
         iconSrc: ASSETS.rightArrow,
         iconRect: nextIconRect,
         textOffsetX: 12,
@@ -3632,7 +3656,7 @@ function renderVerticalList({
           w: 406,
           h: 54,
           value: commentInputValue,
-          placeholder: "輸入留言...",
+          placeholder: t("pot_comment_placeholder"),
           fontSize: 16,
           textColor: "#FD6FFF",
           placeholderColor: "#CFCFCF",
@@ -3675,7 +3699,7 @@ function renderVerticalList({
         },
         });
 
-        addText("留言", {
+        addText(t("pot_comment_submit"), {
           x: 806 + 112 / 2,
           y: 521 + 13,
           size: 25,
@@ -3751,7 +3775,7 @@ function renderVerticalList({
     });
   } else {
     const emptyCard = document.createElement("div");
-    emptyCard.textContent = "尚無 ID card snapshot";
+    emptyCard.textContent = t("pot_no_id_snapshot");
     Object.assign(emptyCard.style, {
       position: "absolute",
       left: "81px",
@@ -3791,7 +3815,7 @@ function renderVerticalList({
 
     if (!safeComments.length) {
       const empty = document.createElement("div");
-      empty.textContent = "尚無留言";
+      empty.textContent = t("pot_no_comments");
       Object.assign(empty.style, {
         fontFamily: '"zpix", ui-sans-serif, system-ui',
         fontSize: "16px",
@@ -3882,7 +3906,7 @@ function renderVerticalList({
       w: 474,
       h: 37,
       value: commentBoardInputValue,
-      placeholder: "輸入留言...",
+      placeholder: t("pot_comment_placeholder"),
       fontSize: 16,
       textColor: "#C0C0C0",
       placeholderColor: "#CFCFCF",
@@ -3925,7 +3949,7 @@ function renderVerticalList({
     },
     });
 
-    addText("留言", {
+    addText(t("pot_comment_submit"), {
       x: 1122 + 77 / 2,
       y: 418 + 11,
       size: 16,
@@ -3941,7 +3965,7 @@ function renderVerticalList({
     if (overlayMode !== "commentBoard") {
       addActionButton({
         rect: { x: 256, y: 533, w: 180, h: 54 },
-        label: "查看火鍋",
+        label: t("pot_view_pot"),
         iconSrc: ASSETS.potIcon,
         iconRect: { x: 269, y: 545, w: 39, h: 29 },
         textOffsetX: 16,
@@ -3954,7 +3978,7 @@ function renderVerticalList({
 
       addActionButton({
         rect: { x: 869, y: 533, w: 180, h: 54 },
-        label: "返回宴會",
+        label: t("pot_return_banquet"),
         iconSrc: ASSETS.rightArrow,
         iconRect: { x: 882, y: 536, w: 48, h: 48 },
         textOffsetX: 20,
@@ -3984,7 +4008,7 @@ function renderVerticalList({
 
     if (!items.length) {
       const empty = document.createElement("div");
-      empty.textContent = "尚無內容";
+      empty.textContent = t("pot_empty_content");
       Object.assign(empty.style, {
         fontFamily: '"zpix", ui-sans-serif, system-ui',
         fontSize: "18px",
@@ -4026,7 +4050,7 @@ function renderVerticalList({
       });
 
       const label = document.createElement("div");
-      label.textContent = item.name || "未命名";
+      label.textContent = item.name || t("pot_unnamed");
       Object.assign(label.style, {
         fontFamily: '"zpix", ui-sans-serif, system-ui',
         fontSize: "18px",
@@ -4058,7 +4082,7 @@ function renderVerticalList({
         });
 
         const commit = () => {
-          const nextName = input.value.trim() || "未命名";
+          const nextName = input.value.trim() || t("pot_unnamed");
           onRename?.(item.id, nextName);
         };
 
@@ -4256,7 +4280,7 @@ function renderVerticalList({
 
     mountStep5Preview();
 
-    addText("您希望和多少人分享您的火鍋呢?", {
+    addText(t("pot_chair_question"), {
       x: s.title.x,
       y: s.title.y,
       size: 25,
@@ -4290,7 +4314,7 @@ function renderVerticalList({
     panelEl.appendChild(colorWrap);
 
     const colorLabel = document.createElement("div");
-    colorLabel.textContent = "椅子顏色";
+    colorLabel.textContent = t("pot_chair_color");
     Object.assign(colorLabel.style, {
       fontFamily: '"zpix", ui-sans-serif, system-ui',
       fontSize: "20px",
@@ -4386,7 +4410,7 @@ function renderVerticalList({
 
     addActionButton({
       rect: prevRect,
-      label: "回到火鍋",
+      label: t("pot_back_to_pot"),
       iconSrc: ASSETS.leftArrow,
       iconRect: prevIconRect,
       textOffsetX: -16,
@@ -4398,7 +4422,7 @@ function renderVerticalList({
 
     addActionButton({
       rect: nextRect,
-      label: "繼續宴會",
+      label: t("pot_continue_banquet"),
       iconSrc: ASSETS.rightArrow,
       iconRect: nextIconRect,
       textOffsetX: 12,

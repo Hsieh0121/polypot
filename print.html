@@ -54,13 +54,13 @@
 
     .chip-title {
       position: absolute;
-      width: 180px;
-      height: 75px;
+      width: 150px;
+      height: 56px;
       border: 3px solid var(--blue);
       border-radius: var(--radius-pill);
       background: var(--white);
       color: var(--blue);
-      font-size: 30pt;
+      font-size: 22pt;
       line-height: 1;
       display: flex;
       align-items: center;
@@ -391,7 +391,7 @@
     <div
       id="idCardTitle"
       class="chip-title"
-      style="left: 423px; top: 174px;"
+      style="left: 438px; top: 174px;"
     >
       身份卡
     </div>
@@ -399,7 +399,7 @@
     <div
       id="potCardTitle"
       class="chip-title"
-      style="left: 1331px; top: 174px;"
+      style="left: 1346px; top: 174px;"
     >
       火鍋卡
     </div>
@@ -518,6 +518,15 @@
     import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
     import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
     import html2canvas from "html2canvas";
+    import { createTranslator, getLang } from "./src/i18n.js";
+    import { TEXT } from "./src/i18n-text.js";
+
+    const t = createTranslator(TEXT);
+    const lang = getLang();
+
+    if (lang === "en") {
+      document.body.classList.add("lang-en");
+    }
 
     console.log("[print] module boot");
 
@@ -545,6 +554,21 @@
     const feedbackTextarea = document.getElementById("feedbackTextarea");
     const feedbackSubmitBtn = document.getElementById("feedbackSubmitBtn");
 
+    idCardTitle.textContent = t("print_id_card");
+    potCardTitle.textContent = t("print_pot_card");
+    adjustViewBtn.textContent = t("print_adjust_view");
+    refreshPotCardBtn.textContent = t("print_refresh_card");
+    printBtn.textContent = t("print_button");
+    potStageLoading.textContent = t("print_loading");
+
+    document.querySelectorAll(".save-hint").forEach((el) => {
+      el.textContent = t("print_save_hint");
+    });
+
+    document.querySelector(".feedback-title").innerHTML = t("print_feedback_title");
+    feedbackTextarea.placeholder = t("print_feedback_placeholder");
+    feedbackSubmitBtn.textContent = t("print_feedback_submit");
+
     function openFeedbackModal() {
       if (!feedbackModalBackdrop) return;
       feedbackModalBackdrop.style.display = "flex";
@@ -565,7 +589,7 @@
   const content = feedbackTextarea?.value?.trim() || "";
 
   if (!content) {
-    setStatus("請先輸入意見內容。");
+    setStatus(t("print_feedback_empty"));
     return;
   }
 
@@ -591,10 +615,10 @@
 
     feedbackTextarea.value = "";
     closeFeedbackModal();
-    setStatus("謝謝你的意見，我們已經假裝慎重收下。");
+    setStatus(t("print_feedback_success"));
   } catch (err) {
     console.error("[feedback submit failed]", err);
-    setStatus(`意見送出失敗：${err.message || err}`);
+    setStatus(t("print_feedback_failed", { error: err.message || err }));
   }
 });
 
@@ -691,7 +715,7 @@
       img.alt = item?.name || "";
 
       const text = document.createElement("span");
-      text.textContent = item?.name || "未命名";
+      text.textContent = item?.name || t("print_unnamed");
 
       row.appendChild(img);
       row.appendChild(text);
@@ -715,7 +739,9 @@
     }
 
     function renderPotName(nextProfile) {
-      potName.textContent = `${nextProfile?.name || "anon"} 的火鍋`;
+      potName.textContent = t("print_pot_title", {
+        name: nextProfile?.name || t("print_anon"),
+      });
     }
 
     function disposePreview() {
@@ -946,7 +972,7 @@
     potCardExportStage.style.display = "block";
     potStageLoading.style.display = "none";
     setSelectedCard("pot");
-    setStatus("拖曳鍋子調整視角，按「更新圖卡」後可長按儲存。");
+    setStatus(t("print_update_hint"));
     }
 
     function showStageImage() {
@@ -954,7 +980,7 @@
       potCardExportStage.style.display = "none";
       potSavedFrame.style.display = "block";
       setSelectedCard("pot");
-      setStatus("火鍋卡已更新，長按右側圖片可儲存。");
+      setStatus(t("print_pot_updated"));
     }
 
     function startLoop() {
@@ -998,7 +1024,7 @@
       controls.maxDistance = 6;
       controls.addEventListener("change", () => {
         if (stageMode !== "preview") return;
-        setStatus("視角已變更，按「更新圖卡」儲存目前視角。");
+        setStatus(t("print_view_changed"));
       });
 
       const ambient = new THREE.AmbientLight(0xffffff, 2.2);
@@ -1071,11 +1097,11 @@
 
     async function loadAll() {
       try {
-        setStatus("讀取列印資料中...");
+        setStatus(t("print_loading_data"));
         const serial = getSerialFromUrlOrStorage();
 
         if (!serial) {
-          throw new Error("找不到 serial");
+          throw new Error(t("print_no_serial"));
         }
 
         const data = await fetchPrintData(serial);
@@ -1096,17 +1122,17 @@
           potSavedFrame.style.display = "block";
           potCardImage.removeAttribute("src");
           potCardImage.style.display = "none";
-          setStatus("目前沒有火鍋資料，只能列印身份卡。");
+          setStatus(t("print_no_pot"));
         }
 
         if (!profile?.idCardSnapshot) {
-          setStatus("沒有找到身份卡 snapshot。");
+          setStatus(t("print_no_id_card"));
         } else if (pot) {
-        setStatus("火鍋已載入，可先調整視角，再按「更新圖卡」。");
+        setStatus(t("print_pot_loaded"));
         }
       } catch (err) {
         console.error("[print] load failed", err);
-        setStatus(`載入失敗：${err.message || err}`);
+        setStatus(t("print_load_failed", { error: err.message || err }));
       }
     }
 
@@ -1143,45 +1169,45 @@
       e.stopPropagation();
 
       try {
-        setStatus("正在更新火鍋卡 png...");
+        setStatus(t("print_updating_png"));
         const dataUrl = await exportPotCardImage();
         if (!dataUrl) throw new Error("pot export failed");
       } catch (err) {
         console.error("[print] export pot failed", err);
-        setStatus(`更新火鍋卡失敗：${err.message || err}`);
+        setStatus(t("print_update_failed", { error: err.message || err }));
       }
     });
 
     printBtn.addEventListener("click", async () => {
       try {
         if (!profile?.serial) {
-          throw new Error("找不到使用者資料");
+         throw new Error(t("print_no_profile"));
         }
 
         if (selectedCardType === "id") {
           const imageData = idCardImage.src;
-          if (!imageData) throw new Error("身份卡尚未載入");
-          setStatus("正在送出身份卡列印...");
+          if (!imageData) throw new Error(t("print_id_not_loaded"));
+          setStatus(t("print_submit_id"));
           await submitPrintJob("id", imageData);
-          setStatus("身份卡已送至現場列印台。");
+          setStatus(t("print_submit_success_id"));
           openFeedbackModal();
           return;
         }
 
         if (stageMode !== "image") {
-          setStatus("請先按「更新圖卡」，再送出列印。");
+          setStatus(t("print_need_update"));
           return;
         }
 
         const imageData = potCardImage.src;
-        if (!imageData) throw new Error("火鍋卡尚未產生");
-        setStatus("正在送出火鍋卡列印...");
+        if (!imageData) throw new Error(t("print_pot_not_ready"));
+        setStatus(t("print_submit_pot"));
         await submitPrintJob("pot", imageData);
-        setStatus("火鍋卡已送至現場列印台。");
+        setStatus(t("print_submit_success_pot"));
         openFeedbackModal();
       } catch (err) {
         console.error("[print] submit failed", err);
-        setStatus(`送印失敗：${err.message || err}`);
+        setStatus(t("print_submit_failed", { error: err.message || err }));
       }
     });
 

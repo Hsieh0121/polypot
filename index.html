@@ -271,11 +271,19 @@
 
     <div class="intro-ui">
       <div class="lang-row" id="langRow">
-        <a href="/entry.html" class="lang-btn">中文</a>
-        <button type="button" class="lang-btn">English</button>
+        <a href="/entry.html" class="lang-btn" data-lang="zh">中文</a>
+        <a href="/entry.html" class="lang-btn" data-lang="en">English</a>
       </div>
     </div>
   </main>
+  <script type="module">
+    import { setLang } from "./src/i18n.js";
 
+    document.querySelectorAll("[data-lang]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        setLang(btn.dataset.lang);
+      });
+    });
+  </script>
 </body>
 </html>

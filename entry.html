@@ -271,6 +271,10 @@
         height: 60px;
         font-size: 18pt;
       }
+      .lang-en .lang-btn {
+        font-size: 16pt;
+        letter-spacing: 0.5px;
+      }
 
       .login-card {
         width: min(420px, calc(100vw - 24px));
@@ -399,8 +403,13 @@
     </div>
   </div>
 
-<script>
-  const STORAGE_KEYS = {
+<script type="module">
+  import { createTranslator } from "./src/i18n.js";
+  import { TEXT } from "./src/i18n-text.js";
+
+  const t = createTranslator(TEXT);
+
+    const STORAGE_KEYS = {
     lastSerial: "polypot_last_serial",
     currentSerial: "polypot_serial",
   };
@@ -417,12 +426,23 @@
   const loginConfirmBtn = document.getElementById("loginConfirmBtn");
   const serialInput = document.getElementById("serialInput");
   const loginError = document.getElementById("loginError");
+    // ===== i18n init =====
+  continueBtn.textContent = t("entry_continue");
+  newGameBtn.textContent = t("entry_new");
+
+  document.getElementById("loginTitle").textContent = t("entry_login_title");
+  loginConfirmBtn.textContent = t("entry_confirm");
+  serialInput.placeholder = t("entry_serial_placeholder");
 
   const lastSerial = localStorage.getItem(STORAGE_KEYS.lastSerial) || "";
   if (lastSerial) {
     serialInput.value = lastSerial;
   }
+  const lang = localStorage.getItem("polypot_lang") || "zh";
 
+  if (lang === "en") {
+    document.body.classList.add("lang-en");
+  }
 
   function openLoginPanel() {
     loginPanel.classList.add("is-open");
@@ -468,7 +488,7 @@
     const rawSerial = serialInput.value.trim().toUpperCase();
 
     if (!rawSerial) {
-      loginError.textContent = "請輸入序號";
+      loginError.textContent = t("entry_error_empty_serial");
       return;
     }
 
@@ -486,7 +506,7 @@
       const data = await res.json().catch(() => null);
 
       if (!res.ok || !data?.ok) {
-        loginError.textContent = "身分證號不存在，請開啟新遊戲。";
+        loginError.textContent = t("entry_error_not_found");
         loginConfirmBtn.disabled = false;
         return;
       }
@@ -500,7 +520,7 @@
       location.href = "/hall.html";
     } catch (err) {
       console.error("[entry] continue failed:", err);
-      loginError.textContent = "連線失敗，請稍後再試";
+      loginError.textContent = t("entry_error_connection");
       loginConfirmBtn.disabled = false;
     }
   }

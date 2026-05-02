@@ -1,0 +1,386 @@
+// /src/i18n-text.js
+
+export const TEXT = {
+  zh: {
+    // ===== common =====
+    common_yes: "是",
+    common_no: "不是",
+    common_confirm: "確認",
+    common_unnamed: "未命名",
+
+    // ===== entry =====
+    entry_continue: "繼續遊戲",
+    entry_new: "新遊戲",
+    entry_login_title: "輸入序號",
+    entry_serial_placeholder: "P000187",
+    entry_confirm: "確認",
+    entry_error_empty_serial: "請輸入序號",
+    entry_error_not_found: "身分證號不存在，請開啟新遊戲。",
+    entry_error_connection: "連線失敗，請稍後再試",
+
+    // ===== white =====
+    white_announce_not_open: "宴席尚未開放",
+    white_announce_open: "場域已開放",
+    white_announce_free_explore: "請自由探索",
+
+    white_npc_enter_question: "請問要進入會場嗎？",
+    white_npc_not_guest_face: "ಠ_ಠ",
+    white_npc_ask_name: "如何稱呼您呢？",
+    white_npc_check_id: "您可以選擇您的入席方式",
+    white_npc_verifying: "為您確認證件中......",
+    white_npc_register_fail: "身份登記失敗：{error}",
+    white_npc_id_fail: "證件讀取失敗：{error}",
+    white_npc_submit_fail: "證件提交失敗：{error}",
+    white_npc_after_1: "我們將會發放給您新的識別證明",
+    white_npc_after_2: "您可以從旁邊的大門進入會場",
+
+    white_btn_yes: "是",
+    white_btn_no: "不是",
+    white_btn_force_reject: "用力拒絕",
+    white_btn_okay: "好啊",
+
+    white_name_placeholder: "輸入名稱",
+    white_name_confirm: "確定",
+
+    white_door_question: "是否進入宴席會場？",
+    white_door_wander: "再逛一下",
+    white_door_enter: "進入會場",
+    white_door_tip: "可隨時進入宴席會場",
+
+    white_kicked_text: "您已被趕出等待區",
+
+    white_edit: "編輯",
+    white_clear_signature: "清除簽名",
+    white_info_placeholder: "（輸入任意留言）",
+
+    white_edit_done: "編輯完成",
+    white_continue_edit: "繼續編輯",
+    white_submit: "確認提交",
+
+    white_avatar_upload: "上傳圖片",
+    white_avatar_draw: "繪製角色",
+    white_avatar_apply: "確認套用",
+    white_avatar_cancel: "取消",
+    white_avatar_custom_color: "自訂顏色",
+
+    // ===== hall =====
+    hall_recent_open_pot: "查看火鍋",
+    hall_recent_view_comments: "先看看留言",
+
+    hall_exit_keep_browsing: "再逛一下",
+    hall_exit_leave: "離開會場",
+    hall_exit_question: "是否離開宴席會場？",
+
+    hall_intro_open: "宴席已開放",
+    hall_intro_assigning: "您的位置將在一分鐘後安排完畢",
+    hall_intro_explore: "您可以先在會場內自由探索",
+    hall_seat_ready: "您的位置已安排好",
+    hall_follow_marker: "請依據指示入座",
+    hall_after_pot_1: "宴席持續進行中",
+    hall_after_pot_2: "歡迎自由探索會場",
+
+    hall_cta_sit: "入座",
+    hall_cta_make_pot: "開始製作火鍋",
+    hall_cta_view_pot: "查看火鍋",
+    // ===== pot =====
+    pot_intro_hover: "來製作你的火鍋吧！",
+    pot_start: "開始製作",
+
+    pot_soup_area: "湯塊區",
+    pot_make_soup: "製作湯塊",
+    pot_name_soup: "命名湯塊",
+    pot_empty_soup: "尚無湯塊",
+    pot_soup_default_name: "湯塊 {number}",
+
+    pot_soup_color_tool: "湯頭：選擇顏色",
+    pot_soup_texture_tool: "口感：選擇質地",
+    pot_soup_brush_tool: "湯勺：調整筆刷大小",
+    pot_soup_eraser_tool: "衛生紙：擦除",
+    pot_soup_blend_tool: "湯壺：攪拌暈染",
+
+    pot_material_ink: "Ink",
+    pot_material_latex: "液態乳膠",
+    pot_material_wax: "融蠟",
+    pot_material_chrome: "流體金屬",
+    pot_material_pearl: "珍珠母貝",
+    pot_material_clay: "黏土",
+
+    pot_ingredient_area: "配料區",
+    pot_make_ingredient: "製作配料",
+    pot_draw_ingredient: "畫出配料",
+    pot_name_ingredient: "命名配料",
+    pot_inflate: "充氣",
+    pot_ingredient_default_name: "配料 {number}",
+    pot_next_to_pot: "下鍋",
+
+    pot_ingredient_color_tool: "食用色素：選擇顏色",
+    pot_ingredient_brush_tool: "漏斗：調整筆刷大小",
+    pot_ingredient_eraser_tool: "刀子：擦除",
+
+    pot_continue_make: "繼續製作",
+    pot_cut: "切割",
+    pot_undo: "上一步",
+    pot_delete: "刪除",
+    pot_finish: "完成火鍋!",
+    pot_cut_line_color: "切割線顏色",
+    pot_size: "大小",
+
+    pot_my_display_name: "我",
+    pot_title: "{name}的火鍋",
+    pot_body_color: "鍋子顏色",
+    pot_handle_color: "握把顏色",
+    pot_arrange_seats: "安排座位",
+
+    pot_comment_board_title: "{name}的留言區",
+    pot_comment_placeholder: "輸入留言...",
+    pot_comment_submit: "留言",
+    pot_no_comments: "尚無留言",
+    pot_no_id_snapshot: "尚無 ID card snapshot",
+    pot_view_pot: "查看火鍋",
+    pot_return_banquet: "返回宴會",
+
+    pot_chair_question: "您希望和多少人分享您的火鍋呢?",
+    pot_chair_color: "椅子顏色",
+    pot_back_to_pot: "回到火鍋",
+    pot_continue_banquet: "繼續宴會",
+
+    pot_custom_color: "自訂顏色",
+    pot_save: "儲存",
+    pot_clear: "清空",
+    pot_empty_content: "尚無內容",
+    pot_unnamed: "未命名",
+    // ===== print =====
+    print_id_card: "身份卡",
+    print_pot_card: "火鍋卡",
+    print_save_hint: "長按圖片可儲存",
+    print_button: "現場列印",
+    print_loading: "載入中",
+    print_loading_data: "讀取列印資料中...",
+    print_adjust_view: "調整視角",
+    print_refresh_card: "更新圖卡",
+    print_anon: "anon",
+    print_pot_title: "{name} 的火鍋",
+    print_unnamed: "未命名",
+
+    print_no_serial: "找不到 serial",
+    print_no_profile: "找不到使用者資料",
+    print_no_id_card: "沒有找到身份卡 snapshot。",
+    print_no_pot: "目前沒有火鍋資料，只能列印身份卡。",
+    print_id_not_loaded: "身份卡尚未載入",
+    print_pot_not_ready: "火鍋卡尚未產生",
+    print_need_update: "請先按「更新圖卡」，再送出列印。",
+
+    print_update_hint: "拖曳鍋子調整視角，按「更新圖卡」後可長按儲存。",
+    print_view_changed: "視角已變更，按「更新圖卡」儲存目前視角。",
+    print_pot_updated: "火鍋卡已更新，長按右側圖片可儲存。",
+    print_pot_loaded: "火鍋已載入，可先調整視角，再按「更新圖卡」。",
+    print_updating_png: "正在更新火鍋卡 png...",
+    print_update_failed: "更新火鍋卡失敗：{error}",
+    print_load_failed: "載入失敗：{error}",
+    print_submit_failed: "送印失敗：{error}",
+    print_submit_id: "正在送出身份卡列印...",
+    print_submit_pot: "正在送出火鍋卡列印...",
+    print_submit_success_id: "身份卡已送至現場列印台。",
+    print_submit_success_pot: "火鍋卡已送至現場列印台。",
+
+    print_feedback_empty: "請先輸入意見內容。",
+    print_feedback_title: "遊玩過程有遇到任何問題嗎？<br>告訴我們！（我們不一定會改進。）",
+    print_feedback_placeholder: "可以寫下你遇到的問題、卡住的地方，或任何奇怪的東西。",
+    print_feedback_submit: "送出意見",
+    print_feedback_success: "謝謝你的意見，我們已經假裝慎重收下。",
+    print_feedback_failed: "意見送出失敗：{error}",
+  },
+
+  en: {
+    // ===== common =====
+    common_yes: "Yes",
+    common_no: "No",
+    common_confirm: "Confirm",
+    common_unnamed: "Untitled",
+
+    // ===== entry =====
+    entry_continue: "Continue",
+    entry_new: "New Game",
+    entry_login_title: "Enter Serial",
+    entry_serial_placeholder: "P000187",
+    entry_confirm: "Confirm",
+    entry_error_empty_serial: "Please enter your serial",
+    entry_error_not_found: "Serial not found. Please start a new game.",
+    entry_error_connection: "Connection failed. Please try again later",
+
+    // ===== white =====
+    white_announce_not_open: "Banquet not yet open",
+    white_announce_open: "Venue is now open",
+    white_announce_free_explore: "Feel free to explore",
+
+    white_npc_enter_question: "Would you like to enter the venue?",
+    white_npc_not_guest_face: "ಠ_ಠ",
+    white_npc_ask_name: "How should I address you?",
+    white_npc_check_id: "You may choose how to enter",
+    white_npc_verifying: "Verifying your identity...",
+    white_npc_register_fail: "Registration failed: {error}",
+    white_npc_id_fail: "Failed to read ID: {error}",
+    white_npc_submit_fail: "Submission failed: {error}",
+    white_npc_after_1: "We will issue you a new ID",
+    white_npc_after_2: "You may enter through the side door",
+
+    white_btn_yes: "Yes",
+    white_btn_no: "No",
+    white_btn_force_reject: "Reject",
+    white_btn_okay: "Okay",
+
+    white_name_placeholder: "Enter name",
+    white_name_confirm: "OK",
+
+    white_door_question: "Enter the banquet venue?",
+    white_door_wander: "Stay",
+    white_door_enter: "Enter",
+    white_door_tip: "You can enter anytime",
+
+    white_kicked_text: "You have been removed from the waiting area",
+
+    white_edit: "Edit",
+    white_clear_signature: "Clear signature",
+    white_info_placeholder: "(Enter any message)",
+
+    white_edit_done: "Finish Editing",
+    white_continue_edit: "Continue Editing",
+    white_submit: "Submit",
+
+    white_avatar_upload: "Upload Image",
+    white_avatar_draw: "Draw Avatar",
+    white_avatar_apply: "Apply",
+    white_avatar_cancel: "Cancel",
+    white_avatar_custom_color: "Custom Color",
+    
+
+    // ===== hall =====
+    hall_recent_open_pot: "View Pot",
+    hall_recent_view_comments: "View comments first",
+
+    hall_exit_keep_browsing: "Stay",
+    hall_exit_leave: "Leave",
+    hall_exit_question: "Leave the banquet venue?",
+
+    hall_intro_open: "The banquet is now open",
+    hall_intro_assigning: "Your seat will be arranged in one minute",
+    hall_intro_explore: "You may explore the venue freely first",
+    hall_seat_ready: "Your seat is ready",
+    hall_follow_marker: "Please follow the marker to your seat",
+    hall_after_pot_1: "The banquet continues",
+    hall_after_pot_2: "Feel free to explore the venue",
+
+    hall_cta_sit: "Sit",
+    hall_cta_make_pot: "Make Pot",
+    hall_cta_view_pot: "View Pot",
+
+     // ===== pot =====
+    pot_intro_hover: "Make your pot!",
+    pot_start: "Start",
+
+    pot_soup_area: "Soups",
+    pot_make_soup: "Soup",
+    pot_name_soup: "Name",
+    pot_empty_soup: "No soups",
+    pot_soup_default_name: "Soup {number}",
+
+    pot_soup_color_tool: "Broth: choose color",
+    pot_soup_texture_tool: "Texture: choose material",
+    pot_soup_brush_tool: "Ladle: adjust brush size",
+    pot_soup_eraser_tool: "Tissue: erase",
+    pot_soup_blend_tool: "Pot: stir and blend",
+
+    pot_material_ink: "Ink",
+    pot_material_latex: "Liquid Latex",
+    pot_material_wax: "Melted Wax",
+    pot_material_chrome: "Liquid Metal",
+    pot_material_pearl: "Pearl",
+    pot_material_clay: "Clay",
+
+    pot_ingredient_area: "Ingredients",
+    pot_make_ingredient: "Next",
+    pot_draw_ingredient: "Draw",
+    pot_name_ingredient: "Name",
+    pot_inflate: "Inflate",
+    pot_ingredient_default_name: "Ingredient {number}",
+    pot_next_to_pot: "Next",
+
+    pot_ingredient_color_tool: "Food coloring: choose color",
+    pot_ingredient_brush_tool: "Funnel: adjust brush size",
+    pot_ingredient_eraser_tool: "Knife: erase",
+
+    pot_continue_make: "Back",
+    pot_cut: "Cut",
+    pot_undo: "Undo",
+    pot_delete: "Delete",
+    pot_finish: "Finish",
+    pot_cut_line_color: "Cut Line Color",
+    pot_size: "Size",
+
+    pot_my_display_name: "Me",
+    pot_title: "{name}’s Hot Pot",
+    pot_body_color: "Pot",
+    pot_handle_color: "Handle",
+    pot_arrange_seats: "Next",
+
+    pot_comment_board_title: "{name}’s Message Board",
+    pot_comment_placeholder: "Enter a message...",
+    pot_comment_submit: "Send",
+    pot_no_comments: "No messages yet",
+    pot_no_id_snapshot: "No ID card snapshot yet",
+    pot_view_pot: "View Pot",
+    pot_return_banquet: "Return",
+
+    pot_chair_question: "How many people will share this pot?",
+    pot_chair_color: "Chair",
+    pot_back_to_pot: "Back",
+    pot_continue_banquet: "Done",
+
+    pot_custom_color: "Custom Color",
+    pot_save: "Save",
+    pot_clear: "Clear",
+    pot_empty_content: "No content yet",
+    pot_unnamed: "Untitled",
+
+    // ===== print =====
+    print_id_card: "ID Card",
+    print_pot_card: "Pot Card",
+    print_save_hint: "Long press to save",
+    print_button: "Print",
+    print_loading: "Loading",
+    print_loading_data: "Loading print data...",
+    print_adjust_view: "View",
+    print_refresh_card: "Update",
+    print_anon: "anon",
+    print_pot_title: "{name}'s Pot",
+    print_unnamed: "Untitled",
+
+    print_no_serial: "Serial not found",
+    print_no_profile: "User data not found",
+    print_no_id_card: "No ID card snapshot found.",
+    print_no_pot: "No pot data available. ID card only.",
+    print_id_not_loaded: "ID card not loaded",
+    print_pot_not_ready: "Pot card not ready",
+    print_need_update: "Please update the card before printing.",
+
+    print_update_hint: "Drag the pot, then update the card.",
+    print_view_changed: "View changed. Update the card to save it.",
+    print_pot_updated: "Pot card updated. Long press to save.",
+    print_pot_loaded: "Pot loaded. Adjust the view, then update.",
+    print_updating_png: "Updating pot card...",
+    print_update_failed: "Failed to update pot card: {error}",
+    print_load_failed: "Load failed: {error}",
+    print_submit_failed: "Print failed: {error}",
+    print_submit_id: "Sending ID card to printer...",
+    print_submit_pot: "Sending pot card to printer...",
+    print_submit_success_id: "ID card sent to printer.",
+    print_submit_success_pot: "Pot card sent to printer.",
+
+    print_feedback_empty: "Please enter your feedback first.",
+    print_feedback_title: "Did you run into any problems?<br>Tell us! (We may not fix them.)",
+    print_feedback_placeholder: "Write down anything confusing, broken, or strange.",
+    print_feedback_submit: "Send",
+    print_feedback_success: "Thanks. We have pretended to take it seriously.",
+    print_feedback_failed: "Failed to send feedback: {error}",
+  },
+};
