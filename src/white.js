@@ -1940,9 +1940,10 @@ doorBtns.appendChild(btnWander);
 doorBtns.appendChild(btnEnterHall);
 
 function doorEnterPrompt() {
-    if (!IS_MOBILE && !controls?.isLocked) return;
+    if (doorUiActive) return;
     doorUiActive = true;
     enterUiMode();
+    safeUnlockControls();
 
     doorLayer.style.pointerEvents = "auto";
 
@@ -2372,6 +2373,7 @@ kickedBtn.addEventListener("click", (e) => {
 });
 
 btnEnterHall.addEventListener("click", () => {
+  sessionStorage.setItem("polypot_from_white_enter", "1");
     window.location.href = "/hall.html";
 });
 btnWander.addEventListener("click", () => {

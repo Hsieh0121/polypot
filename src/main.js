@@ -12,10 +12,16 @@ window.addEventListener("DOMContentLoaded", () => {
     return;
   }
 
-  // 關鍵：不要 autoplay，等使用者第一次點擊後播放有聲 intro
-  introVideo.autoplay = false;
-  introVideo.muted = false;
-  introVideo.volume = 1;
+  const fromWhiteEnter =
+    sessionStorage.getItem("polypot_from_white_enter") === "1";
+
+  if (fromWhiteEnter) {
+    sessionStorage.removeItem("polypot_from_white_enter");
+  }
+
+  introVideo.autoplay = true;
+  introVideo.muted = true;
+  introVideo.volume = 0;
   introVideo.playsInline = true;
 
   function closeIntroVideo() {
@@ -1796,6 +1802,12 @@ function hideAnnouncementBubble() {
 function showCenterAction(label) {
   ctaBtn.textContent = label;
   ctaWrap.style.display = "flex";
+
+  // 電腦版：CTA 出現時直接放出游標，讓 [入座] / [查看火鍋] 可直接 hover/click
+  if (!IS_MOBILE && controls?.isLocked) {
+    clearMoveKeys();
+    controls.unlock();
+  }
 }
 
 function hideCenterAction() {
