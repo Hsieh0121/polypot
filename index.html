@@ -279,8 +279,37 @@
   <script type="module">
     import { setLang } from "./src/i18n.js";
 
+    const INDEX_SOUND = {
+      bgm: new Audio("/music.wav"),
+      button: new Audio("/button.wav"),
+    };
+
+    INDEX_SOUND.bgm.loop = true;
+    INDEX_SOUND.bgm.volume = 0.4;
+    INDEX_SOUND.bgm.preload = "auto";
+
+    INDEX_SOUND.button.volume = 0.75;
+    INDEX_SOUND.button.preload = "auto";
+
+    function playIndexSound(name = "button") {
+      const audio = INDEX_SOUND[name] || INDEX_SOUND.button;
+      if (!audio) return;
+
+      audio.currentTime = name === "bgm" ? audio.currentTime : 0;
+      audio.play().catch(() => {});
+    }
+
+    function startIndexBGM() {
+      playIndexSound("bgm");
+    }
+
+    window.addEventListener("pointerdown", startIndexBGM, { once: true });
+    startIndexBGM();
+
     document.querySelectorAll("[data-lang]").forEach((btn) => {
       btn.addEventListener("click", () => {
+        playIndexSound("button");
+        startIndexBGM();
         setLang(btn.dataset.lang);
       });
     });

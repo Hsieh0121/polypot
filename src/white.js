@@ -454,6 +454,70 @@ socket.on("connect_error", (err) => {
 });
 
 // =========================
+// White Sound
+// =========================
+const SOUND = {
+  bgm: null,
+  npc: null,
+  kickOut: null,
+  button: null,
+  unlocked: false,
+};
+
+function initWhiteSounds() {
+  if (SOUND.bgm) return;
+
+  SOUND.bgm = new Audio("/music.wav");
+  SOUND.bgm.loop = true;
+  SOUND.bgm.volume = 0.35;
+
+  SOUND.npc = new Audio("/npc.mp3");
+  SOUND.npc.volume = 0.8;
+
+  SOUND.kickOut = new Audio("/kickOut.wav");
+  SOUND.kickOut.volume = 0.9;
+
+  SOUND.button = new Audio("/button.wav");
+  SOUND.button.volume = 0.7;
+}
+
+function unlockWhiteSounds() {
+  if (SOUND.unlocked) return;
+  initWhiteSounds();
+  SOUND.unlocked = true;
+
+  SOUND.bgm.play().catch((err) => {
+    console.warn("[sound] bgm play blocked", err);
+  });
+}
+
+function playWhiteSound(name) {
+  if (!SOUND.unlocked) unlockWhiteSounds();
+
+  const audio = SOUND[name];
+  if (!audio) return;
+
+  audio.currentTime = 0;
+  audio.play().catch((err) => {
+    console.warn(`[sound] ${name} play failed`, err);
+  });
+}
+
+window.addEventListener(
+  "pointerdown",
+  () => {
+    unlockWhiteSounds();
+  },
+  { once: true }
+);
+function bindButtonSound(btn) {
+  if (!btn) return;
+  btn.addEventListener("pointerdown", () => {
+    playWhiteSound("button");
+  });
+}
+
+// =========================
 // System announcement UI
 // =========================
 
@@ -562,6 +626,7 @@ uiRoot.style.pointerEvents = "none";
 document.body.appendChild(uiRoot);
 // shiftUpOnMobile(uiRoot, 40);
 
+
 function makePillButton(label){
     const btn = document.createElement("button");
     btn.type = "button";
@@ -580,7 +645,10 @@ function makePillButton(label){
     btn.style.fontWeight = "700";
     btn.style.boxShadow = "0 10px 26px rgba(0,0,0,0.18)";
     btn.style.userSelect = "transform 120ms ease";
-    btn.addEventListener("pointerdown", () => (btn.style.transform = "scale(0.96)"));
+    btn.addEventListener("pointerdown", () => {
+      playWhiteSound("button");
+      btn.style.transform = "scale(0.96)";
+    });
     btn.addEventListener("pointerup", () => (btn.style.transform = "scale(1)"));
     btn.addEventListener("pointerleave", () => (btn.style.transform = "scale(1)"));
     return btn;
@@ -2097,6 +2165,7 @@ function npcHideAll(){
 }
 
 function npcEnterQ1() {
+  playWhiteSound("npc");
 console.log("[npcEnterQ1] begin", { locked: controls.isLocked });
   enterUiMode();
   safeUnlockControls();
@@ -2121,6 +2190,8 @@ function npcKickOut() {
   npcShowBubble(t("white_npc_not_guest_face"));
   optionRow.style.opacity = "0";
   optionRow.style.pointerEvents = "none";
+
+  playWhiteSound("kickOut");
 
   // 0.8 秒後黑屏
   setTimeout(() => {
@@ -3058,7 +3129,26 @@ submitBtn.addEventListener("click", async () => {
     console.warn("[submitBtn] post-submit ui failed", err);
   }
 });
-
+// ===== button sound binding =====
+[
+  pencilBtn,
+  nameOk,
+  kickedBtn,
+  editBtn,
+  uploadBtn,
+  drawBtn,
+  confirmBtn,
+  cancelBtn,
+  drawUploadBtn,
+  drawModeBtn,
+  avatarColorBtn,
+  avatarBrushBtn,
+  avatarEraserBtn,
+  avatarDrawConfirmBtn,
+  doneEditBtn,
+  continueEditBtn,
+  submitBtn,
+].forEach(bindButtonSound);
 
 function openAvatarEditor () {
   enterUiMode();

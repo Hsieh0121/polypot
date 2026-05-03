@@ -528,7 +528,46 @@
       document.body.classList.add("lang-en");
     }
 
+    // =========================
+    // Print Sound
+    // =========================
+    const PRINT_SOUND = {
+      done: new Audio("/potDone.wav"),
+      button: new Audio("/button.wav"),
+      bgm: new Audio("/music.wav"),
+    };
+
+    Object.values(PRINT_SOUND).forEach((audio) => {
+      audio.volume = 0.75;
+      audio.preload = "auto";
+    });
+
+    // 背景音設定
+    PRINT_SOUND.bgm.loop = true;
+    PRINT_SOUND.bgm.volume = 0.4;
+
+    function playPrintSound(name = "button") {
+      const audio = PRINT_SOUND[name] || PRINT_SOUND.button;
+      if (!audio) return;
+
+      audio.currentTime = 0;
+      audio.play().catch(() => {});
+    }
+
     console.log("[print] module boot");
+
+    function startPrintBGM() {
+      const bgm = PRINT_SOUND.bgm;
+      if (!bgm) return;
+
+      bgm.currentTime = 0;
+      bgm.play().catch(() => {});
+    }
+
+    // 瀏覽器限制：第一次點擊後才播放
+    window.addEventListener("pointerdown", () => {
+      startPrintBGM();
+    }, { once: true });
 
     const idCardShell = document.getElementById("idCardShell");
     const potCardShell = document.getElementById("potCardShell");
@@ -579,19 +618,23 @@
       feedbackModalBackdrop.style.display = "none";
     }
 
-    feedbackCloseBtn?.addEventListener("click", closeFeedbackModal);
+    feedbackCloseBtn?.addEventListener("click", () => {
+      playPrintSound("button");
+      closeFeedbackModal();
+    });
 
     feedbackModalBackdrop?.addEventListener("click", (e) => {
       if (e.target === feedbackModalBackdrop) closeFeedbackModal();
     });
 
     feedbackSubmitBtn?.addEventListener("click", async () => {
-  const content = feedbackTextarea?.value?.trim() || "";
+      playPrintSound("button");
+      const content = feedbackTextarea?.value?.trim() || "";
 
-  if (!content) {
-    setStatus(t("print_feedback_empty"));
-    return;
-  }
+      if (!content) {
+        setStatus(t("print_feedback_empty"));
+        return;
+      }
 
   try {
     const res = await fetch(`${API_BASE}/feedback`, {
@@ -659,10 +702,25 @@
       potCardShell.classList.toggle("selected", type === "pot");
     }
 
-    idCardShell.addEventListener("click", () => setSelectedCard("id"));
-    potCardShell.addEventListener("click", () => setSelectedCard("pot"));
-    idCardTitle.addEventListener("click", () => setSelectedCard("id"));
-    potCardTitle.addEventListener("click", () => setSelectedCard("pot"));
+    idCardShell.addEventListener("click", () => {
+      playPrintSound("button");
+      setSelectedCard("id");
+    });
+
+    potCardShell.addEventListener("click", () => {
+      playPrintSound("button");
+      setSelectedCard("pot");
+    });
+
+    idCardTitle.addEventListener("click", () => {
+      playPrintSound("button");
+      setSelectedCard("id");
+    });
+
+    potCardTitle.addEventListener("click", () => {
+      playPrintSound("button");
+      setSelectedCard("pot");
+    });
 
     function getSerialFromUrlOrStorage() {
     const params = new URLSearchParams(window.location.search);
@@ -1162,11 +1220,13 @@
 
     adjustViewBtn.addEventListener("click", async (e) => {
       e.stopPropagation();
+      playPrintSound("button");
       showStagePreview();
     });
 
     refreshPotCardBtn.addEventListener("click", async (e) => {
       e.stopPropagation();
+      playPrintSound("button");
 
       try {
         setStatus(t("print_updating_png"));
@@ -1179,6 +1239,7 @@
     });
 
     printBtn.addEventListener("click", async () => {
+      playPrintSound("done");
       try {
         if (!profile?.serial) {
          throw new Error(t("print_no_profile"));

@@ -407,6 +407,39 @@
   import { createTranslator } from "./src/i18n.js";
   import { TEXT } from "./src/i18n-text.js";
 
+    // =========================
+  // Entry Sound
+  // =========================
+  const ENTRY_SOUND = {
+    bgm: new Audio("/music.wav"),
+    button: new Audio("/button.wav"),
+  };
+
+  ENTRY_SOUND.bgm.loop = true;
+  ENTRY_SOUND.bgm.volume = 0.4;
+  ENTRY_SOUND.bgm.preload = "auto";
+
+  ENTRY_SOUND.button.volume = 0.75;
+  ENTRY_SOUND.button.preload = "auto";
+
+  function playEntrySound(name = "button") {
+    const audio = ENTRY_SOUND[name] || ENTRY_SOUND.button;
+    if (!audio) return;
+
+    audio.currentTime = name === "bgm" ? audio.currentTime : 0;
+    audio.play().catch(() => {});
+  }
+
+  function startEntryBGM() {
+    playEntrySound("bgm");
+  }
+
+  // 第一次點擊後啟動音樂（瀏覽器限制）
+  window.addEventListener("pointerdown", startEntryBGM, { once: true });
+
+  // 嘗試自動播放（有些桌機會成功）
+  startEntryBGM();
+
   const t = createTranslator(TEXT);
 
     const STORAGE_KEYS = {
@@ -462,13 +495,18 @@
   }
 
   continueBtn.addEventListener("click", () => {
+    playEntrySound("button");
     openLoginPanel();
   });
 
-  closeLoginBtn.addEventListener("click", closeLoginPanelFn);
+  closeLoginBtn.addEventListener("click", () => {
+    playEntrySound("button");
+    closeLoginPanelFn();
+  });
 
   loginPanel.addEventListener("click", (e) => {
     if (e.target === loginPanel) {
+      playEntrySound("button");
       closeLoginPanelFn();
     }
   });
@@ -480,6 +518,7 @@
   });
 
   newGameBtn.addEventListener("click", () => {
+    playEntrySound("button");
     sessionStorage.removeItem(STORAGE_KEYS.currentSerial);
     location.href = "/white.html";
   });
@@ -525,7 +564,10 @@
     }
   }
 
-  loginConfirmBtn.addEventListener("click", handleContinue);
+  loginConfirmBtn.addEventListener("click", () => {
+    playEntrySound("button");
+    handleContinue();
+  });
 
   serialInput.addEventListener("keydown", (e) => {
     if (e.key === "Enter") {

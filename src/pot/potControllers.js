@@ -19,6 +19,31 @@ if (lang === "en") {
   document.body.classList.add("lang-en");
 }
 
+// =========================
+// Pot Controller Sound
+// =========================
+const POT_SOUND = {
+  inflate: new Audio("/inflate.wav"),
+  delete: new Audio("/kickOut.wav"),
+  drop: new Audio("/pot.wav"),
+  done: new Audio("/potDone.wav"),
+  comment: new Audio("/comment.wav"),
+  button: new Audio("/button.wav"),
+};
+
+Object.values(POT_SOUND).forEach((audio) => {
+  audio.volume = 0.75;
+  audio.preload = "auto";
+});
+
+function playPotSound(name = "button") {
+  const audio = POT_SOUND[name] || POT_SOUND.button;
+  if (!audio) return;
+
+  audio.currentTime = 0;
+  audio.play().catch(() => {});
+}
+
 export function createPotController({
   appEl,
   onClose,
@@ -697,7 +722,7 @@ async function storeIngredient(name) {
     return el;
   }
 
-  function addCapsuleButton({ x, y, w, h, bg = "#ffffff", border = "2px solid #FD6FFF", radius = 999, onClick, z = 3 }) {
+  function addCapsuleButton({ x, y, w, h, bg = "#ffffff", border = "2px solid #FD6FFF", radius = 999, onClick, z = 3, sound = "button" }) {
     const btn = document.createElement("button");
     btn.type = "button";
     Object.assign(btn.style, {
@@ -713,7 +738,10 @@ async function storeIngredient(name) {
       zIndex: String(z),
       padding: "0",
     });
-    btn.addEventListener("click", onClick);
+    btn.addEventListener("click", (e) => {
+      if (sound) playPotSound(sound);
+      onClick?.(e);
+    });
     panelEl.appendChild(btn);
     return btn;
   }
@@ -734,7 +762,12 @@ async function storeIngredient(name) {
       cursor: "pointer",
       zIndex: String(z),
     });
-    if (onClick) btn.addEventListener("click", onClick);
+    if (onClick) {
+      btn.addEventListener("click", (e) => {
+        playPotSound("button");
+        onClick(e);
+      });
+    }
 
     const img = document.createElement("img");
     img.src = src;
@@ -1878,7 +1911,10 @@ async function storeIngredient(name) {
     const deleteBtn = addCapsuleButton({
       x: s.deleteBtn.x, y: s.deleteBtn.y, w: s.deleteBtn.w, h: s.deleteBtn.h,
       bg: "#EAEAEA", border: "2px solid #EAEAEA",
-      onClick: () => { fluidCtrl?.clearCanvas(); }
+      onClick: () => {
+        playPotSound("delete");
+        fluidCtrl?.clearCanvas();
+      }
     });
     addImg(ASSETS.delete, { ...s.deleteIcon, z: 4 });
     attachHoverLabel(deleteBtn, t("pot_clear"), s.deleteLabel);
@@ -2192,6 +2228,7 @@ async function storeIngredient(name) {
 
     const inflateBtn = addImageButton(ASSETS.inflate, s.inflateBtn, {
       onClick: () => {
+        playPotSound("inflate");
         handleInflateIngredient(previewImgEl);
       },
       border: "0",
@@ -2341,6 +2378,7 @@ async function storeIngredient(name) {
       padding: "0",
     });
     deleteBtn.addEventListener("click", () => {
+      playPotSound("delete");
       handleClearIngredientDrawing(previewImgEl);
     });
     nameWrap.appendChild(deleteBtn);
@@ -2605,6 +2643,7 @@ async function storeIngredient(name) {
     if (composeMode === "soup") {
       if (!activeBallId) return;
       const scale = ballNextScale.get(activeBallId) ?? 1.0;
+      playPotSound("drop");
       composePlacements.push({
         type: "soup",
         itemId: activeBallId,
@@ -2621,6 +2660,7 @@ async function storeIngredient(name) {
     if (composeMode === "ingredient") {
       if (!activeIngredientId) return;
       const scale = ingredientNextScale.get(activeIngredientId) ?? 1.0;
+      playPotSound("drop");
       composePlacements.push({
         type: "ingredient",
         itemId: activeIngredientId,
@@ -3018,6 +3058,7 @@ function renderVerticalList({
       bg: "#EAEAEA",
       border: "0",
       onClick: () => {
+        playPotSound("delete");
         composePlacements.length = 0;
         cutLines.length = 0;
         cutLineColors.length = 0;
@@ -3048,6 +3089,7 @@ function renderVerticalList({
       bg: "#FFFFFF",
       border: "2px solid #FD6FFF",
       onClick: () => {
+        playPotSound("done");
         finalPotTextureUrl = exportFinalPotTexture();
         autoSavePot("step3_finish_to_step4");
         step = 4;
@@ -3616,6 +3658,7 @@ function renderVerticalList({
         iconRect: nextIconRect,
         textOffsetX: 12,
         onClick: () => {
+          playPotSound("done");
           step = 5;
           renderStep();
         },
@@ -3677,6 +3720,7 @@ function renderVerticalList({
           border: "0",
           radius: 999,
           z: 4,
+          sound: "comment",
         onClick: async () => {
           const value = commentInputValue.trim();
           if (!value) return;
@@ -3927,6 +3971,7 @@ function renderVerticalList({
       border: "0",
       radius: 999,
       z: 4,
+      sound: "comment",
     onClick: async () => {
       const value = commentBoardInputValue.trim();
       if (!value) return;
@@ -4427,6 +4472,7 @@ function renderVerticalList({
       iconRect: nextIconRect,
       textOffsetX: 12,
       onClick: () => {
+      playPotSound("done");
       console.log("[step5 click] finalize", {
         tableId: activeTableId,
         chairCount,

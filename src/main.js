@@ -1,5 +1,6 @@
 // ===== Intro Video Control =====
 let introPlaying = true;
+let introStarted = false;
 
 window.addEventListener("DOMContentLoaded", () => {
   const introWrap = document.getElementById("intro-video");
@@ -10,6 +11,12 @@ window.addEventListener("DOMContentLoaded", () => {
     introPlaying = false;
     return;
   }
+
+  // 關鍵：不要 autoplay，等使用者第一次點擊後播放有聲 intro
+  introVideo.autoplay = false;
+  introVideo.muted = false;
+  introVideo.volume = 1;
+  introVideo.playsInline = true;
 
   function closeIntroVideo() {
     if (!introPlaying) return;
@@ -23,11 +30,36 @@ window.addEventListener("DOMContentLoaded", () => {
     }, 600);
   }
 
-  introVideo.addEventListener("ended", closeIntroVideo);
+  function startIntroVideoWithSound() {
+    if (introStarted) return;
+    introStarted = true;
 
+    introVideo.muted = false;
+    introVideo.volume = 1;
+
+    introVideo.play().catch((err) => {
+      console.warn("[intro video] play with sound failed", err);
+    });
+  }
+
+  // 點 intro 畫面任意處：開始播放有聲開場
+  introWrap.addEventListener("pointerdown", () => {
+    startIntroVideoWithSound();
+  }, { once: true });
+
+  // intro 播完後：開牆上影片聲音
+  introVideo.addEventListener("ended", () => {
+    startHallScreenVideoWithSound();
+    closeIntroVideo();
+  });
+
+  // skip：停止 intro，開牆上影片聲音
   introSkipBtn?.addEventListener("pointerdown", (e) => {
     e.preventDefault();
     e.stopPropagation();
+
+    introVideo.pause();
+    startHallScreenVideoWithSound();
     closeIntroVideo();
   }, { passive: false });
 });
@@ -84,6 +116,53 @@ const socket = io(SOCKET_URL, { transports: ["websocket"] });
 const SS_SERIAL = "polypot_serial";
 const LS_HAS_PLAYED = "polypot_has_played";
 const LS_LAST_SERIAL = "polypot_last_serial";
+
+// =========================
+// Hall Sound
+// =========================
+const SOUND = {
+  openCard: null,
+  sit: null,
+  pot: null,
+  button: null,
+  unlocked: false,
+};
+
+function initHallSounds() {
+  if (SOUND.openCard) return;
+
+  SOUND.openCard = new Audio("/openCard.wav");
+  SOUND.openCard.volume = 0.8;
+
+  SOUND.sit = new Audio("/kickOut.wav"); // 你指定的
+  SOUND.sit.volume = 0.9;
+
+  SOUND.pot = new Audio("/pot.wav");
+  SOUND.pot.volume = 0.85;
+
+  SOUND.button = new Audio("/button.wav");
+  SOUND.button.volume = 0.7;
+}
+
+function unlockHallSounds() {
+  if (SOUND.unlocked) return;
+  initHallSounds();
+  SOUND.unlocked = true;
+
+  // 不需要 bgm，所以不用 play
+}
+
+function playHallSound(name) {
+  if (!SOUND.unlocked) unlockHallSounds();
+
+  const audio = SOUND[name];
+  if (!audio) return;
+
+  audio.currentTime = 0;
+  audio.play().catch(() => {});
+}
+
+window.addEventListener("pointerdown", unlockHallSounds, { once: true });
 
 const API_BASE =
   import.meta.env.VITE_API_BASE ||
@@ -1430,6 +1509,7 @@ function makeExitDoorBtn(label) {
   btn.addEventListener("pointerdown", (e) => {
     e.preventDefault();
     e.stopPropagation();
+    playHallSound("button"); 
     btn.style.transform = "scale(0.96)";
   });
   btn.addEventListener("pointerup", () => {
@@ -1506,12 +1586,14 @@ recentCommentsDim.addEventListener("click", (e) => {
 });
 
 recentCommentsSkipBtn.addEventListener("click", (e) => {
+  playHallSound("button");
   e.preventDefault();
   e.stopPropagation();
   hideRecentCommentsPrompt();
 });
 
 recentCommentsOpenBtn.addEventListener("click", async (e) => {
+  playHallSound("button");
   e.preventDefault();
   e.stopPropagation();
 
@@ -1624,6 +1706,7 @@ myCommentBoardBtn.appendChild(myCommentBoardImg);
 document.body.appendChild(myCommentBoardBtn);
 
 myCommentBoardBtn.addEventListener("click", async (e) => {
+  playHallSound("openCard");
   e.preventDefault();
   e.stopPropagation();
 
@@ -1664,6 +1747,7 @@ const resetCtaBtn = () => {
   ctaBtn.style.transform = "scale(1)";
 };
 ctaBtn.addEventListener("pointerdown", async (e) => {
+  playHallSound("button");
   if (exitDoorUiOpen) {
     hideExitDoorPrompt();
     return;
@@ -2149,6 +2233,7 @@ async function openPotOverlayForTable(tableId, { mobileDebug = false } = {}) {
   }
 
   try {
+    playHallSound("pot");
     pot.open({
       tableId,
       tableState,
@@ -2573,7 +2658,7 @@ function applyHallScreenVideo(envRoot) {
   hallScreenVideo.loop = true;
   hallScreenVideo.muted = false;
   hallScreenVideo.playsInline = true;
-  hallScreenVideo.autoplay = true;
+  hallScreenVideo.autoplay = false;
   hallScreenVideo.preload = "auto";
   hallScreenVideo.crossOrigin = "anonymous";
 
@@ -2594,11 +2679,18 @@ function applyHallScreenVideo(envRoot) {
 
   oldMat?.dispose?.();
 
-  hallScreenVideo.play().catch((err) => {
-    console.warn("[hall screen] video autoplay blocked", err);
-  });
+  // 不在載入時 autoplay；等使用者互動後再播放有聲影片
 
   console.log("[hall screen] animation.mp4 applied to Plane.010");
+}
+function startHallScreenVideoWithSound() {
+  if (!hallScreenVideo) return;
+
+  hallScreenVideo.muted = false;
+  hallScreenVideo.volume = 1;
+  hallScreenVideo.play().catch((err) => {
+    console.warn("[hall screen] play with sound failed", err);
+  });
 }
 function createAssignedMarker() {
   const group = new THREE.Group();
@@ -3786,6 +3878,7 @@ function requestSitSeat(seatLike){
   console.log("[sit] requested", Seat.key);
 }
 function sitSeatLocalSnap(seat){
+  playHallSound("sit");
   const sid = seat.seatId ?? seat.id;
 
   seated = { tableId: seat.tableId, seatId: sid };
