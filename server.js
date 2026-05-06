@@ -934,13 +934,47 @@ io.on("connection", (socket) => {
         return;
       }
 
+      const payloadSizeMB = JSON.stringify(payload).length / 1024 / 1024;
+      const stateSizeMB = payload.tableState
+        ? JSON.stringify(payload.tableState).length / 1024 / 1024
+        : 0;
+      const textureSizeMB =
+        typeof payload.finalPotTextureUrl === "string"
+          ? payload.finalPotTextureUrl.length / 1024 / 1024
+          : 0;
+
+      console.log("[pot:save payload size]", {
+        roomId,
+        tableId: clean.tableId,
+        payloadSizeMB: payloadSizeMB.toFixed(2),
+        stateSizeMB: stateSizeMB.toFixed(2),
+        textureSizeMB: textureSizeMB.toFixed(2),
+      });
+
       const saved = saveTablePot({
         ...clean,
         roomId,
       });
 
+      const lightPot = {
+        tableId: saved.tableId,
+        roomId: saved.roomId,
+        chairCount: saved.chairCount,
+        chairColor: saved.chairColor,
+        potBodyColor: saved.potBodyColor,
+        potHandleColor: saved.potHandleColor,
+        tableState: {
+          tableId: saved.tableId,
+          initialized: !!saved.tableState?.initialized,
+          chairCount: saved.chairCount,
+          chairColor: saved.chairColor,
+          potBodyColor: saved.potBodyColor,
+          potHandleColor: saved.potHandleColor,
+        },
+      };
+
       const room = ensureRoom(roomId);
-      room.tablePots.set(saved.tableId, saved);
+      room.tablePots.set(saved.tableId, lightPot);
 
       console.log("[pot:save]", roomId, saved.tableId, {
         chairCount: saved.chairCount,
@@ -951,9 +985,12 @@ io.on("connection", (socket) => {
         initialized: !!saved.tableState?.initialized,
       });
 
-      io.to(roomId).emit("pot:updated", saved);
+      io.to(roomId).emit("pot:updated", lightPot);
 
-      ack?.({ ok: true, pot: saved });
+      ack?.({
+        ok: true,
+        pot: lightPot,
+      });
     } catch (err) {
       console.error("[pot:save] failed:", err);
       ack?.({ ok: false, error: "pot:save failed" });

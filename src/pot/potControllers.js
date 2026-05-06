@@ -642,7 +642,7 @@ function imageUrlToDataUrl(url) {
         const ctx = canvas.getContext("2d");
         ctx.drawImage(img, 0, 0);
 
-        const dataUrl = canvas.toDataURL("image/png");
+        const dataUrl = canvas.toDataURL("image/webp", 0.7);
         resolve(dataUrl);
       } catch (err) {
         reject(err);
@@ -1405,11 +1405,23 @@ async function storeIngredient(name) {
         finalPotTextureUrl,
       };
     }
-    function autoSavePot(reason = "unknown") {
+  function autoSavePot(reason = "unknown") {
     if (!activeTableId) return;
     if (typeof onAutoSavePot !== "function") return;
 
     const tableState = buildOutputTableState();
+
+    const stateSizeMB = JSON.stringify(tableState).length / 1024 / 1024;
+    const textureSizeMB = (finalPotTextureUrl?.length || 0) / 1024 / 1024;
+
+    console.log("[pot autosave size]", {
+      reason,
+      stateSizeMB: stateSizeMB.toFixed(2),
+      textureSizeMB: textureSizeMB.toFixed(2),
+      balls: balls.length,
+      ingredients: ingredients.length,
+      placements: composePlacements.length,
+    });
 
     onAutoSavePot({
       reason,
@@ -3126,7 +3138,7 @@ function renderVerticalList({
     // 直接鋪滿整張 texture，不要縮小置中
     ctx.drawImage(potCanvas, 0, 0, outSize, outSize);
 
-    return out.toDataURL("image/png");
+    return out.toDataURL("image/jpeg", 0.75);
   }
 
   // ---------- step4 3d preview ----------
