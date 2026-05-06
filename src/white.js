@@ -461,6 +461,7 @@ const SOUND = {
   npc: null,
   kickOut: null,
   button: null,
+  enter: null,  
   unlocked: false,
 };
 
@@ -479,6 +480,9 @@ function initWhiteSounds() {
 
   SOUND.button = new Audio("/button.wav");
   SOUND.button.volume = 0.7;
+
+  SOUND.enter = new Audio("/enter.wav");   // ← 加這行
+  SOUND.enter.volume = 0.9;
 }
 
 function unlockWhiteSounds() {
@@ -2373,8 +2377,13 @@ kickedBtn.addEventListener("click", (e) => {
 });
 
 btnEnterHall.addEventListener("click", () => {
+  playWhiteSound("enter");   // ← 加這行
+
   sessionStorage.setItem("polypot_from_white_enter", "1");
+
+  setTimeout(() => {
     window.location.href = "/hall.html";
+  }, 200);
 });
 btnWander.addEventListener("click", () => {
     doorTipOnce(t("white_door_tip"), 1500);

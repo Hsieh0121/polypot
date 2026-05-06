@@ -140,7 +140,7 @@ function initHallSounds() {
   SOUND.openCard = new Audio("/openCard.wav");
   SOUND.openCard.volume = 0.8;
 
-  SOUND.sit = new Audio("/kickOut.wav"); // 你指定的
+  SOUND.sit = new Audio("/sit.wav"); 
   SOUND.sit.volume = 0.9;
 
   SOUND.pot = new Audio("/pot.wav");
