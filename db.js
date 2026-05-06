@@ -8,6 +8,11 @@ if (!fs.existsSync(dataDir)) {
 }
 
 const dbPath = path.join(dataDir, "polypot.sqlite");
+
+console.log("[db] dataDir:", dataDir);
+console.log("[db] dbPath:", dbPath);
+console.log("[db] exists before open:", fs.existsSync(dbPath));
+
 const db = new Database(dbPath);
 
 db.pragma("journal_mode = WAL");
