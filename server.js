@@ -974,7 +974,7 @@ io.on("connection", (socket) => {
       };
 
       const room = ensureRoom(roomId);
-      room.tablePots.set(saved.tableId, lightPot);
+      room.tablePots.set(saved.tableId, saved);
 
       console.log("[pot:save]", roomId, saved.tableId, {
         chairCount: saved.chairCount,
@@ -985,11 +985,11 @@ io.on("connection", (socket) => {
         initialized: !!saved.tableState?.initialized,
       });
 
-      io.to(roomId).emit("pot:updated", lightPot);
+      socket.to(roomId).emit("pot:updated", lightPot);
 
       ack?.({
         ok: true,
-        pot: lightPot,
+        pot: saved,
       });
     } catch (err) {
       console.error("[pot:save] failed:", err);

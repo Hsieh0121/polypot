@@ -2182,6 +2182,16 @@ const pot = createPotController({
     pot.close({ reason: "finalize" });
     hallPostPotShown = true;
 
+    unseatSeat();
+
+    // 先本地離座，不要等 server
+    seated = null;
+    state = FSM.FREE_ROAM;
+    activeTableId = null;
+    hideCenterAction();
+    hideHUD();
+    clearMoveKeys();
+
     if (IS_MOBILE) {
       setMobileHudVisible(true);
     }
@@ -2590,8 +2600,35 @@ function applyPotTextureToRoot(
 function applyPotStateToTable(pot) {
   if (!pot?.tableId) return;
 
+  const prevState =
+    tablePotStateMap.get(pot.tableId) ??
+    createEmptyTablePotState(pot.tableId);
+
   if (pot.tableState) {
-    tablePotStateMap.set(pot.tableId, pot.tableState);
+    const nextState = {
+      ...prevState,
+      ...pot.tableState,
+
+      // 這幾個不能被 lightPot 清掉
+      balls: Array.isArray(pot.tableState.balls)
+        ? pot.tableState.balls
+        : prevState.balls,
+
+      ingredients: Array.isArray(pot.tableState.ingredients)
+        ? pot.tableState.ingredients
+        : prevState.ingredients,
+
+      composePlacements: Array.isArray(pot.tableState.composePlacements)
+        ? pot.tableState.composePlacements
+        : prevState.composePlacements,
+
+      finalPotTextureUrl:
+        pot.tableState.finalPotTextureUrl ??
+        pot.finalPotTextureUrl ??
+        prevState.finalPotTextureUrl,
+    };
+
+    tablePotStateMap.set(pot.tableId, nextState);
   }
 
   const resolvedChairCount =
